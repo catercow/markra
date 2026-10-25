@@ -226,6 +226,9 @@ async fn token(app: &tauri::AppHandle, state: &ContentAccessState) -> Result<Rem
     let response = client()?
         .post(endpoint(&session.site, "/__content_access/token")?)
         .bearer_auth(&session.session)
+        // Google's front end answers 411 to a POST without Content-Length.
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .body("{}")
         .send()
         .await
         .map_err(|_| "offline: Couldn't reach the content preview. Check your internet connection.".to_string())?;
