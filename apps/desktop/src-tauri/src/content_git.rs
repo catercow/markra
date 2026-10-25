@@ -125,7 +125,14 @@ pub(crate) fn clone_into(git: &Path, remote: &Remote, dest: &Path) -> Result<(),
     let parent = dest.parent().ok_or("Choose a folder for the content.")?;
     std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     let dest_arg = dest.to_string_lossy();
-    run(git, parent, &["clone", "--branch", STUDIO_BRANCH, &remote.url, &dest_arg], &remote.env)
+    // Keep files byte-for-byte as committed (LF), even where git defaults to
+    // CRLF checkouts on Windows; the site and the editor expect LF.
+    run(
+        git,
+        parent,
+        &["clone", "--config", "core.autocrlf=false", "--branch", STUDIO_BRANCH, &remote.url, &dest_arg],
+        &remote.env,
+    )
         .map(|_| ())
         .map_err(|failure| plain(failure, "download the content"))
 }
