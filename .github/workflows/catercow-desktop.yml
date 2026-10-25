@@ -82,21 +82,33 @@ jobs:
           --target ${{ matrix.target }}
           --bundles ${{ matrix.bundle }}
 
-      - name: Check the app's signature
-        if: matrix.platform == 'macos'
-        run: codesign --verify --deep --verbose=2 "${DESKTOP_DIR}/src-tauri/target/${{ matrix.target }}/release/bundle/macos/CaterCow Markra.app"
-
       - name: Collect the installer
         id: installer
         shell: bash
         run: |
           set -euo pipefail
+          shopt -s nullglob
           bundle_dir="${DESKTOP_DIR}/src-tauri/target/${{ matrix.target }}/release/bundle/${{ matrix.bundle }}"
-          source="$(ls "$bundle_dir"/*.dmg "$bundle_dir"/*.exe 2>/dev/null | head -1)"
+          found=("$bundle_dir"/*.dmg "$bundle_dir"/*.exe)
+          if [ "${#found[@]}" -ne 1 ]; then
+            echo "Expected one installer in $bundle_dir, found ${#found[@]}:"; ls -la "$bundle_dir" || true
+            exit 1
+          fi
+          source="${found[0]}"
           extension="${source##*.}"
           name="CaterCow-Markra-${{ matrix.platform }}-${{ matrix.arch }}.${extension}"
           cp "$source" "$name"
           echo "path=$name" >> "$GITHUB_OUTPUT"
+
+      # Tauri removes the .app after packing the .dmg, so check the copy inside it.
+      - name: Check the app's signature
+        if: matrix.platform == 'macos'
+        run: |
+          set -euo pipefail
+          mount="$(mktemp -d)"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount" "${{ steps.installer.outputs.path }}"
+          codesign --verify --deep --verbose=2 "$mount/CaterCow Markra.app"
+          hdiutil detach "$mount"
 
       - uses: actions/upload-artifact@v4
         with:
