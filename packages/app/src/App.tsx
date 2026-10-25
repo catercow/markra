@@ -4864,7 +4864,10 @@ function WorkspaceApp() {
           documentSearchAvailable={documentSearchAvailable}
           documentSearchOpen={documentSearchOpen}
           editorAgentLayoutClassName={editorAgentLayoutClassName}
-          editorAgentLayoutStyle={{ gridTemplateColumns: `minmax(0,1fr) ${aiAgentInset}` }}
+          editorAgentLayoutStyle={{
+            "--markra-ai-agent-inset": aiAgentInset,
+            gridTemplateColumns: `minmax(0,1fr) ${aiAgentInset}`
+          } as CSSProperties}
           editorDropTargetActive={editorTabDropTargetActive}
           fileTree={{
             activeOutlineIndex: activeDocumentOutlineIndex,

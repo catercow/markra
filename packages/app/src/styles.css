@@ -742,6 +742,13 @@
     height: 100%;
   }
 
+  /* Make room for the MDC props panel so it doesn't cover the page; on narrow windows it overlays. */
+  @media (min-width: 1100px) {
+    .paper-scroll:has(.markra-mdc-props-panel) {
+      padding-right: 392px;
+    }
+  }
+
   /* Keep this contextual height in CSS: h-full plus the fixed top offset would overflow into the status row. */
   .editor-content-slot .paper-scroll {
     height: calc(100% - 2.5rem);

@@ -104,7 +104,7 @@ function MdcPropsPanelBody({ language, schema }: MdcPropsPanelProps) {
   return (
     <aside
       aria-label={label("editor.mdcProps")}
-      className="markra-mdc-props-panel fixed top-12 right-3 bottom-3 z-40 flex w-[min(380px,calc(100vw-24px))] flex-col overflow-hidden rounded-lg border border-(--border-default) bg-(--bg-primary) text-(--text-primary) shadow-(--ai-command-popover-shadow) outline-none"
+      className="markra-mdc-props-panel fixed top-12 right-[calc(var(--markra-ai-agent-inset,0px)_+_12px)] bottom-3 z-40 flex w-[min(380px,calc(100vw-24px))] flex-col overflow-hidden rounded-lg border border-(--border-default) bg-(--bg-primary) text-(--text-primary) shadow-(--ai-command-popover-shadow) outline-none"
       ref={panelRef}
       role="complementary"
       tabIndex={-1}
