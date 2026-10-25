@@ -70,4 +70,4 @@ export function joinFolderPath(parent: string, name: string) {
   return `${parent.replace(/[\\/]+$/u, "")}${separator}${name}`;
 }
 
-export const managedFolderName = "CaterCow Content";
+export const managedFolderName = "catercow-content";

@@ -283,7 +283,7 @@ pub(crate) fn default_folder(documents: Option<PathBuf>) -> PathBuf {
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Documents")))
         .or_else(|| std::env::var_os("USERPROFILE").map(|home| PathBuf::from(home).join("Documents")))
         .unwrap_or_default()
-        .join("CaterCow Content")
+        .join("catercow-content")
 }
 
 #[cfg(test)]
@@ -351,7 +351,7 @@ mod tests {
     fn default_folder_is_in_documents() {
         assert_eq!(
             default_folder(Some(PathBuf::from("/Users/a/Documents"))),
-            PathBuf::from("/Users/a/Documents/CaterCow Content")
+            PathBuf::from("/Users/a/Documents/catercow-content")
         );
     }
 

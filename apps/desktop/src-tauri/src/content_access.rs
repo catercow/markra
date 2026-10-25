@@ -526,12 +526,12 @@ mod tests {
                 email: "e@catercow.com".into(),
                 expires_at: "2999-01-01T00:00:00.000Z".into(),
             }),
-            folder: Some("/x/CaterCow Content".into()),
+            folder: Some("/x/catercow-content".into()),
         };
         write_access(&path, &file).unwrap();
         let read = read_access(&path);
         assert_eq!(live_session(&read).map(|session| session.email.as_str()), Some("e@catercow.com"));
-        assert_eq!(read.folder.as_deref(), Some("/x/CaterCow Content"));
+        assert_eq!(read.folder.as_deref(), Some("/x/catercow-content"));
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;

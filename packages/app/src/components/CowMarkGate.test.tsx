@@ -14,7 +14,7 @@ function mockAccess(overrides: Partial<ContentAccessRuntime> = {}) {
     setFolder: vi.fn(async () => undefined),
     signIn: vi.fn(async () => ({ email: "editor@catercow.com", expiresAt: "2999-01-01T00:00:00.000Z" })),
     signOut: vi.fn(async () => undefined),
-    state: vi.fn(async () => ({ defaultFolder: "/Users/e/Documents/CaterCow Content", email: null, expiresAt: null, folder: null })),
+    state: vi.fn(async () => ({ defaultFolder: "/Users/e/Documents/catercow-content", email: null, expiresAt: null, folder: null })),
     status: vi.fn(async () => ({ ahead: 0, branch: "studio", changes: [] })),
     update: vi.fn(async () => ({ committed: false, head: "abc" }))
   };
@@ -44,24 +44,24 @@ describe("CowMarkGate", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Sign in with Google" }));
     expect(access.signIn).toHaveBeenCalledWith(site);
-    expect(await screen.findByTestId("cowmark-dest")).toHaveTextContent("/Users/e/Documents/CaterCow Content");
+    expect(await screen.findByTestId("cowmark-dest")).toHaveTextContent("/Users/e/Documents/catercow-content");
 
     fireEvent.click(screen.getByRole("button", { name: "Download the content" }));
     expect(await screen.findByTestId("workspace")).toHaveTextContent(
-      "/Users/e/Documents/CaterCow Content | editor@catercow.com"
+      "/Users/e/Documents/catercow-content | editor@catercow.com"
     );
-    expect(access.clone).toHaveBeenCalledWith("/Users/e/Documents/CaterCow Content");
+    expect(access.clone).toHaveBeenCalledWith("/Users/e/Documents/catercow-content");
     expect(renderWorkspace).toHaveBeenCalled();
   });
 
   it("opens an existing clone without signing in, and skips get-latest when signed out", async () => {
     const access = mockAccess({
       isCheckout: vi.fn(async () => true),
-      state: vi.fn(async () => ({ defaultFolder: "/d", email: null, expiresAt: null, folder: "/work/CaterCow Content" }))
+      state: vi.fn(async () => ({ defaultFolder: "/d", email: null, expiresAt: null, folder: "/work/catercow-content" }))
     });
     renderGate();
 
-    expect(await screen.findByTestId("workspace")).toHaveTextContent("/work/CaterCow Content | signed out");
+    expect(await screen.findByTestId("workspace")).toHaveTextContent("/work/catercow-content | signed out");
     expect(screen.queryByRole("button", { name: "Sign in with Google" })).not.toBeInTheDocument();
     expect(access.status).not.toHaveBeenCalled();
     expect(access.update).not.toHaveBeenCalled();
@@ -89,7 +89,7 @@ describe("CowMarkGate", () => {
   });
 
   it("lets the first setup pick another location", async () => {
-    mockAccess({ state: vi.fn(async () => ({ defaultFolder: "/d/CaterCow Content", email: "e@catercow.com", expiresAt: "x", folder: null })) });
+    mockAccess({ state: vi.fn(async () => ({ defaultFolder: "/d/catercow-content", email: "e@catercow.com", expiresAt: "x", folder: null })) });
     const runtime = getAppRuntime();
     configureAppRuntime({
       ...runtime,
@@ -98,7 +98,7 @@ describe("CowMarkGate", () => {
     renderGate();
 
     fireEvent.click(await screen.findByRole("button", { name: "Choose another location…" }));
-    await waitFor(() => expect(screen.getByTestId("cowmark-dest")).toHaveTextContent("/Volumes/Work/CaterCow Content"));
+    await waitFor(() => expect(screen.getByTestId("cowmark-dest")).toHaveTextContent("/Volumes/Work/catercow-content"));
   });
 });
 
@@ -125,7 +125,7 @@ describe("App in the CowMark build", () => {
   it("opens the managed folder on launch even when signed out", async () => {
     mockAccess({
       isCheckout: vi.fn(async () => true),
-      state: vi.fn(async () => ({ defaultFolder: "/d", email: null, expiresAt: null, folder: "/work/CaterCow Content" }))
+      state: vi.fn(async () => ({ defaultFolder: "/d", email: null, expiresAt: null, folder: "/work/catercow-content" }))
     });
     const runtime = getAppRuntime();
     const loadMarkdownFilesForPath = vi.fn(async () => []);
@@ -139,7 +139,7 @@ describe("App in the CowMark build", () => {
 
     await waitFor(() => {
       const paths = [...loadMarkdownFilesForPath.mock.calls, ...listMarkdownFilesForPath.mock.calls].map((call) => (call as unknown[])[0]);
-      expect(paths).toContain("/work/CaterCow Content");
+      expect(paths).toContain("/work/catercow-content");
     });
     expect(screen.queryByRole("heading", { name: "CowMark" })).toBeNull();
   });
