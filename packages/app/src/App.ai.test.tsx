@@ -95,14 +95,14 @@ describe("Markra AI workspace", () => {
     expect(within(agentPanel).getByRole("combobox", { name: "AI model" })).toHaveTextContent("OpenAI · GPT-5.5");
     expect(within(agentPanel).getByRole("button", { name: "Attach images" })).toBeEnabled();
     expect((container.querySelector(".editor-agent-layout") as HTMLElement).style.gridTemplateColumns).toBe(
-      "minmax(0,1fr) 384px"
+      "minmax(0,1fr) 0px 384px"
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Close Markra AI" }));
 
     expect(screen.getByRole("button", { name: "Toggle Markra AI" })).toHaveAttribute("aria-pressed", "false");
     expect((container.querySelector(".editor-agent-layout") as HTMLElement).style.gridTemplateColumns).toBe(
-      "minmax(0,1fr) 0px"
+      "minmax(0,1fr) 0px 0px"
     );
   });
 

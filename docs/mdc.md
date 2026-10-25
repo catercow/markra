@@ -15,6 +15,16 @@ This fork edits [MDC](https://content.nuxt.com/docs/files/markdown) (Nuxt Conten
 
 The file is saved exactly as typed. Cards and forms never change text by themselves.
 
+## Site preview (desktop only)
+
+When the open folder has a `preview.json` (`{ "site": "https://…" }`), the globe button in the title bar opens the site beside the editor. The site shows the folder's changes before they are committed:
+
+- **On load**, the site sends `catercow:draft:ready` with the commit it was built from. `content_preview_pending` (`apps/desktop/src-tauri/src/content_preview.rs`) diffs the folder against that commit with git (committed, staged, unstaged and untracked files under `content/` and `public/`), and the panel posts every change. Without that commit it falls back to `origin/studio` and says so.
+- **While open**, `content_preview_poll` rescans the folder each second, so saves from any app appear. The open document is sent as you type, unsaved edits included.
+- Git is the system `git` or the copy inside GitHub Desktop.
+
+The site accepts messages only from origins in its `NUXT_PUBLIC_DRAFT_PREVIEW_ALLOWED_ORIGINS`, which must include `tauri://localhost` (macOS) and `http://tauri.localhost` (Windows). The protocol and the site side are in the CaterCow monorepo, `js/nuxt4/modules/draft-preview`.
+
 ## Differences from plain Markdown while MDC is on
 
 - **Indented code blocks are off.** Nested components are often indented four spaces or more, and MDC renderers dedent them, so such lines are content, not code. Fenced code blocks still work, including indented ones.

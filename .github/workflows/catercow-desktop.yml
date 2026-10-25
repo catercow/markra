@@ -82,6 +82,11 @@ jobs:
           --target ${{ matrix.target }}
           --bundles ${{ matrix.bundle }}
 
+      # After the build: compiling the crate needs the frontend bundle it embeds.
+      - name: Test the content preview
+        working-directory: ${{ env.DESKTOP_DIR }}/src-tauri
+        run: cargo test --release --target ${{ matrix.target }} content_preview
+
       - name: Collect the installer
         id: installer
         shell: bash

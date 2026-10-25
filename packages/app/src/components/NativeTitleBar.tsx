@@ -6,6 +6,7 @@ import {
   FileText,
   Focus,
   FolderOpen,
+  Globe,
   History,
   ImageIcon,
   Moon,
@@ -61,6 +62,10 @@ type EditorViewMode = "visual" | "source" | "split";
 
 type NativeTitleBarProps = {
   aiAgentOpen: boolean;
+  /** Whether the AI toggle shows as pressed; defaults to aiAgentOpen. aiAgentOpen/aiAgentWidth reserve the right panels' space. */
+  aiAgentPressed?: boolean;
+  contentPreviewOpen?: boolean;
+  onToggleContentPreview?: () => unknown;
   aiAgentResizing?: boolean;
   aiAgentWidth?: number;
   compactLayout?: boolean;
@@ -119,6 +124,9 @@ function mergeClassNames(...classNames: Array<string | false | null | undefined>
 
 export function NativeTitleBar({
   aiAgentOpen,
+  aiAgentPressed,
+  contentPreviewOpen = false,
+  onToggleContentPreview,
   aiAgentResizing = false,
   aiAgentWidth = 384,
   compactLayout = false,
@@ -434,13 +442,13 @@ export function NativeTitleBar({
       return (
         <IconButton
           className={mergeClassNames(
-            aiAgentOpen
+            (aiAgentPressed ?? aiAgentOpen)
               ? "bg-(--bg-active) text-(--text-heading) opacity-100"
               : "bg-transparent text-(--text-secondary) hover:bg-(--bg-hover) hover:text-(--text-heading)",
             sortable.actionClassName
           )}
           label={label("app.toggleAiAgent")}
-          pressed={aiAgentOpen}
+          pressed={aiAgentPressed ?? aiAgentOpen}
           onClick={(event) => handleTitlebarActionClick("aiAgent", event, onToggleAiAgent)}
           {...sortable.actionAttributes}
           {...sortable.actionListeners}
@@ -610,6 +618,18 @@ export function NativeTitleBar({
       aria-label={label("app.fileActions")}
       style={style}
     >
+      {onToggleContentPreview ? (
+        <IconButton
+          className={contentPreviewOpen
+            ? "bg-(--bg-active) text-(--text-heading) opacity-100"
+            : "bg-transparent text-(--text-secondary) hover:bg-(--bg-hover) hover:text-(--text-heading)"}
+          label={label("app.contentPreviewToggle")}
+          pressed={contentPreviewOpen}
+          onClick={() => onToggleContentPreview()}
+        >
+          <Globe aria-hidden="true" size={15} />
+        </IconButton>
+      ) : null}
       <DndContext
         collisionDetection={closestCenter}
         sensors={sensors}

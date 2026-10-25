@@ -5,6 +5,7 @@ mod app_exit;
 mod app_logs;
 mod backup;
 mod clipboard;
+mod content_preview;
 mod external_urls;
 mod fonts;
 mod image_upload;
@@ -83,6 +84,10 @@ use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_window_state::StateFlags;
 use text_file::{read_text_file, write_text_file};
+use content_preview::{
+    content_preview_pending, content_preview_poll, content_preview_read_media, content_preview_stop,
+    ContentPreviewState,
+};
 use themes::{list_themes, open_theme_folder, read_theme};
 use watcher::{
     unwatch_markdown_file, unwatch_markdown_tree, watch_markdown_file, watch_markdown_tree,
@@ -226,7 +231,8 @@ pub fn run() {
         .manage(NativeMenuTargetState::default())
         .manage(EditorWindowRestoreState::default())
         .manage(AcpAgentProcessState::default())
-        .manage(PortableUpdateState::default());
+        .manage(PortableUpdateState::default())
+        .manage(ContentPreviewState::default());
 
     #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
@@ -366,6 +372,10 @@ pub fn run() {
             resolve_markdown_path,
             read_markdown_file,
             read_text_file,
+            content_preview_pending,
+            content_preview_poll,
+            content_preview_read_media,
+            content_preview_stop,
             list_markdown_file_history,
             read_markdown_file_history,
             read_markdown_image_file,

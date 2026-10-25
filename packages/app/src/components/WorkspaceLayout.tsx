@@ -10,6 +10,7 @@ type MarkdownFileTreeDrawerProps = ComponentProps<typeof MarkdownFileTreeDrawer>
 
 type WorkspaceLayoutProps = {
   aiAgentPanel: ReactNode;
+  contentPreviewPanel?: ReactNode;
   children: ReactNode;
   compactFileTreeOverlay?: boolean;
   documentSearchAvailable: boolean;
@@ -29,6 +30,7 @@ type WorkspaceLayoutProps = {
 
 export function WorkspaceLayout({
   aiAgentPanel,
+  contentPreviewPanel,
   children,
   compactFileTreeOverlay = false,
   documentSearchAvailable,
@@ -87,6 +89,10 @@ export function WorkspaceLayout({
           onDrop={onEditorContentDrop}
         >
           {children}
+        </div>
+
+        <div className="content-preview-panel-slot relative z-20 min-h-0 overflow-hidden">
+          {contentPreviewPanel}
         </div>
 
         <div className="ai-agent-panel-slot relative z-20 min-h-0 overflow-hidden">

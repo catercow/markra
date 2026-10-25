@@ -93,6 +93,7 @@ import { useWorkspaceBackupSync } from "./hooks/useWorkspaceBackupSync";
 import { useWorkspaceSearch } from "./hooks/useWorkspaceSearch";
 import { useWorkspaceAssetCleanup } from "./hooks/useWorkspaceAssetCleanup";
 import { useMdcSchema } from "./hooks/useMdcSchema";
+import { useContentPreviewConfig } from "./hooks/useContentPreviewConfig";
 import {
   useApplicationShortcuts,
   useNativeMarkdownDrop,
@@ -359,6 +360,14 @@ const AiAgentPanel = lazy(async () => {
 
   return { default: module.AiAgentPanel };
 });
+const ContentPreviewPanel = lazy(async () => {
+  const module = await import("./components/ContentPreviewPanel");
+
+  return { default: module.ContentPreviewPanel };
+});
+const contentPreviewDefaultWidth = 520;
+const contentPreviewMinWidth = 360;
+const contentPreviewMaxWidth = 1200;
 const SettingsWindow = lazy(async () => {
   const module = await import("./components/SettingsWindow");
 
@@ -792,6 +801,12 @@ function WorkspaceApp() {
     [fileTreeSourcePath]
   );
   const mdcSchema = useMdcSchema(defaultMarkdownSaveDirectory);
+  const contentPreviewConfig = useContentPreviewConfig(defaultMarkdownSaveDirectory);
+  const [contentPreviewOpen, setContentPreviewOpen] = useState(false);
+  const [contentPreviewWidth, setContentPreviewWidth] = useState(contentPreviewDefaultWidth);
+  const [contentPreviewResizing, setContentPreviewResizing] = useState(false);
+  const visibleContentPreviewOpen = Boolean(contentPreviewConfig && defaultMarkdownSaveDirectory) && contentPreviewOpen;
+  const contentPreviewInsetPx = visibleContentPreviewOpen ? contentPreviewWidth : 0;
   const savedExtendedSyntax = editorPreferences.preferences.extendedSyntax;
   // A workspace that ships a components schema is an MDC workspace.
   const extendedSyntax = useMemo(
@@ -1572,9 +1587,10 @@ function WorkspaceApp() {
   }, [restoreAiAgentPanelSession]);
   const visibleAiAgentOpen = viewModeChrome.aiPanel && aiFeatureEnabled && aiAgentOpen;
   const aiAgentInset = visibleAiAgentOpen ? `${aiAgentPanelWidth}px` : "0px";
+  const rightPanelsWidth = contentPreviewInsetPx + (visibleAiAgentOpen ? aiAgentPanelWidth : 0);
   const editorAreaWidth = Math.max(0, viewportWidth -
     (visibleFileTreeOpen && !compactViewport ? fileTreeWidth : 0) -
-    (visibleAiAgentOpen ? aiAgentPanelWidth : 0));
+    rightPanelsWidth);
   const activeEditorContentWidthValue = activeEditorContentWidthPx ?? editorContentWidthPixels[activeEditorContentWidth];
   const editorWidthResizerVisible = shouldShowEditorWidthResizer({
     aiAgentOpen: visibleAiAgentOpen,
@@ -1582,7 +1598,7 @@ function WorkspaceApp() {
     editorContentWidth: activeEditorContentWidthValue
   });
   const editorAgentLayoutClassName = `editor-agent-layout grid min-h-0 ${
-    aiAgentPanelResizing
+    aiAgentPanelResizing || contentPreviewResizing
       ? "transition-none"
       : "transition-[grid-template-columns] duration-220 ease-out motion-reduce:transition-none"
   }`;
@@ -4753,6 +4769,23 @@ function WorkspaceApp() {
       />
     </Suspense>
   ) : null;
+  const contentPreviewPanel = visibleContentPreviewOpen && contentPreviewConfig && defaultMarkdownSaveDirectory ? (
+    <Suspense fallback={null}>
+      <ContentPreviewPanel
+        activeDocument={hasOpenDocument && !activeImageFile ? { content: document.content, path: document.path } : null}
+        config={contentPreviewConfig}
+        language={appLanguage.language}
+        maxWidth={contentPreviewMaxWidth}
+        minWidth={contentPreviewMinWidth}
+        rootPath={defaultMarkdownSaveDirectory}
+        width={contentPreviewWidth}
+        onClose={() => setContentPreviewOpen(false)}
+        onResize={setContentPreviewWidth}
+        onResizeEnd={() => setContentPreviewResizing(false)}
+        onResizeStart={() => setContentPreviewResizing(true)}
+      />
+    </Suspense>
+  ) : null;
   const workspaceOperationEvents = useMemo(
     () => workspaceOperationEventsFromPlanEvents(aiAgent.workspacePlanEvents),
     [aiAgent.workspacePlanEvents]
@@ -4783,9 +4816,12 @@ function WorkspaceApp() {
       <AppToaster language={appLanguage.language} />
       <main className="app-shell group/app relative grid h-full w-full grid-rows-[minmax(0,1fr)] overflow-hidden overscroll-none bg-(--bg-primary) text-(--text-primary)">
         <NativeTitleBar
-          aiAgentOpen={visibleAiAgentOpen}
-          aiAgentResizing={aiAgentPanelResizing}
-          aiAgentWidth={aiAgentPanelWidth}
+          aiAgentOpen={rightPanelsWidth > 0}
+          aiAgentPressed={visibleAiAgentOpen}
+          aiAgentResizing={aiAgentPanelResizing || contentPreviewResizing}
+          aiAgentWidth={rightPanelsWidth}
+          contentPreviewOpen={visibleContentPreviewOpen}
+          onToggleContentPreview={contentPreviewConfig ? () => setContentPreviewOpen((open) => !open) : undefined}
           compactLayout={compactViewport}
           dirty={!activeImageFile && hasOpenDocument && document.dirty}
           documentKind={titleDocumentKind}
@@ -4837,7 +4873,7 @@ function WorkspaceApp() {
             onClose={() => setDocumentHistoryOpen(false)}
             onRestore={handleDocumentHistoryRestore}
             refreshKey={documentHistoryRefreshKey}
-            rightInsetPx={visibleAiAgentOpen ? aiAgentPanelWidth : 0}
+            rightInsetPx={rightPanelsWidth}
             windowsSelfDrawnChrome={windowsSelfDrawnChromeEnabled}
           />
         ) : null}
@@ -4860,13 +4896,14 @@ function WorkspaceApp() {
 
         <WorkspaceLayout
           aiAgentPanel={aiAgentPanel}
+          contentPreviewPanel={contentPreviewPanel}
           compactFileTreeOverlay={compactViewport}
           documentSearchAvailable={documentSearchAvailable}
           documentSearchOpen={documentSearchOpen}
           editorAgentLayoutClassName={editorAgentLayoutClassName}
           editorAgentLayoutStyle={{
-            "--markra-ai-agent-inset": aiAgentInset,
-            gridTemplateColumns: `minmax(0,1fr) ${aiAgentInset}`
+            "--markra-ai-agent-inset": `${rightPanelsWidth}px`,
+            gridTemplateColumns: `minmax(0,1fr) ${contentPreviewInsetPx}px ${aiAgentInset}`
           } as CSSProperties}
           editorDropTargetActive={editorTabDropTargetActive}
           fileTree={{

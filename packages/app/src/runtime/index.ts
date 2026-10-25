@@ -1,4 +1,5 @@
 import type { AppLanguage } from "@markra/shared";
+import type { ContentPreviewRuntime } from "../lib/content-preview";
 import type { MarkdownShortcutMap } from "@markra/editor";
 import type { DesktopPlatform } from "../lib/platform";
 import type { ContextMenuEntry } from "../components/ContextMenu";
@@ -207,6 +208,8 @@ export type AppFileRuntime = {
   readMarkdownTemplateFile: (fileName: string) => Promise<string>;
   readS3TextFile: (input: ReadNativeS3TextFileInput) => Promise<string>;
   readWebDavTextFile: (input: ReadNativeWebDavTextFileInput) => Promise<string>;
+  /** Git-backed change listing for the CaterCow content preview; desktop only. */
+  contentPreview?: ContentPreviewRuntime;
   /** Reads any text file by runtime path; resolves null when it is missing or unreadable. */
   readWorkspaceTextFile?: (path: string) => Promise<string | null>;
   renameMarkdownTreeFile: (
