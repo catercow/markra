@@ -22,7 +22,7 @@ env:
   NODE_VERSION: 24
   PNPM_VERSION: 10.30.3
   # Built into the frontend; turns on CowMark sign-in, the managed folder and Save to studio.
-  VITE_CATERCOW_PREVIEW_SITE: https://catercow-content-preview-frtydcxt7a-ue.a.run.app
+  VITE_CATERCOW_PREVIEW_SITE: https://content-preview.catercow.com
 
 jobs:
   build:
