@@ -139,8 +139,17 @@ function normalizeComparableMarkdownHeadings(content: string) {
   const lines = content.replace(/\r\n?/gu, "\n").split("\n");
   const normalized: string[] = [];
   let fencedMarker: "`" | "~" | null = null;
+  let mdcProps = false;
 
   for (const line of lines) {
+    // An MDC component's `---` YAML props block is not a setext underline.
+    if (mdcProps || (line.trim() === "---" && /^\s*:{2,}[A-Za-z][\w-]*/u.test(normalized.at(-1) ?? ""))) {
+      if (mdcProps && line.trim() === "---") mdcProps = false;
+      else if (!mdcProps) mdcProps = true;
+      normalized.push(line);
+      continue;
+    }
+
     const fenceMatch = line.match(/^\s*(`{3,}|~{3,})/u);
     if (fenceMatch) {
       const marker = fenceMatch[1]!.startsWith("~") ? "~" : "`";

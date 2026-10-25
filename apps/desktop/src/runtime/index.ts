@@ -119,6 +119,7 @@ export const desktopRuntime = {
     readMarkdownTemplateFile: files.readNativeMarkdownTemplateFile,
     readS3TextFile: files.readNativeS3TextFile,
     readWebDavTextFile: files.readNativeWebDavTextFile,
+    readWorkspaceTextFile: files.readNativeWorkspaceTextFile,
     renameMarkdownTreeFile: files.renameNativeMarkdownTreeFile,
     resolveMarkdownPath: files.resolveNativeMarkdownPath,
     saveClipboardAttachment: files.saveNativeClipboardAttachment,

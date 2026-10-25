@@ -92,6 +92,7 @@ import { useStartupWindowReveal } from "./hooks/useStartupWindowReveal";
 import { useWorkspaceBackupSync } from "./hooks/useWorkspaceBackupSync";
 import { useWorkspaceSearch } from "./hooks/useWorkspaceSearch";
 import { useWorkspaceAssetCleanup } from "./hooks/useWorkspaceAssetCleanup";
+import { useMdcSchema } from "./hooks/useMdcSchema";
 import {
   useApplicationShortcuts,
   useNativeMarkdownDrop,
@@ -789,6 +790,13 @@ function WorkspaceApp() {
   const defaultMarkdownSaveDirectory = useMemo(
     () => defaultSaveDirectoryFromFileTree(fileTreeSourcePath),
     [fileTreeSourcePath]
+  );
+  const mdcSchema = useMdcSchema(defaultMarkdownSaveDirectory);
+  const savedExtendedSyntax = editorPreferences.preferences.extendedSyntax;
+  // A workspace that ships a components schema is an MDC workspace.
+  const extendedSyntax = useMemo(
+    () => (mdcSchema && !savedExtendedSyntax.mdc ? { ...savedExtendedSyntax, mdc: true } : savedExtendedSyntax),
+    [mdcSchema, savedExtendedSyntax]
   );
   const confirmDiscardUnsavedChanges = useCallback((currentDocument: { name: string }) => {
     return confirmNativeUnsavedMarkdownDocumentDiscard(currentDocument.name, {
@@ -4626,11 +4634,12 @@ function WorkspaceApp() {
               documentPath={tab.path}
               editorFontFamily={editorPreferences.preferences.editorFontFamily}
               editorTheme={appTheme.editorTheme}
-              extendedSyntax={editorPreferences.preferences.extendedSyntax}
+              extendedSyntax={extendedSyntax}
               initialContent={tab.content}
               language={appLanguage.language}
               lineHeight={editorPreferences.preferences.lineHeight}
               markdownShortcuts={editorPreferences.preferences.markdownShortcuts}
+              mdcSchema={mdcSchema}
               paragraphSpacingPx={editorPreferences.preferences.paragraphSpacingPx}
               onActiveOutlineIndexChange={tabActive ? handleActiveOutlineIndexChange : undefined}
               onEditorReady={(readyEditor, disposedEditor) =>
@@ -5064,7 +5073,7 @@ function WorkspaceApp() {
                           contentWidth={activeEditorContentWidth}
                           contentWidthPx={activeEditorContentWidthPx}
                           editorFontFamily={editorPreferences.preferences.editorFontFamily}
-                          extendedSyntax={editorPreferences.preferences.extendedSyntax}
+                          extendedSyntax={extendedSyntax}
                           initialSelection={activeSourceInitialSelection}
                           language={appLanguage.language}
                           lineHeight={editorPreferences.preferences.lineHeight}
@@ -5105,7 +5114,7 @@ function WorkspaceApp() {
                           contentWidth={activeEditorContentWidth}
                           contentWidthPx={activeEditorContentWidthPx}
                           editorFontFamily={editorPreferences.preferences.editorFontFamily}
-                          extendedSyntax={editorPreferences.preferences.extendedSyntax}
+                          extendedSyntax={extendedSyntax}
                           initialSelection={activeSourceInitialSelection}
                           language={appLanguage.language}
                           lineHeight={editorPreferences.preferences.lineHeight}
@@ -5172,10 +5181,11 @@ function WorkspaceApp() {
                         documentPath={sideDocumentTab.path}
                         editorFontFamily={editorPreferences.preferences.editorFontFamily}
                         editorTheme={appTheme.editorTheme}
-                        extendedSyntax={editorPreferences.preferences.extendedSyntax}
+                        extendedSyntax={extendedSyntax}
                         language={appLanguage.language}
                         lineHeight={editorPreferences.preferences.lineHeight}
                         markdownShortcuts={editorPreferences.preferences.markdownShortcuts}
+                        mdcSchema={mdcSchema}
                         paragraphSpacingPx={editorPreferences.preferences.paragraphSpacingPx}
                         mode={sourceMode ? "source" : "visual"}
                         onSaveClipboardAttachment={(attachment) => handleSaveClipboardAttachment(attachment, sideDocumentTab.path)}
@@ -5271,7 +5281,7 @@ function WorkspaceApp() {
       {exportFeatureEnabled ? (
         <MarkdownExportDocument
           snapshot={exportSnapshot}
-          extendedSyntax={editorPreferences.preferences.extendedSyntax}
+          extendedSyntax={extendedSyntax}
           resolveImageSrc={resolveExportImageSrc}
           onRendered={handleRenderedExport}
         />

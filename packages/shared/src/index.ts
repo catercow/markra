@@ -6,6 +6,7 @@ export * from "./keyboard-shortcuts.ts";
 export * from "./lucide.ts";
 export * from "./markdown-callout.ts";
 export * from "./markdown-image-drag.ts";
+export * from "./mdc-schema.ts";
 export * from "./number.ts";
 export * from "./path.ts";
 export * from "./popover.ts";

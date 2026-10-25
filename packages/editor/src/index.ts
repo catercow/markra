@@ -9,3 +9,4 @@ export * from "./mermaid.ts";
 export * from "./raw-html-sanitize.ts";
 export * from "./shortcuts.ts";
 export * from "./spellcheck.ts";
+export * from "./mdc/index.ts";

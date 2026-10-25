@@ -1074,6 +1074,16 @@ export async function openNativeMarkdownPath(labels?: NativeMarkdownPickerLabels
   };
 }
 
+export async function readNativeWorkspaceTextFile(path: string): Promise<string | null> {
+  try {
+    const file = await invokeNative<TextFileResponse>("read_text_file", { path });
+
+    return file.contents;
+  } catch {
+    return null;
+  }
+}
+
 export async function openNativeSettingsFile(labels?: NativeMarkdownPickerLabels): Promise<NativeSettingsFile | null> {
   const selectedPath = await open({
     multiple: false,

@@ -38,6 +38,7 @@ type MarkdownPaperProps = {
   language?: AppLanguage;
   lineHeight?: number;
   markdownShortcuts?: CodeMirrorPaperSurfaceProps["markdownShortcuts"];
+  mdcSchema?: CodeMirrorPaperSurfaceProps["mdcSchema"];
   onActiveOutlineIndexChange?: CodeMirrorPaperSurfaceProps["onActiveOutlineIndexChange"];
   onEditorReady: CodeMirrorPaperSurfaceProps["onEditorReady"];
   onMarkdownChange: CodeMirrorPaperSurfaceProps["onMarkdownChange"];
@@ -110,6 +111,7 @@ export function MarkdownPaper({
   language = "en",
   lineHeight = 1.65,
   markdownShortcuts,
+  mdcSchema,
   onActiveOutlineIndexChange,
   onEditorReady,
   onMarkdownChange,
@@ -194,6 +196,7 @@ export function MarkdownPaper({
             initialContent={initialContent}
             language={language}
             markdownShortcuts={markdownShortcuts}
+            mdcSchema={mdcSchema}
             onActiveOutlineIndexChange={onActiveOutlineIndexChange}
             onEditorReady={onEditorReady}
             onMarkdownChange={onMarkdownChange}

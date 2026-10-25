@@ -207,6 +207,8 @@ export type AppFileRuntime = {
   readMarkdownTemplateFile: (fileName: string) => Promise<string>;
   readS3TextFile: (input: ReadNativeS3TextFileInput) => Promise<string>;
   readWebDavTextFile: (input: ReadNativeWebDavTextFileInput) => Promise<string>;
+  /** Reads any text file by runtime path; resolves null when it is missing or unreadable. */
+  readWorkspaceTextFile?: (path: string) => Promise<string | null>;
   renameMarkdownTreeFile: (
     rootPath: string,
     path: string,

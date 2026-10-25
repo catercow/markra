@@ -50,7 +50,8 @@ vi.mock("../lib/settings/app-settings", () => ({
     },
     extendedSyntax: {
       githubAlerts: true,
-      highlight: true
+      highlight: true,
+      mdc: false
     },
     imageUpload: {
       fileNamePattern: "pasted-image-{timestamp}",
@@ -164,7 +165,8 @@ describe("useEditorPreferences", () => {
       },
       extendedSyntax: {
         githubAlerts: true,
-        highlight: true
+        highlight: true,
+        mdc: false
       },
       imageUpload: {
         fileNamePattern: "pasted-image-{timestamp}",
@@ -286,7 +288,8 @@ describe("useEditorPreferences", () => {
         },
         extendedSyntax: {
           githubAlerts: true,
-          highlight: false
+          highlight: false,
+          mdc: false
         },
         imageUpload: {
           fileNamePattern: "{name}-{timestamp}",

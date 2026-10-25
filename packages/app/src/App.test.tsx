@@ -418,7 +418,8 @@ function createStoredEditorPreferences(
     editorFontFamily: { family: null, source: "theme" },
     extendedSyntax: {
       githubAlerts: true,
-      highlight: true
+      highlight: true,
+      mdc: false
     },
     imageUpload: defaultImageUpload,
     lineHeight: 1.65,
@@ -1630,7 +1631,8 @@ describe("Markra workspace", () => {
         editorFontFamily: { family: null, source: "theme" },
         extendedSyntax: {
           githubAlerts: true,
-          highlight: true
+          highlight: true,
+          mdc: false
         },
         imageUpload: defaultImageUpload,
         lineHeight: 1.65,
@@ -1704,7 +1706,8 @@ describe("Markra workspace", () => {
         editorFontFamily: { family: null, source: "theme" },
         extendedSyntax: {
           githubAlerts: true,
-          highlight: true
+          highlight: true,
+          mdc: false
         },
         imageUpload: defaultImageUpload,
         lineHeight: 1.65,
@@ -3025,7 +3028,8 @@ describe("Markra workspace", () => {
       editorFontFamily: { family: null, source: "theme" },
       extendedSyntax: {
         githubAlerts: true,
-        highlight: true
+        highlight: true,
+        mdc: false
       },
       imageUpload: defaultImageUpload,
       lineHeight: 1.65,
@@ -6125,7 +6129,8 @@ describe("Markra workspace", () => {
       editorFontFamily: { family: null, source: "theme" },
       extendedSyntax: {
         githubAlerts: true,
-        highlight: true
+        highlight: true,
+        mdc: false
       },
       imageUpload: defaultImageUpload,
       lineHeight: 1.65,
@@ -6298,7 +6303,8 @@ describe("Markra workspace", () => {
       editorFontFamily: { family: null, source: "theme" },
       extendedSyntax: {
         githubAlerts: true,
-        highlight: true
+        highlight: true,
+        mdc: false
       },
       imageUpload: defaultImageUpload,
       lineHeight: 1.65,

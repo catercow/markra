@@ -392,6 +392,8 @@ export type StoredAppSettingsFile = {
 export type ExtendedSyntaxPreferences = {
   githubAlerts: boolean;
   highlight: boolean;
+  /** MDC components; also on in workspaces with schema/components.json. */
+  mdc: boolean;
 };
 export type EditorPreferences = {
   aiQuickActionPrompts: AiQuickActionPrompts;
@@ -500,7 +502,8 @@ export const defaultImageUploadSettings: ImageUploadSettings = {
 
 export const defaultExtendedSyntaxPreferences: ExtendedSyntaxPreferences = {
   githubAlerts: true,
-  highlight: true
+  highlight: true,
+  mdc: false
 };
 
 export const defaultEditorPreferences: EditorPreferences = {
@@ -1844,7 +1847,11 @@ function normalizeExtendedSyntaxPreferences(value: unknown): ExtendedSyntaxPrefe
     highlight:
       typeof preferences.highlight === "boolean"
         ? preferences.highlight
-        : defaultExtendedSyntaxPreferences.highlight
+        : defaultExtendedSyntaxPreferences.highlight,
+    mdc:
+      typeof preferences.mdc === "boolean"
+        ? preferences.mdc
+        : defaultExtendedSyntaxPreferences.mdc
   };
 }
 

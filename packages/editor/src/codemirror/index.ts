@@ -14,6 +14,7 @@ import {
 } from "./plugin.ts";
 import { livePreview, type LivePreviewConfig } from "./preview.ts";
 import { markraSlashMenu } from "./slash-menu.ts";
+import { markraMdc } from "./mdc-syntax.ts";
 import { markraSetextHeading } from "./setext-heading.ts";
 import { markraTheme } from "./theme.ts";
 
@@ -252,6 +253,8 @@ export { reconfigureCodeMirrorVimMode } from "./vim.ts";
 
 export interface LiveMarkdownConfig extends LivePreviewConfig {
   highlight?: boolean;
+  /** Parse MDC components (`::name{...}` blocks, `:name[...]` inline). */
+  mdc?: boolean;
   plugins?: readonly MarkraPlugin[];
   slashMenu?: boolean;
 }
@@ -260,17 +263,37 @@ export const markraLanguage = markdown({
   extensions: [GFM, markraHighlight, markraSetextHeading],
 });
 
+const markraLanguages = new Map<string, Extension>([["highlight", markraLanguage]]);
+
+// One instance per syntax set, so reconfiguring with the same options keeps
+// the language (and its parse cache) instead of reparsing.
+export function markraMarkdownLanguage({ highlight = true, mdc = false } = {}): Extension {
+  const key = [highlight ? "highlight" : "", mdc ? "mdc" : ""].filter(Boolean).join("+");
+  let language = markraLanguages.get(key);
+  if (!language) {
+    language = markdown({
+      extensions: [
+        GFM,
+        ...(highlight ? [markraHighlight] : []),
+        markraSetextHeading,
+        ...(mdc ? [markraMdc] : []),
+      ],
+    });
+    markraLanguages.set(key, language);
+  }
+  return language;
+}
+
 export function liveMarkdown(config: LiveMarkdownConfig = {}): Extension {
   const {
     highlight = true,
+    mdc = false,
     plugins = [],
     slashMenu = false,
     ...previewConfig
   } = config;
   return [
-    highlight
-      ? markraLanguage
-      : markdown({ extensions: [GFM, markraSetextHeading] }),
+    markraMarkdownLanguage({ highlight, mdc }),
     markdownSyntaxHighlighting,
     codeFolding(),
     livePreview(previewConfig),
@@ -279,3 +302,17 @@ export function liveMarkdown(config: LiveMarkdownConfig = {}): Extension {
     slashMenu ? markraSlashMenu() : [],
   ];
 }
+export { markraMdc, scanMdcAttributes } from "./mdc-syntax.ts";
+export type { MdcBlock, MdcRange } from "./mdc-blocks.ts";
+export { mdcBlockAt, mdcBlocksForState, readMdcBlocks, readMdcBlocksFromTree } from "./mdc-blocks.ts";
+export type { MdcPreviewComponentInfo, MdcPreviewPluginOptions } from "./mdc-preview.ts";
+export { mdcPreviewPlugin } from "./mdc-preview.ts";
+export type { MdcPropsText } from "./mdc-edit.ts";
+export {
+  mdcBlockAtSelection,
+  mdcPropsChanges,
+  mdcPropsEditorField,
+  openMdcBlock,
+  openMdcPropsEditor,
+  readMdcPropsText,
+} from "./mdc-edit.ts";

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { t, type AppLanguage } from "@markra/shared";
+import { t, type AppLanguage, type MdcSchema } from "@markra/shared";
 import type { MarkdownShortcutMap, Spellchecker } from "@markra/editor";
 import type { EditorContentWidth } from "../lib/editor-width";
 import type { EditorFontFamilyPreference } from "../lib/editor-font";
@@ -23,6 +23,7 @@ type SideDocumentPaneProps = {
   language?: AppLanguage;
   lineHeight: number;
   markdownShortcuts?: MarkdownShortcutMap;
+  mdcSchema?: MdcSchema | null;
   mode: "source" | "visual";
   paragraphSpacingPx?: number;
   openLocalAttachment?: (src: string) => unknown;
@@ -68,6 +69,7 @@ export function SideDocumentPane({
   language = "en",
   lineHeight,
   markdownShortcuts,
+  mdcSchema,
   mode,
   paragraphSpacingPx = 8,
   openLocalAttachment,
@@ -141,6 +143,7 @@ export function SideDocumentPane({
           language={language}
           lineHeight={lineHeight}
           markdownShortcuts={markdownShortcuts}
+          mdcSchema={mdcSchema}
           paragraphSpacingPx={paragraphSpacingPx}
           onEditorReady={ignoreSideEditorReady}
           onMarkdownChange={onChange}

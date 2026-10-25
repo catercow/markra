@@ -9,6 +9,7 @@ const PREFORMATTED_BLOCKS = new Set([
   "FencedCode",
   "Frontmatter",
   "HTMLBlock",
+  "MdcProps",
 ]);
 const frontmatterCache = new WeakMap<
   EditorState,

@@ -2,6 +2,8 @@ import {
   blocksPlugin,
   codeMirrorBlockDragPlugin,
   calloutPreviewPlugin,
+  mdcPreviewPlugin,
+  type MdcPreviewComponentInfo,
   codeMirrorClipboardAssetsPlugin,
   codeMirrorAiPreviewPlugin,
   codeMirrorAiSelectionHoldPlugin,
@@ -56,7 +58,7 @@ import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { minimalSetup } from "codemirror";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { t, type AppLanguage } from "@markra/shared";
+import { t, type AppLanguage, type MdcSchema } from "@markra/shared";
 import type {
   ExtendedSyntaxPreferences,
   TableColumnWidthModePreference,
@@ -81,6 +83,7 @@ import {
 import { codeMirrorVimLabels } from "../lib/vim-labels";
 import { CodeMirrorEditorFloatingMenus } from "./CodeMirrorEditorFloatingMenus";
 import { CodeMirrorPluginUi } from "./CodeMirrorPluginUi";
+import { MdcPropsPanel } from "./MdcPropsPanel";
 import {
   SpellcheckSuggestionMenu,
   type SpellcheckSuggestionMenuState,
@@ -95,6 +98,8 @@ export interface CodeMirrorPaperSurfaceProps {
   initialContent: string;
   language?: AppLanguage;
   markdownShortcuts?: MarkdownShortcutMap;
+  /** Components schema loaded from the workspace's `schema/components.json`, if present. */
+  mdcSchema?: MdcSchema | null;
   onAddSpellcheckIgnoredWord?: (word: string) => unknown;
   onActiveOutlineIndexChange?: (index: number | null) => unknown;
   onEditorReady: (
@@ -155,6 +160,7 @@ interface MarkdownExtensionOptions {
   shortcuts?: MarkdownShortcutMap;
   tableColumnWidthMode: TableColumnWidthModePreference;
   workspaceFiles: () => MarkdownDocumentLinkFile[];
+  mdcComponents: () => readonly MdcPreviewComponentInfo[] | null | undefined;
 }
 
 function markdownExtension({
@@ -173,7 +179,9 @@ function markdownExtension({
   shortcuts,
   tableColumnWidthMode,
   workspaceFiles,
+  mdcComponents,
 }: MarkdownExtensionOptions) {
+  const mdc = extendedSyntax?.mdc ?? false;
   const linkOptions = openExternalUrl() || openLocalAttachment()
     ? {
         open: ({ source, target }: { source: string; target: string }) => {
@@ -219,6 +227,7 @@ function markdownExtension({
 
   return liveMarkdown({
     highlight: extendedSyntax?.highlight ?? true,
+    mdc,
     resolveLinkTarget: linkOptions?.resolveTarget,
     hideHeadingMarkersOnFocus,
     paragraphSpacing: paragraphSpacingPx,
@@ -250,6 +259,7 @@ function markdownExtension({
       calloutPreviewPlugin({
         enabled: extendedSyntax?.githubAlerts ?? true,
       }),
+      mdcPreviewPlugin({ components: mdcComponents, enabled: mdc }),
       codeBlockPreviewPlugin({ showLineNumbers: showCodeBlockLineNumbers }),
       documentLinksPlugin({
         items: ({ query }) =>
@@ -364,6 +374,7 @@ export function CodeMirrorPaperSurface({
   initialContent,
   language = "en",
   markdownShortcuts,
+  mdcSchema,
   onAddSpellcheckIgnoredWord,
   onActiveOutlineIndexChange,
   onEditorReady,
@@ -417,6 +428,7 @@ export function CodeMirrorPaperSurface({
   const vimModeCompartmentRef = useRef(new Compartment());
   const spellcheckIgnoredWordsRef = useRef(spellcheckIgnoredWords);
   const workspaceFilesRef = useRef(workspaceFiles);
+  const mdcSchemaRef = useRef(mdcSchema);
 
   useEffect(() => {
     documentPathRef.current = documentPath;
@@ -433,6 +445,10 @@ export function CodeMirrorPaperSurface({
   useEffect(() => {
     workspaceFilesRef.current = workspaceFiles;
   }, [workspaceFiles]);
+
+  useEffect(() => {
+    mdcSchemaRef.current = mdcSchema;
+  }, [mdcSchema]);
 
   useEffect(() => {
     onActiveOutlineIndexChangeRef.current = onActiveOutlineIndexChange;
@@ -570,6 +586,7 @@ export function CodeMirrorPaperSurface({
               shortcuts: markdownShortcuts,
               tableColumnWidthMode,
               workspaceFiles: () => workspaceFilesRef.current,
+              mdcComponents: () => mdcSchemaRef.current?.components,
             }),
           ),
           markraPlugins([
@@ -719,6 +736,7 @@ export function CodeMirrorPaperSurface({
           shortcuts: markdownShortcuts,
           tableColumnWidthMode,
           workspaceFiles: () => workspaceFilesRef.current,
+          mdcComponents: () => mdcSchemaRef.current?.components,
         }),
       ),
     });
@@ -808,6 +826,7 @@ export function CodeMirrorPaperSurface({
         slashMenuLabel={t(language, "editor.slashCommands")}
       />
       <CodeMirrorPluginUi pluginIds={plugins.map((plugin) => plugin.id)} />
+      {extendedSyntax?.mdc ? <MdcPropsPanel language={language} schema={mdcSchema} /> : null}
       {spellcheckMenu ? (
         <SpellcheckSuggestionMenu
           language={language}

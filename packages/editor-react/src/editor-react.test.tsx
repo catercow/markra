@@ -12,6 +12,7 @@ import {
   documentLinksPlugin,
   formattingPlugin,
   liveMarkdown,
+  mdcPreviewPlugin,
 } from "@markra/editor/codemirror";
 import {
   MarkraEditorProvider,
@@ -21,6 +22,8 @@ import {
   useMarkraEditorSelectionToolbar,
   useMarkraEditorSlashMenu,
   useMarkraEditorUi,
+  useMarkraMdcPropsEditor,
+  type MarkraMdcPropsEditorState,
 } from "./index.ts";
 
 const roots: Root[] = [];
@@ -164,6 +167,36 @@ async function flushEditorMeasure() {
   );
 }
 
+function createMdcView(doc: string, selection = EditorSelection.cursor(0)) {
+  const parent = document.createElement("div");
+  document.body.append(parent);
+  const view = new EditorView({
+    parent,
+    state: EditorState.create({
+      doc,
+      selection,
+      extensions: [
+        liveMarkdown({ mdc: true, plugins: [mdcPreviewPlugin()] }),
+        markraEditorReactBridge,
+      ],
+    }),
+  });
+  views.push(view);
+  return view;
+}
+
+let mdcEditor: MarkraMdcPropsEditorState | null = null;
+
+function MdcProbe() {
+  mdcEditor = useMarkraMdcPropsEditor();
+  return (
+    <section
+      data-name={mdcEditor.block?.name ?? ""}
+      data-yaml={mdcEditor.text?.yaml ?? ""}
+    />
+  );
+}
+
 afterEach(() => {
   for (const root of roots.splice(0)) act(() => root.unmount());
   for (const view of views.splice(0)) view.destroy();
@@ -292,5 +325,45 @@ describe("@markra/editor-react", () => {
       left: "",
       top: "",
     });
+  });
+
+  it("opens, edits and closes an MDC component's props form", () => {
+    const doc = "Intro\n\n::hero\n---\ntitle: Hi\n---\nBody\n::\n";
+    const view = createMdcView(doc, EditorSelection.cursor(doc.indexOf("Body")));
+    const host = render(view, <MdcProbe />);
+    const section = () => host.querySelector("section")!.dataset;
+
+    expect(section().name).toBe("");
+    expect(mdcEditor!.text).toBeNull();
+
+    act(() => {
+      expect(mdcEditor!.openAtSelection()).toBe(true);
+    });
+    expect(section()).toMatchObject({ name: "hero", yaml: "title: Hi" });
+
+    act(() => {
+      mdcEditor!.apply({ attributes: 'image="/a.jpg"', yaml: "title: Hello" });
+    });
+    expect(view.state.doc.toString()).toBe(
+      'Intro\n\n::hero{image="/a.jpg"}\n---\ntitle: Hello\n---\nBody\n::\n',
+    );
+    expect(section().yaml).toBe("title: Hello");
+
+    act(() => {
+      expect(mdcEditor!.close()).toBe(true);
+    });
+    expect(section().name).toBe("");
+    const edited = view.state.doc.toString();
+    expect(mdcEditor!.apply({ attributes: null, yaml: null })).toBe(false);
+    expect(view.state.doc.toString()).toBe(edited);
+  });
+
+  it("does not open a form outside a component", () => {
+    const view = createMdcView("Plain text\n");
+    render(view, <MdcProbe />);
+    act(() => {
+      expect(mdcEditor!.openAtSelection()).toBe(false);
+    });
+    expect(mdcEditor!.block).toBeNull();
   });
 });

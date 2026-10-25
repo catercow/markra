@@ -14,3 +14,7 @@ export {
   useMarkraEditorSlashMenu,
   useMarkraEditorUi,
 } from "./ui.ts";
+export {
+  type MarkraMdcPropsEditorState,
+  useMarkraMdcPropsEditor,
+} from "./mdc.ts";

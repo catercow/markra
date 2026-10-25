@@ -11,6 +11,7 @@ import {
   markdownSourceSyntaxHighlighting,
   markdownSyntaxHighlighting,
   markraHighlight,
+  markraMdc,
   reconfigureCodeMirrorVimMode
 } from "@markra/editor/codemirror";
 import type { MarkdownShortcutMap } from "@markra/editor";
@@ -238,6 +239,7 @@ function markdownSourceTheme(): Extension {
 }
 
 export function MarkdownSourceEditor({
+  extendedSyntax,
   autoFocus = false,
   bottomOverlayInset = 0,
   bodyFontSize = 16,
@@ -340,6 +342,7 @@ export function MarkdownSourceEditor({
     onScroll?.(event);
   };
 
+  const mdc = extendedSyntax?.mdc ?? false;
   const extensions = useMemo(
     () => [
       vimModeCompartmentRef.current.of([]),
@@ -348,7 +351,7 @@ export function MarkdownSourceEditor({
       markdown({
         base: markdownLanguage,
         codeLanguages: [],
-        extensions: [markraHighlight]
+        extensions: [markraHighlight, ...(mdc ? [markraMdc] : [])]
       }),
       markdownSyntaxHighlighting,
       markdownSourceSyntaxHighlighting,
@@ -376,7 +379,7 @@ export function MarkdownSourceEditor({
       }),
       markdownSourceTheme()
     ],
-    [sourceLabel]
+    [mdc, sourceLabel]
   );
 
   useEffect(() => {

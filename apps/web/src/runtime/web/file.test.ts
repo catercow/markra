@@ -62,6 +62,25 @@ function captureNextDrop() {
 }
 
 describe("web file runtime", () => {
+  it("reads non-markdown workspace text files from an opened folder and returns null when missing", async () => {
+    const directory = new FakeDirectoryHandle("content", {
+      "schema": new FakeDirectoryHandle("schema", {
+        "components.json": new FakeFileHandle("components.json", "{\"components\":[]}")
+      })
+    });
+    const runtime = createWebRuntime({
+      indexedDB: new FakeIndexedDbFactory().indexedDB,
+      showDirectoryPicker: async () => directory
+    });
+
+    const folder = await runtime.files.openMarkdownFolder();
+
+    await expect(runtime.files.readWorkspaceTextFile?.(`${folder!.path}/schema/components.json`))
+      .resolves.toBe("{\"components\":[]}");
+    await expect(runtime.files.readWorkspaceTextFile?.(`${folder!.path}/schema/missing.json`)).resolves.toBeNull();
+    await expect(runtime.files.readWorkspaceTextFile?.("/not/a/web/path.json")).resolves.toBeNull();
+  });
+
   it("opens and saves markdown files through the browser file system API", async () => {
     const fileHandle = new FakeFileHandle("note.md", "# Draft");
     const indexedDB = new FakeIndexedDbFactory().indexedDB;

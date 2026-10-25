@@ -207,7 +207,8 @@ describe("settings events", () => {
       },
       extendedSyntax: {
         githubAlerts: true,
-        highlight: true
+        highlight: true,
+        mdc: false
       },
       imageUpload: {
         fileNamePattern: "{name}-{timestamp}",

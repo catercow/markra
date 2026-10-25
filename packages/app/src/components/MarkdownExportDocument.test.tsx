@@ -235,7 +235,8 @@ describe("MarkdownExportDocument", () => {
       <MarkdownExportDocument
         extendedSyntax={{
           githubAlerts: false,
-          highlight: true
+          highlight: true,
+          mdc: false
         }}
         onRendered={onRendered}
         snapshot={{

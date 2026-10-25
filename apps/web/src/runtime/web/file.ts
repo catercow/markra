@@ -1453,6 +1453,15 @@ export function createWebFileRuntime(
     readS3TextFile: async () => {
       throw new Error("S3 settings backup requires the desktop runtime.");
     },
+    async readWorkspaceTextFile(path) {
+      try {
+        const { file } = await readFileFromPath(path);
+
+        return await file.text();
+      } catch {
+        return null;
+      }
+    },
     async writeWebDavTextFile(input) {
       if (input.contents.length > webDavTextFileMaxCharacters) {
         throw new Error("WebDAV settings backup is too large.");

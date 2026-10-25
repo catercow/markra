@@ -904,7 +904,7 @@ describe("CodeMirrorPaperSurface", () => {
     const { container } = render(
       <CodeMirrorPaperSurface
         autoFocus={false}
-        extendedSyntax={{ githubAlerts: false, highlight: true }}
+        extendedSyntax={{ githubAlerts: false, highlight: true, mdc: false }}
         initialContent={'> [!NOTE]\n> Detail\n\n<div><img src="./mock.png"></div>\n\nEdit'}
         onEditorReady={onEditorReady}
         onMarkdownChange={() => {}}

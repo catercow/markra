@@ -37,6 +37,7 @@ import {
   readNativeMarkdownTemplateFile,
   readNativeS3TextFile,
   readNativeWebDavTextFile,
+  readNativeWorkspaceTextFile,
   resolveNativeMarkdownPath,
   backupNativeMarkdownFolder,
   syncNativeMarkdownFolder,
@@ -206,6 +207,20 @@ describe("native file access", () => {
     await expect(openNativeMarkdownFile()).resolves.toBeNull();
 
     expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+
+  it("reads workspace text files through the native text reader and returns null on failure", async () => {
+    mockedInvoke.mockResolvedValueOnce({
+      path: "/vault/schema/components.json",
+      contents: "{\"components\":[]}"
+    });
+
+    await expect(readNativeWorkspaceTextFile("/vault/schema/components.json")).resolves.toBe("{\"components\":[]}");
+    expect(mockedInvoke).toHaveBeenCalledWith("read_text_file", { path: "/vault/schema/components.json" });
+
+    mockedInvoke.mockRejectedValueOnce("No such file or directory (os error 2)");
+
+    await expect(readNativeWorkspaceTextFile("/vault/schema/missing.json")).resolves.toBeNull();
   });
 
   it("opens a Markra settings JSON file through the native dialog", async () => {

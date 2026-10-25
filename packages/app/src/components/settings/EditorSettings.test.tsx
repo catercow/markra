@@ -568,7 +568,8 @@ describe("EditorSettings", () => {
       ...defaultEditorPreferences,
       extendedSyntax: {
         githubAlerts: true,
-        highlight: true
+        highlight: true,
+        mdc: false
       }
     };
 
@@ -593,7 +594,8 @@ describe("EditorSettings", () => {
       ...preferences,
       extendedSyntax: {
         githubAlerts: true,
-        highlight: false
+        highlight: false,
+        mdc: false
       }
     });
 
@@ -603,7 +605,8 @@ describe("EditorSettings", () => {
       ...preferences,
       extendedSyntax: {
         githubAlerts: false,
-        highlight: true
+        highlight: true,
+        mdc: false
       }
     });
   });

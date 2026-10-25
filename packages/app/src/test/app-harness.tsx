@@ -303,7 +303,8 @@ vi.mock("../lib/settings/app-settings", () => ({
     editorFontFamily: { family: null, source: "theme" },
     extendedSyntax: {
       githubAlerts: true,
-      highlight: true
+      highlight: true,
+      mdc: false
     },
     imageUpload: {
       fileNamePattern: "pasted-image-{timestamp}",
@@ -610,7 +611,8 @@ vi.mock("../lib/settings/app-settings", () => ({
     editorFontFamily: { family: null, source: "theme" },
     extendedSyntax: {
       githubAlerts: true,
-      highlight: true
+      highlight: true,
+      mdc: false
     },
     imageUpload: {
       fileNamePattern: "pasted-image-{timestamp}",
@@ -1459,7 +1461,8 @@ export function installAppTestHarness() {
       editorFontFamily: { family: null, source: "theme" },
       extendedSyntax: {
         githubAlerts: true,
-        highlight: true
+        highlight: true,
+        mdc: false
       },
       imageUpload: {
         fileNamePattern: "pasted-image-{timestamp}",

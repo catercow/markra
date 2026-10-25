@@ -839,6 +839,25 @@ export function EditorSettings({
             />
           }
         />
+        <SettingsRow
+          title={translate("settings.editor.mdcComponents")}
+          description={translate("settings.editor.mdcComponentsDescription")}
+          action={
+            <SettingsSwitch
+              checked={preferences.extendedSyntax.mdc}
+              label={translate("settings.editor.mdcComponents")}
+              onChange={() =>
+                onUpdatePreferences({
+                  ...preferences,
+                  extendedSyntax: {
+                    ...preferences.extendedSyntax,
+                    mdc: !preferences.extendedSyntax.mdc
+                  }
+                })
+              }
+            />
+          }
+        />
       </SettingsSection>
     </>
   );
