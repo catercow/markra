@@ -1,0 +1,16 @@
+{
+  "productName": "CaterCow Markra",
+  "identifier": "com.catercow.markra",
+  "build": {
+    "beforeBuildCommand": "pnpm build"
+  },
+  "bundle": {
+    "macOS": {
+      "signingIdentity": "-",
+      "files": {
+        "PlugIns/MarkraQuickLookPreview.appex": null,
+        "Resources/Assets.car": null
+      }
+    }
+  }
+}

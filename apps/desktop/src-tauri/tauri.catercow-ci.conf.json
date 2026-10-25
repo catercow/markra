@@ -1,0 +1,12 @@
+{
+  "build": {
+    "beforeBuildCommand": "pnpm build && pnpm build:icon"
+  },
+  "bundle": {
+    "macOS": {
+      "files": {
+        "Resources/Assets.car": "icons/generated/Assets.car"
+      }
+    }
+  }
+}

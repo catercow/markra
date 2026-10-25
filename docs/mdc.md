@@ -24,3 +24,14 @@ The file is saved exactly as typed. Cards and forms never change text by themsel
 
 - `mdc-syntax.test.ts` checks the grammar against the input of every [comark](https://github.com/comarkdown/comark) spec fixture that uses components. The inputs are vendored in `mdc-syntax.fixtures.ts`.
 - The grammar was also checked against all 349 marketing pages, which have 1,045 components; every block and every props block closes.
+
+## Building and installing "CaterCow Markra"
+
+The fork ships as its own app, **CaterCow Markra** (`com.catercow.markra`), so it can sit next to a stock Markra install without sharing settings. `apps/desktop/src-tauri/tauri.catercow.conf.json` sets the name and ID. It also leaves out the Quick Look extension, whose bundle ID is tied to upstream's app ID.
+
+- **Release:** push a `catercow-v*` tag (for example `catercow-v2.14.1-mdc.2`). `.github/workflows/catercow-desktop.yml` builds a macOS `.dmg` for Apple Silicon and Intel and a Windows `setup.exe`, then attaches them to a GitHub release on this fork.
+- **Not notarized or code-signed.** The first launch needs one confirmation:
+  - **Mac:** right-click the app and choose Open, or allow it under System Settings → Privacy & Security.
+  - **Windows:** SmartScreen shows "Windows protected your PC"; choose More info → Run anyway.
+- **No auto-update.** The updater is only configured in upstream's release workflow, so these builds never replace themselves with stock Markra. Install a new release to update.
+- **Local build** (needs Rust 1.85+): `pnpm --filter @markra/desktop tauri build --config src-tauri/tauri.catercow.conf.json --bundles dmg`. Without Xcode 26 this uses the classic `.icns` icon. CI adds `tauri.catercow-ci.conf.json` to build the adaptive icon.

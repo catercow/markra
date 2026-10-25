@@ -1,0 +1,129 @@
+name: CaterCow desktop build
+
+# Builds "CaterCow Markra" for macOS and Windows and publishes it as a GitHub release on
+# this fork. Push a tag such as `catercow-v2.14.1-mdc.1` to run it. Upstream's
+# release workflow only runs for `v*` tags, so it stays idle.
+
+on:
+  push:
+    tags:
+      - "catercow-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: catercow-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DESKTOP_DIR: apps/desktop
+  NODE_VERSION: 24
+  PNPM_VERSION: 10.30.3
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-26
+            target: aarch64-apple-darwin
+            platform: macos
+            arch: arm64
+            bundle: dmg
+          - os: macos-26-intel
+            target: x86_64-apple-darwin
+            platform: macos
+            arch: x64
+            bundle: dmg
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            platform: windows
+            arch: x64
+            bundle: nsis
+    name: ${{ matrix.platform }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ env.DESKTOP_DIR }}/src-tauri -> target
+          cache-bin: false
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Test the editor packages
+        run: pnpm --filter @markra/editor --filter @markra/editor-react --filter @markra/shared test
+
+      - name: Build app
+        working-directory: ${{ env.DESKTOP_DIR }}
+        run: >-
+          pnpm tauri build
+          --config src-tauri/tauri.catercow.conf.json
+          --config src-tauri/tauri.catercow-ci.conf.json
+          --target ${{ matrix.target }}
+          --bundles ${{ matrix.bundle }}
+
+      - name: Check the app's signature
+        if: matrix.platform == 'macos'
+        run: codesign --verify --deep --verbose=2 "${DESKTOP_DIR}/src-tauri/target/${{ matrix.target }}/release/bundle/macos/CaterCow Markra.app"
+
+      - name: Collect the installer
+        id: installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle_dir="${DESKTOP_DIR}/src-tauri/target/${{ matrix.target }}/release/bundle/${{ matrix.bundle }}"
+          source="$(ls "$bundle_dir"/*.dmg "$bundle_dir"/*.exe 2>/dev/null | head -1)"
+          extension="${source##*.}"
+          name="CaterCow-Markra-${{ matrix.platform }}-${{ matrix.arch }}.${extension}"
+          cp "$source" "$name"
+          echo "path=$name" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CaterCow-Markra-${{ matrix.platform }}-${{ matrix.arch }}
+          path: ${{ steps.installer.outputs.path }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/catercow-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "CaterCow Markra ${TAG#catercow-}" \
+            --notes "Markra with MDC component editing for the CaterCow content repository. Built from $GITHUB_SHA.
+
+          These builds are not signed by Apple or Microsoft, so the first launch asks for confirmation:
+          - Mac: open the .dmg, drag the app to Applications, then right-click it and choose Open (or allow it under System Settings → Privacy & Security).
+          - Windows: run the setup .exe; if SmartScreen says \"Windows protected your PC\", choose More info → Run anyway."
