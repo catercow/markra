@@ -1,3 +1,11 @@
+## [2.14.1](https://github.com/markrahq/markra/compare/v2.14.0...v2.14.1) (2026-10-25)
+
+### Bug Fixes
+
+* **desktop:** allow quitting through the app menu ([#769](https://github.com/markrahq/markra/issues/769)) ([0d348fd](https://github.com/markrahq/markra/commit/0d348fdb3e2917d0df62a81ae2fef173d51efe03))
+* **editor:** align typewriter band with the caret visual row ([#771](https://github.com/markrahq/markra/issues/771)) ([ef7ebbd](https://github.com/markrahq/markra/commit/ef7ebbd8188d2554e169794e6c1077f3881d721e))
+* **editor:** preserve ordinary square brackets in preview ([#768](https://github.com/markrahq/markra/issues/768)) ([5c6a22b](https://github.com/markrahq/markra/commit/5c6a22b64a530b22fe73b7de4de7ba29e8448c8c))
+
 ## [2.14.0](https://github.com/markrahq/markra/compare/v2.13.1...v2.14.0) (2026-10-23)
 
 ### Features
