@@ -20,7 +20,7 @@ fn validate_external_url(url: &str) -> Result<String, String> {
 }
 
 #[cfg(target_os = "macos")]
-fn open_system_url(url: &str) -> Result<(), String> {
+pub(crate) fn open_system_url(url: &str) -> Result<(), String> {
     Command::new("open")
         .arg(url)
         .spawn()
@@ -29,7 +29,7 @@ fn open_system_url(url: &str) -> Result<(), String> {
 }
 
 #[cfg(target_os = "windows")]
-fn open_system_url(url: &str) -> Result<(), String> {
+pub(crate) fn open_system_url(url: &str) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
 
     Command::new("cmd")
@@ -41,7 +41,7 @@ fn open_system_url(url: &str) -> Result<(), String> {
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
-fn open_system_url(url: &str) -> Result<(), String> {
+pub(crate) fn open_system_url(url: &str) -> Result<(), String> {
     Command::new("xdg-open")
         .arg(url)
         .spawn()

@@ -5,6 +5,8 @@ mod app_exit;
 mod app_logs;
 mod backup;
 mod clipboard;
+mod content_access;
+mod content_git;
 mod content_preview;
 mod external_urls;
 mod fonts;
@@ -84,6 +86,11 @@ use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_window_state::StateFlags;
 use text_file::{read_text_file, write_text_file};
+use content_access::{
+    content_access_clone, content_access_is_checkout, content_access_save, content_access_set_folder,
+    content_access_sign_in, content_access_sign_out, content_access_state, content_access_status,
+    content_access_update, ContentAccessState,
+};
 use content_preview::{
     content_preview_pending, content_preview_poll, content_preview_read_media, content_preview_stop,
     ContentPreviewState,
@@ -232,7 +239,8 @@ pub fn run() {
         .manage(EditorWindowRestoreState::default())
         .manage(AcpAgentProcessState::default())
         .manage(PortableUpdateState::default())
-        .manage(ContentPreviewState::default());
+        .manage(ContentPreviewState::default())
+        .manage(ContentAccessState::default());
 
     #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
@@ -376,6 +384,15 @@ pub fn run() {
             content_preview_poll,
             content_preview_read_media,
             content_preview_stop,
+            content_access_state,
+            content_access_sign_in,
+            content_access_sign_out,
+            content_access_set_folder,
+            content_access_is_checkout,
+            content_access_clone,
+            content_access_status,
+            content_access_save,
+            content_access_update,
             list_markdown_file_history,
             read_markdown_file_history,
             read_markdown_image_file,

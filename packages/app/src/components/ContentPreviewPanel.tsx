@@ -10,6 +10,8 @@ import { clampNumber, t, type AppLanguage, type I18nKey } from "@markra/shared";
 import { IconButton } from "@markra/ui";
 import { ExternalLink, RotateCw, TriangleAlert, X } from "lucide-react";
 import { getAppRuntime } from "../runtime";
+import type { ManagedContent } from "../lib/content-access";
+import { ContentSaveBar } from "./ContentSaveBar";
 import {
   contentFsPathFor,
   contentPreviewEventLabel,
@@ -28,6 +30,10 @@ const connectTimeoutMs = 20_000;
 type ConnectionStatus = "connecting" | "ready" | "offline";
 
 type ContentPreviewPanelProps = {
+  /** Writes open documents to disk before Save to studio. */
+  beforeSave?: () => Promise<unknown>;
+  /** CowMark's managed folder: shows the sign-in and Save to studio footer. */
+  managed?: ManagedContent;
   activeDocument: { content: string; path: string | null } | null;
   config: ContentPreviewConfig;
   language: AppLanguage;
@@ -43,6 +49,8 @@ type ContentPreviewPanelProps = {
 
 export function ContentPreviewPanel({
   activeDocument,
+  beforeSave,
+  managed,
   config,
   language,
   maxWidth,
@@ -303,6 +311,7 @@ export function ContentPreviewPanel({
         src={config.site}
         title={label("app.contentPreview")}
       />
+      {managed ? <ContentSaveBar beforeSave={beforeSave} language={language} managed={managed} /> : null}
     </aside>
   );
 }

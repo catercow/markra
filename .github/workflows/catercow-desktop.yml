@@ -1,6 +1,6 @@
 name: CaterCow desktop build
 
-# Builds "CaterCow Markra" for macOS and Windows and publishes it as a GitHub release on
+# Builds "CowMark" (CaterCow's edition of Markra) for macOS and Windows and publishes it as a GitHub release on
 # this fork. Push a tag such as `catercow-v2.14.1-mdc.1` to run it. Upstream's
 # release workflow only runs for `v*` tags, so it stays idle.
 
@@ -21,6 +21,8 @@ env:
   DESKTOP_DIR: apps/desktop
   NODE_VERSION: 24
   PNPM_VERSION: 10.30.3
+  # Built into the frontend; turns on CowMark sign-in, the managed folder and Save to studio.
+  VITE_CATERCOW_PREVIEW_SITE: https://catercow-content-preview-frtydcxt7a-ue.a.run.app
 
 jobs:
   build:
@@ -83,9 +85,9 @@ jobs:
           --bundles ${{ matrix.bundle }}
 
       # After the build: compiling the crate needs the frontend bundle it embeds.
-      - name: Test the content preview
+      - name: Test the content preview, access and git
         working-directory: ${{ env.DESKTOP_DIR }}/src-tauri
-        run: cargo test --release --target ${{ matrix.target }} content_preview
+        run: cargo test --release --target ${{ matrix.target }} content_
 
       - name: Collect the installer
         id: installer
@@ -101,7 +103,7 @@ jobs:
           fi
           source="${found[0]}"
           extension="${source##*.}"
-          name="CaterCow-Markra-${{ matrix.platform }}-${{ matrix.arch }}.${extension}"
+          name="CowMark-${{ matrix.platform }}-${{ matrix.arch }}.${extension}"
           cp "$source" "$name"
           echo "path=$name" >> "$GITHUB_OUTPUT"
 
@@ -112,12 +114,12 @@ jobs:
           set -euo pipefail
           mount="$(mktemp -d)"
           hdiutil attach -nobrowse -readonly -mountpoint "$mount" "${{ steps.installer.outputs.path }}"
-          codesign --verify --deep --verbose=2 "$mount/CaterCow Markra.app"
+          codesign --verify --deep --verbose=2 "$mount/CowMark.app"
           hdiutil detach "$mount"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: CaterCow-Markra-${{ matrix.platform }}-${{ matrix.arch }}
+          name: CowMark-${{ matrix.platform }}-${{ matrix.arch }}
           path: ${{ steps.installer.outputs.path }}
           if-no-files-found: error
 
@@ -138,8 +140,8 @@ jobs:
         run: |
           gh release create "$TAG" dist/* \
             --repo "$GITHUB_REPOSITORY" \
-            --title "CaterCow Markra ${TAG#catercow-}" \
-            --notes "Markra with MDC component editing for the CaterCow content repository. Built from $GITHUB_SHA.
+            --title "CowMark ${TAG#catercow-}" \
+            --notes "CowMark: CaterCow's edition of Markra, for editing the CaterCow marketing content with a live preview. Built from $GITHUB_SHA.
 
           These builds are not signed by Apple or Microsoft, so the first launch asks for confirmation:
           - Mac: open the .dmg, drag the app to Applications, then right-click it and choose Open (or allow it under System Settings → Privacy & Security).

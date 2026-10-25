@@ -134,7 +134,7 @@ fn git_candidates() -> Vec<PathBuf> {
     candidates
 }
 
-fn git_command(git: &Path) -> Command {
+pub(crate) fn git_command(git: &Path) -> Command {
     let mut command = Command::new(git);
     command.env("GIT_TERMINAL_PROMPT", "0");
     #[cfg(windows)]
@@ -146,7 +146,7 @@ fn git_command(git: &Path) -> Command {
     command
 }
 
-fn find_git() -> Option<PathBuf> {
+pub(crate) fn find_git() -> Option<PathBuf> {
     git_candidates().into_iter().find(|candidate| {
         git_command(candidate)
             .arg("--version")

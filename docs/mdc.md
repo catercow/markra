@@ -25,6 +25,17 @@ When the open folder has a `preview.json` (`{ "site": "https://…" }`), the glo
 
 The site accepts messages only from origins in its `NUXT_PUBLIC_DRAFT_PREVIEW_ALLOWED_ORIGINS`, which must include `tauri://localhost` (macOS) and `http://tauri.localhost` (Windows). The protocol and the site side are in the CaterCow monorepo, `js/nuxt4/modules/draft-preview`.
 
+## CowMark: sign-in, Save to studio, Get latest
+
+Builds made with `VITE_CATERCOW_PREVIEW_SITE` set (the CaterCow release workflow sets it) revolve around one content folder, so editors never use git or GitHub themselves. Without it, the app behaves exactly like stock Markra.
+
+- **First launch** shows a sign-in screen. Google sign-in runs in the browser against the preview site (`/__content_access/*`, PKCE with a loopback redirect to `127.0.0.1`), which checks the email against its allowlist. The app then downloads the content repository's `studio` branch to `~/Documents/CaterCow Content`; the location can be changed only during this setup. The session and folder are stored in `content-access.json` in the app data directory.
+- **Every later launch** opens that folder straight away, signed in or not, offline included. When signed in and nothing is waiting to be saved, it quietly gets the latest changes; a failure is ignored. Opening other files or folders is turned off.
+- **The preview panel footer** lists changed files and has a message box, **Save to studio** (saves open documents, commits, rebases on `origin/studio`, pushes) and **Get latest** (fetch and rebase, keeping uncommitted edits). If someone else changed the same lines, the rebase is undone and the editor's commit stays on this computer; the footer says to ask a developer.
+- **Expired session (401):** the session is cleared and the footer asks to sign in again; edits are kept. **Removed from the allowlist (403):** "This email can no longer save CaterCow content. Ask a developer."
+- **Tokens** are requested only to download, save or get latest. They are short-lived GitHub tokens from the preview site, held in memory, and reach git only through `GIT_CONFIG_COUNT` environment variables as an `http.https://github.com/.extraheader` (with `credential.helper` emptied). They never appear in command arguments, URLs, `.git/config` or logs. This needs git 2.31 or later.
+- **Code:** `apps/desktop/src-tauri/src/content_access.rs` (sign-in, session, tokens) and `content_git.rs` (clone, status, save, update); `packages/app/src/components/CowMarkGate.tsx` and `ContentSaveBar.tsx`. The server side is in the CaterCow monorepo.
+
 ## Differences from plain Markdown while MDC is on
 
 - **Indented code blocks are off.** Nested components are often indented four spaces or more, and MDC renderers dedent them, so such lines are content, not code. Fenced code blocks still work, including indented ones.
@@ -35,9 +46,9 @@ The site accepts messages only from origins in its `NUXT_PUBLIC_DRAFT_PREVIEW_AL
 - `mdc-syntax.test.ts` checks the grammar against the input of every [comark](https://github.com/comarkdown/comark) spec fixture that uses components. The inputs are vendored in `mdc-syntax.fixtures.ts`.
 - The grammar was also checked against all 349 marketing pages, which have 1,045 components; every block and every props block closes.
 
-## Building and installing "CaterCow Markra"
+## Building and installing CowMark
 
-The fork ships as its own app, **CaterCow Markra** (`com.catercow.markra`), so it can sit next to a stock Markra install without sharing settings. `apps/desktop/src-tauri/tauri.catercow.conf.json` sets the name and ID. It also leaves out the Quick Look extension, whose bundle ID is tied to upstream's app ID.
+The fork ships as its own app, **CowMark** (`com.catercow.cowmark`), CaterCow's edition of Markra,, so it can sit next to a stock Markra install without sharing settings. `apps/desktop/src-tauri/tauri.catercow.conf.json` sets the name and ID. It also leaves out the Quick Look extension, whose bundle ID is tied to upstream's app ID.
 
 - **Release:** push a `catercow-v*` tag (for example `catercow-v2.14.1-mdc.2`). `.github/workflows/catercow-desktop.yml` builds a macOS `.dmg` for Apple Silicon and Intel and a Windows `setup.exe`, then attaches them to a GitHub release on this fork.
 - **Not notarized or code-signed.** The first launch needs one confirmation:

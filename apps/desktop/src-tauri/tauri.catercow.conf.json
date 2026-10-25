@@ -1,6 +1,6 @@
 {
-  "productName": "CaterCow Markra",
-  "identifier": "com.catercow.markra",
+  "productName": "CowMark",
+  "identifier": "com.catercow.cowmark",
   "build": {
     "beforeBuildCommand": "pnpm build"
   },

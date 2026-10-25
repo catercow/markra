@@ -94,6 +94,9 @@ import { useWorkspaceSearch } from "./hooks/useWorkspaceSearch";
 import { useWorkspaceAssetCleanup } from "./hooks/useWorkspaceAssetCleanup";
 import { useMdcSchema } from "./hooks/useMdcSchema";
 import { useContentPreviewConfig } from "./hooks/useContentPreviewConfig";
+import { CowMarkGate } from "./components/CowMarkGate";
+import { catercowPreviewSite, type ManagedContent } from "./lib/content-access";
+import { parseContentPreviewConfig } from "./lib/content-preview";
 import {
   useApplicationShortcuts,
   useNativeMarkdownDrop,
@@ -386,7 +389,14 @@ export function shouldTriggerDevMockRuntimeError(search: string, dev = import.me
 export default function App() {
   const isSettingsRoute = useSettingsWindowRoute();
 
-  return isSettingsRoute ? <SettingsRouteApp /> : <WorkspaceApp />;
+  if (isSettingsRoute) return <SettingsRouteApp />;
+
+  const cowmarkSite = catercowPreviewSite();
+  if (cowmarkSite && getAppRuntime().files.contentAccess) {
+    return <CowMarkGate site={cowmarkSite} renderWorkspace={(managed) => <WorkspaceApp managedContent={managed} />} />;
+  }
+
+  return <WorkspaceApp />;
 }
 
 function runtimeErrorFromEvent(event: ErrorEvent | PromiseRejectionEvent) {
@@ -475,7 +485,9 @@ function SettingsRouteApp() {
   );
 }
 
-function WorkspaceApp() {
+function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = {}) {
+  // CowMark: one managed folder; opening anything else is turned off.
+  const managedRoot = managedContent?.root ?? null;
   const desktopPlatform = resolveDesktopPlatform();
   const desktopOsVersion = resolveDesktopOsVersion();
   const webKitScrollWorkaround = webKitScrollWorkaroundForPlatform(desktopPlatform, desktopOsVersion);
@@ -801,8 +813,19 @@ function WorkspaceApp() {
     [fileTreeSourcePath]
   );
   const mdcSchema = useMdcSchema(defaultMarkdownSaveDirectory);
-  const contentPreviewConfig = useContentPreviewConfig(defaultMarkdownSaveDirectory);
-  const [contentPreviewOpen, setContentPreviewOpen] = useState(false);
+  const folderContentPreviewConfig = useContentPreviewConfig(defaultMarkdownSaveDirectory);
+  const contentPreviewConfig = useMemo(
+    () => folderContentPreviewConfig ?? (managedContent ? parseContentPreviewConfig(JSON.stringify({ site: managedContent.site })) : null),
+    [folderContentPreviewConfig, managedContent]
+  );
+  const [contentPreviewOpen, setContentPreviewOpen] = useState(Boolean(managedContent));
+  const managedFolderOpenedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!managedRoot || managedFolderOpenedRef.current === managedRoot) return;
+    managedFolderOpenedRef.current = managedRoot;
+    if (fileTreeSourcePath === managedRoot) return;
+    openFolderPath(managedRoot, undefined, undefined, true, true, { coalesce: true }).catch(() => {});
+  }, [fileTreeSourcePath, managedRoot, openFolderPath]);
   const [contentPreviewWidth, setContentPreviewWidth] = useState(contentPreviewDefaultWidth);
   const [contentPreviewResizing, setContentPreviewResizing] = useState(false);
   const visibleContentPreviewOpen = Boolean(contentPreviewConfig && defaultMarkdownSaveDirectory) && contentPreviewOpen;
@@ -2869,17 +2892,19 @@ function WorkspaceApp() {
     await handleOpenTreeFile(file);
   }, [handleOpenTreeFile, handleOpenTreeFileToSide]);
   const handleOpenMarkdownFile = useCallback(async () => {
+    if (managedRoot) return;
     captureActiveDocumentViewState();
     setActiveImageFile(null);
     await openMarkdownFile({
       pickerTitle: translate("app.openMarkdownOrFolder")
     });
-  }, [captureActiveDocumentViewState, openMarkdownFile, translate]);
+  }, [captureActiveDocumentViewState, managedRoot, openMarkdownFile, translate]);
   const handleOpenRecentMarkdownFile = useCallback(async (file: RecentMarkdownFile) => {
+    if (managedRoot) return;
     captureActiveDocumentViewState();
     setActiveImageFile(null);
     await openRecentMarkdownFile(file);
-  }, [captureActiveDocumentViewState, openRecentMarkdownFile]);
+  }, [captureActiveDocumentViewState, managedRoot, openRecentMarkdownFile]);
   const handleCloseCurrentFile = useCallback(async () => {
     captureActiveDocumentViewState();
 
@@ -3511,9 +3536,10 @@ function WorkspaceApp() {
       await handleDroppedLocalImage(target);
       return;
     }
+    if (managedRoot) return;
 
     await handleDroppedMarkdownPath(target);
-  }, [handleDroppedLocalImage, handleDroppedMarkdownPath]);
+  }, [handleDroppedLocalImage, handleDroppedMarkdownPath, managedRoot]);
   const handleInsertMarkdownSnippet = useCallback((...args: Parameters<typeof insertEditorMarkdownSnippet>) => {
     if (readOnlyMode) return;
 
@@ -3850,6 +3876,7 @@ function WorkspaceApp() {
     handleEditorModeSelect(splitMode ? "visual" : "split");
   }, [handleEditorModeSelect, splitMode]);
   const handleOpenMarkdownFolder = useCallback(async () => {
+    if (managedRoot) return;
     captureActiveDocumentViewState();
     await openMarkdownFolder({
       beforeOpenFolder: () => {
@@ -3873,8 +3900,9 @@ function WorkspaceApp() {
       },
       pickerTitle: translate("app.openFolder")
     });
-  }, [captureActiveDocumentViewState, clearOpenDocument, confirmCanDiscardCurrentDocument, openMarkdownFolder, translate]);
+  }, [captureActiveDocumentViewState, clearOpenDocument, confirmCanDiscardCurrentDocument, managedRoot, openMarkdownFolder, translate]);
   const handleOpenRecentMarkdownFolder = useCallback(async (folder: RecentMarkdownFolder) => {
+    if (managedRoot) return;
     captureActiveDocumentViewState();
     const canDiscard = await confirmCanDiscardCurrentDocument();
     if (!canDiscard) return;
@@ -3884,7 +3912,7 @@ function WorkspaceApp() {
 
     setActiveImageFile(null);
     clearOpenDocument({ persistWorkspace: false });
-  }, [captureActiveDocumentViewState, clearOpenDocument, confirmCanDiscardCurrentDocument, openRecentFolder]);
+  }, [captureActiveDocumentViewState, clearOpenDocument, confirmCanDiscardCurrentDocument, managedRoot, openRecentFolder]);
   const handleOpenContainingFolder = useCallback((path: string) => {
     openNativeContainingFolder(path).catch(() => {});
   }, []);
@@ -4783,6 +4811,8 @@ function WorkspaceApp() {
         onResize={setContentPreviewWidth}
         onResizeEnd={() => setContentPreviewResizing(false)}
         onResizeStart={() => setContentPreviewResizing(true)}
+        managed={managedContent}
+        beforeSave={saveDirtyMarkdownFiles}
       />
     </Suspense>
   ) : null;
@@ -4834,7 +4864,7 @@ function WorkspaceApp() {
           menuHandlers={nativeMenuHandlers}
           syncNowShortcut={editorPreferences.preferences.markdownShortcuts.syncNow}
           nativeWindowChrome={nativeWindowChromeEnabled}
-          openMarkdownButtonVisible={viewModeChrome.openButton}
+          openMarkdownButtonVisible={viewModeChrome.openButton && !managedRoot}
           quickCreateMarkdownFileVisible={viewModeChrome.quickCreateButton && !visibleFileTreeOpen}
           historyDisabled={!documentHistoryAvailable}
           saveDisabled={!hasOpenDocument || Boolean(activeImageFile)}
@@ -4933,7 +4963,7 @@ function WorkspaceApp() {
             outlineVisible: viewModeChrome.outline,
             recentFolders: recentMarkdownFolders,
             recentFoldersOpen: recentMarkdownFoldersOpen,
-            recentFoldersVisible: viewModeChrome.recentFolders,
+            recentFoldersVisible: viewModeChrome.recentFolders && !managedRoot,
             revealPathRequest: fileTreeRevealPathRequest,
             resizing: fileTreeResizing,
             rootPath: fileTree.sourcePath,
