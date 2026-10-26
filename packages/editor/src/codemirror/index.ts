@@ -303,6 +303,14 @@ export function liveMarkdown(config: LiveMarkdownConfig = {}): Extension {
   ];
 }
 export { markraMdc, scanMdcAttributes } from "./mdc-syntax.ts";
+export type { MdcComponentsPluginOptions, MdcInsertion } from "./mdc-insert.ts";
+export {
+  insertMdcComponent,
+  mdcComponentCommandId,
+  mdcComponentInsertion,
+  mdcComponentsPlugin,
+  nestMdcSnippet,
+} from "./mdc-insert.ts";
 export type { MdcLintMessages, MdcLintPluginOptions } from "./mdc-lint.ts";
 export { defaultMdcLintMessages, lintMdcDocument, mdcLintPlugin } from "./mdc-lint.ts";
 export type { MdcBlock, MdcRange } from "./mdc-blocks.ts";
