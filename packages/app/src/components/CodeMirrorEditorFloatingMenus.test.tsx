@@ -5,6 +5,8 @@ import {
   documentLinksPlugin,
   getMarkraSlashMenuState,
   liveMarkdown,
+  mdcComponentsPlugin,
+  openMdcBlock,
 } from "@markra/editor/codemirror";
 import {
   MarkraEditorProvider,
@@ -17,13 +19,30 @@ import {
   fitCodeMirrorFloatingMenu,
 } from "./CodeMirrorEditorFloatingMenus";
 
+const components = [
+  {
+    example: { markdown: '::callout{title="Need every meal labeled?"}\nCaterCow delivers Italian catering.\n::' },
+    group: "Text and lists",
+    name: "callout",
+    props: [{ name: "title", type: "string" }],
+    purpose: "Highlighted note or tip set apart from the body text.",
+  },
+  {
+    group: "Calculators",
+    name: "chipotle-cost-calculator",
+    props: [],
+    purpose: "Interactive calculator estimating Chipotle catering cost by metro and headcount. No props.",
+  },
+];
+
 const views: EditorView[] = [];
 
-function createView({ documentLinks = false } = {}) {
+function createView({ documentLinks = false, mdc = false } = {}) {
   const doc = documentLinks ? "Open [[plug" : "/";
   const parent = document.createElement("div");
   document.body.append(parent);
   const plugins = [blocksPlugin()];
+  if (mdc) plugins.push(mdcComponentsPlugin({ components }));
   if (documentLinks) {
     plugins.push(
       documentLinksPlugin({
@@ -43,7 +62,7 @@ function createView({ documentLinks = false } = {}) {
     state: EditorState.create({
       doc,
       extensions: [
-        liveMarkdown({ plugins, slashMenu: !documentLinks }),
+        liveMarkdown({ mdc, plugins, slashMenu: !documentLinks }),
         markraEditorReactBridge,
       ],
       selection: EditorSelection.cursor(doc.length),
@@ -156,6 +175,31 @@ describe("CodeMirrorEditorFloatingMenus", () => {
       document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
     });
     expect(getMarkraSlashMenuState(view).open).toBe(false);
+  });
+
+  it("lists workspace components under section and group headings", async () => {
+    const view = createView({ mdc: true });
+    const host = render(
+      <MarkraEditorProvider view={view}>
+        <CodeMirrorEditorFloatingMenus slashMenuBlocksLabel="Blocks" />
+      </MarkraEditorProvider>,
+    );
+
+    await flushMeasurement();
+    const menu = host.container.querySelector(".markra-slash-menu")!;
+    const headings = [...menu.querySelectorAll(".markra-slash-menu-section, .markra-slash-menu-group")]
+      .map((heading) => heading.textContent);
+    expect(menu).toHaveClass("markra-slash-menu-detailed");
+    expect(headings).toEqual(["Blocks", "Components", "Text and lists", "Calculators"]);
+
+    const callout = [...menu.querySelectorAll<HTMLButtonElement>(".markra-slash-menu-option")]
+      .find((option) => option.textContent?.startsWith("callout"));
+    expect(callout?.querySelector(".markra-slash-menu-option-description")?.textContent)
+      .toBe("Highlighted note or tip set apart from the body text.");
+
+    act(() => callout?.click());
+    expect(view.state.doc.toString()).toBe(components[0]!.example!.markdown);
+    expect(openMdcBlock(view.state)?.name).toBe("callout");
   });
 
   it("renders and runs document-link completion items", async () => {

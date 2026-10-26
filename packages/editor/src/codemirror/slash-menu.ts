@@ -246,7 +246,15 @@ export function getMarkraSlashMenuState(
   }
 
   const { active } = state;
-  const actions = searchMarkraUi(view, "slash-menu", active.query).map(
+  const found = searchMarkraUi(view, "slash-menu", active.query);
+  const own = found.filter((action) => !action.section);
+  const sectioned = found.filter((action) => action.section);
+  // A typed `/` keeps the built-in blocks first for keyboard users; a menu opened from a
+  // button is browsed, so plugin sections (such as a workspace's components) lead.
+  const ordered = active.source === "virtual"
+    ? [...sectioned, ...own]
+    : [...own, ...sectioned];
+  const actions = ordered.map(
     (action) => ({
       ...action,
       run: () => runMarkraSlashMenuAction(view, action.command),

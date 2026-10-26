@@ -1,4 +1,5 @@
 import { syntaxTree } from "@codemirror/language";
+import { forEachDiagnostic, setDiagnosticsEffect } from "@codemirror/lint";
 import {
   StateField,
   type EditorState,
@@ -223,6 +224,8 @@ class MdcChipWidget extends WidgetType {
     readonly purpose: string,
     readonly known: boolean,
     readonly onOpen: MdcPreviewPluginOptions["onOpenComponent"],
+    /** Lint messages for the opener line, which this chip hides. */
+    readonly problems: string,
   ) {
     super();
   }
@@ -233,7 +236,8 @@ class MdcChipWidget extends WidgetType {
       other.label === this.label &&
       other.attributes === this.attributes &&
       other.purpose === this.purpose &&
-      other.known === this.known
+      other.known === this.known &&
+      other.problems === this.problems
     );
   }
 
@@ -244,8 +248,10 @@ class MdcChipWidget extends WidgetType {
   toDOM(view: EditorView) {
     const document = view.dom.ownerDocument;
     const chip = document.createElement("span");
-    chip.className = `markra-mdc-chip${this.known ? "" : " markra-mdc-chip-unknown"}`;
-    chip.title = this.known ? this.purpose : `Unknown component "${this.block.name}"`;
+    chip.className = `markra-mdc-chip${this.known ? "" : " markra-mdc-chip-unknown"}${
+      this.problems ? " markra-mdc-chip-problem" : ""
+    }`;
+    chip.title = this.problems || (this.known ? this.purpose : `Unknown component "${this.block.name}"`);
     chip.dataset.mdcName = this.block.name;
 
     const label = document.createElement("span");
@@ -299,8 +305,18 @@ class MdcCloseWidget extends WidgetType {
   }
 }
 
+function openerProblems(state: EditorState) {
+  const problems = new Map<number, string[]>();
+  forEachDiagnostic(state, (diagnostic, from) => {
+    const line = state.doc.lineAt(from);
+    problems.set(line.from, [...(problems.get(line.from) ?? []), diagnostic.message]);
+  });
+  return problems;
+}
+
 function buildRevealDecorations(view: EditorView, options: MdcPreviewPluginOptions) {
   const ranges: Range<Decoration>[] = [];
+  const problems = openerProblems(view.state);
   const components = new Map(
     (options.components?.() ?? []).map((component) => [component.name, component]),
   );
@@ -325,6 +341,7 @@ function buildRevealDecorations(view: EditorView, options: MdcPreviewPluginOptio
             info?.purpose ?? "",
             components.size === 0 || Boolean(info),
             options.onOpenComponent,
+            (problems.get(view.state.doc.lineAt(from).from) ?? []).join("\n"),
           ),
         }).range(from, to),
       );
@@ -392,7 +409,9 @@ const mdcTheme = EditorView.baseTheme({
     gap: "0.5em",
   },
   ".markra-mdc-chip-label": { fontWeight: "650" },
-  ".markra-mdc-chip-unknown .markra-mdc-chip-label": { textDecoration: "underline wavy #cf222e" },
+  ".markra-mdc-chip-unknown .markra-mdc-chip-label, .markra-mdc-chip-problem .markra-mdc-chip-label": {
+    textDecoration: "underline wavy #cf222e",
+  },
   ".markra-mdc-chip-attributes": {
     color: "var(--markra-muted-text, #6e7781)",
     fontFamily: "var(--markra-code-font, ui-monospace, SFMono-Regular, Menlo, monospace)",
@@ -437,7 +456,9 @@ export function mdcPreviewPlugin(options: MdcPreviewPluginOptions = {}) {
                   syntaxTree(update.startState) !== syntaxTree(update.state) ||
                   selectionChangeAffectsReveal(update) ||
                   update.focusChanged ||
-                  update.viewportChanged
+                  update.viewportChanged ||
+                  update.transactions.some((transaction) =>
+                    transaction.effects.some((effect) => effect.is(setDiagnosticsEffect)))
                 ) {
                   this.decorations = buildRevealDecorations(update.view, options);
                 }

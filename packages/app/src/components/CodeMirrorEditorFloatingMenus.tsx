@@ -9,6 +9,7 @@ import {
   useMarkraEditorView,
 } from "@markra/editor-react";
 import {
+  Fragment,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -19,8 +20,29 @@ import {
 
 export interface CodeMirrorEditorFloatingMenusProps {
   documentLinksLabel?: string;
+  /** Heading over the built-in blocks when plugin sections are listed too. */
+  slashMenuBlocksLabel?: string;
   slashMenuEmptyLabel?: string;
   slashMenuLabel?: string;
+}
+
+type SlashMenuAction = ReturnType<typeof useMarkraEditorSlashMenu>["actions"][number];
+
+/** Section and group headings to draw before each action, where they change. */
+export function slashMenuHeadings(actions: readonly SlashMenuAction[], blocksLabel: string) {
+  const sectioned = actions.some((action) => action.section);
+  return actions.map((action, index) => {
+    const previous = actions[index - 1];
+    const section = action.section ?? (sectioned ? blocksLabel : undefined);
+    const previousSection = previous ? previous.section ?? (sectioned ? blocksLabel : undefined) : undefined;
+    const sectionChanged = index === 0 || section !== previousSection;
+    return {
+      group: action.section && action.group && (sectionChanged || action.group !== previous?.group)
+        ? action.group
+        : null,
+      section: sectionChanged ? section ?? null : null,
+    };
+  });
 }
 
 function keepEditorSelection(event: MouseEvent<HTMLElement>) {
@@ -110,6 +132,7 @@ function useFloatingMenuStyle(
 
 export function CodeMirrorEditorFloatingMenus({
   documentLinksLabel = "Document links",
+  slashMenuBlocksLabel = "Blocks",
   slashMenuEmptyLabel = "No matching commands",
   slashMenuLabel = "Insert block",
 }: CodeMirrorEditorFloatingMenusProps) {
@@ -119,6 +142,8 @@ export function CodeMirrorEditorFloatingMenus({
   const selectedSlashOptionRef = useRef<HTMLButtonElement | null>(null);
   const slashAnchor = useMarkraEditorCaretAnchor(slashMenu.to);
   const documentLinkAnchor = useMarkraEditorCaretAnchor(documentLinks.to);
+  const slashHeadings = slashMenuHeadings(slashMenu.actions, slashMenuBlocksLabel);
+  const slashMenuDetailed = slashMenu.actions.some((action) => action.description);
   const slashPlacement = useFloatingMenuStyle(
     slashAnchor,
     slashMenu.open,
@@ -164,31 +189,50 @@ export function CodeMirrorEditorFloatingMenus({
       {slashMenu.open && slashPlacement.style ? (
         <div
           aria-label={slashMenuLabel}
-          className="markra-slash-menu"
+          className={slashMenuDetailed ? "markra-slash-menu markra-slash-menu-detailed" : "markra-slash-menu"}
           role="menu"
           ref={slashPlacement.ref}
           style={slashPlacement.style}
         >
           {slashMenu.actions.length > 0 ? (
             slashMenu.actions.map((action, index) => (
-              <button
-                aria-selected={index === slashMenu.selectedIndex}
-                className="markra-slash-menu-option"
-                key={action.command}
-                onClick={() => {
-                  action.run();
-                }}
-                onMouseDown={keepEditorSelection}
-                ref={
-                  index === slashMenu.selectedIndex
-                    ? selectedSlashOptionRef
-                    : undefined
-                }
-                role="menuitem"
-                type="button"
-              >
-                {action.label}
-              </button>
+              <Fragment key={action.command}>
+                {slashHeadings[index]?.section ? (
+                  <div className="markra-slash-menu-section" onMouseDown={keepEditorSelection} role="presentation">
+                    {slashHeadings[index].section}
+                  </div>
+                ) : null}
+                {slashHeadings[index]?.group ? (
+                  <div className="markra-slash-menu-group" onMouseDown={keepEditorSelection} role="presentation">
+                    {slashHeadings[index].group}
+                  </div>
+                ) : null}
+                <button
+                  aria-selected={index === slashMenu.selectedIndex}
+                  className="markra-slash-menu-option"
+                  onClick={() => {
+                    action.run();
+                  }}
+                  onMouseDown={keepEditorSelection}
+                  ref={
+                    index === slashMenu.selectedIndex
+                      ? selectedSlashOptionRef
+                      : undefined
+                  }
+                  role="menuitem"
+                  title={action.description}
+                  type="button"
+                >
+                  {action.description ? (
+                    <span className="markra-slash-menu-option-text">
+                      <span className="markra-slash-menu-option-label">{action.label}</span>
+                      <span className="markra-slash-menu-option-description">{action.description}</span>
+                    </span>
+                  ) : (
+                    action.label
+                  )}
+                </button>
+              </Fragment>
             ))
           ) : (
             <div className="markra-slash-menu-empty">{slashMenuEmptyLabel}</div>

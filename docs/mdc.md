@@ -12,6 +12,8 @@ This fork edits [MDC](https://content.nuxt.com/docs/files/markdown) (Nuxt Conten
 - **Parsing** (`packages/editor/src/codemirror/mdc-syntax.ts`): `::name{attrs}` blocks, a `---` YAML props block directly after the opener, `#slot` lines, `::` closers, `:name[label]{attrs}` inline components, and `{attrs}` after spans, emphasis, code and links. Openers and closers are separate nodes and the content between them is parsed as ordinary Markdown. `readMdcBlocks` pairs them by colon count.
 - **Cards** (`mdc-preview.ts`): each block is drawn as a card, with nested cards indented. The opener shows as a chip with the component's name and an Edit button; the props are YAML-highlighted. Moving the caret onto the opener or the closer shows its source.
 - **Props form** (`mdc-edit.ts`, `packages/editor/src/mdc/`): Edit opens a form generated from `schema/components.json`. Each change rewrites only that prop, in the braces or in the YAML block, and leaves the rest of the text byte for byte.
+- **Insert** (`mdc-insert.ts`, `packages/editor/src/mdc/components.ts`): with a schema, the slash menu has a Components section, grouped by `group` and searchable by name, component id and purpose. The block "+" button opens the same menu with the components first. Choosing one inserts the schema `example` (or a bare block) as its own block, adds colons when it goes inside another component, and opens the props form.
+- **Lint** (`mdc-lint.ts`): diagnostics for unknown components, missing, unknown and mistyped props (list item fields included), and unclosed blocks and props blocks. A card hides its opener line, so problems found there underline the card's label instead.
 
 The file is saved exactly as typed. Cards and forms never change text by themselves.
 

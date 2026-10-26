@@ -13,6 +13,7 @@ import { defaultMarkdownShortcuts } from "@markra/editor";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { defaultExtendedSyntaxPreferences } from "../lib/settings/app-settings";
 import { CodeMirrorPaperSurface } from "./CodeMirrorPaperSurface";
 
 describe("CodeMirrorPaperSurface", () => {
@@ -677,6 +678,48 @@ describe("CodeMirrorPaperSurface", () => {
         "insert.today",
       ]),
     );
+  });
+
+  it("offers the workspace schema's components while MDC is on", () => {
+    const onEditorReady = vi.fn();
+    const schema = {
+      components: [
+        {
+          group: "Layout",
+          name: "hero",
+          props: [{ name: "image", type: "string" }],
+          purpose: "Large image banner with text at the top of a page.",
+        },
+      ],
+    };
+    const { rerender } = render(
+      <CodeMirrorPaperSurface
+        autoFocus={false}
+        initialContent="/"
+        onEditorReady={onEditorReady}
+        onMarkdownChange={() => {}}
+      />,
+    );
+    const view = onEditorReady.mock.calls[0]?.[0] as EditorView;
+    const commands = () => {
+      act(() => {
+        view.dispatch({ selection: EditorSelection.cursor(1) });
+      });
+      return getMarkraSlashMenuState(view).actions.map((action) => action.command);
+    };
+
+    expect(commands()).not.toContain("mdc.insert.hero");
+    rerender(
+      <CodeMirrorPaperSurface
+        autoFocus={false}
+        extendedSyntax={{ ...defaultExtendedSyntaxPreferences, mdc: true }}
+        initialContent="/"
+        mdcSchema={schema}
+        onEditorReady={onEditorReady}
+        onMarkdownChange={() => {}}
+      />,
+    );
+    expect(commands()).toContain("mdc.insert.hero");
   });
 
   it("inserts today's local date from the slash command", () => {

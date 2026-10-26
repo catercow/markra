@@ -36,6 +36,11 @@ export interface MarkraUiContribution {
   readonly group?: string;
   readonly keywords?: readonly string[];
   readonly order?: number;
+  /**
+   * Heading of a menu section. Unsectioned actions form the menu's own section; sectioned
+   * ones are listed under their heading, by `group`.
+   */
+  readonly section?: string;
   readonly when?: (view: EditorView) => boolean;
 }
 
@@ -58,6 +63,7 @@ export interface MarkraUiAction {
   readonly order: number;
   readonly placement: MarkraUiPlacement;
   readonly plugin: string;
+  readonly section?: string;
   run: () => boolean;
 }
 
@@ -187,6 +193,7 @@ export function listMarkraUi(
         order: contribution.order ?? 0,
         placement: contribution.placement,
         plugin,
+        section: contribution.section,
         run: () => runMarkraCommand(view, command.id, { source: "ui" }),
       };
     })
@@ -213,6 +220,7 @@ export function searchMarkraUi(
       action.group ?? "",
       action.label,
       action.plugin,
+      action.section ?? "",
       ...action.keywords,
     ].some((candidate) =>
       normalizedSearchText(candidate).includes(normalizedQuery),
