@@ -1,0 +1,18 @@
+[package]
+name = "cowmark-lint"
+version = "0.1.0"
+edition = "2024"
+description = "Checks CaterCow marketing content files (MDC components, front matter, images, links)."
+publish = false
+
+[dependencies]
+indexmap = "2.14.2"
+regex = "1.13.1"
+saphyr-parser = "0.3.2"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+
+[features]
+default = ["fs"]
+# FileLookup on the local filesystem.
+fs = []
