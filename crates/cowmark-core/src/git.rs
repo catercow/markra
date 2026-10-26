@@ -3,14 +3,21 @@
 //! (an `http.<github>.extraheader`), never through argv, a URL, the repo's
 //! config, or logs.
 
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use base64::Engine;
 
 use crate::git_tool::git_command;
+use crate::merge::{has_conflict_markers, merge_text};
 
 pub const STUDIO_BRANCH: &str = "studio";
 const REMOTE_REF: &str = "refs/remotes/origin/studio";
+/// Every combine first records the whole working tree here (one reflog entry
+/// per combine), so a developer can recover anything a combine got wrong.
+pub const BACKUP_REF: &str = "refs/cowmark/backup";
+/// Follows a `conflict:` message: a JSON array of the files that need resolving.
+pub const CONFLICT_FILES_PREFIX: &str = "\nconflict-files: ";
 
 /// Where to fetch from and push to, and the env that authenticates it.
 pub struct Remote {
@@ -75,7 +82,7 @@ struct GitFailure {
     output: String,
 }
 
-fn run(git: &Path, dir: &Path, args: &[&str], env: &[(String, String)]) -> Result<String, GitFailure> {
+fn run_bytes(git: &Path, dir: &Path, args: &[&str], env: &[(String, String)]) -> Result<Vec<u8>, GitFailure> {
     #[cfg(test)]
     RECORDED_ARGS.with(|log| log.borrow_mut().push(args.iter().map(|arg| arg.to_string()).collect()));
 
@@ -85,12 +92,16 @@ fn run(git: &Path, dir: &Path, args: &[&str], env: &[(String, String)]) -> Resul
         .envs(env.iter().map(|(key, value)| (key.as_str(), value.as_str())))
         .output()
         .map_err(|error| GitFailure { output: error.to_string() })?;
-    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     if output.status.success() {
-        return Ok(stdout);
+        return Ok(output.stdout);
     }
+    let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     Err(GitFailure { output: format!("{stdout}{stderr}").trim().to_string() })
+}
+
+fn run(git: &Path, dir: &Path, args: &[&str], env: &[(String, String)]) -> Result<String, GitFailure> {
+    run_bytes(git, dir, args, env).map(|stdout| String::from_utf8_lossy(&stdout).into_owned())
 }
 
 fn plain(failure: GitFailure, what: &str) -> String {
@@ -194,36 +205,249 @@ fn fetch(git: &Path, root: &Path, remote: &Remote) -> Result<(), String> {
         .map_err(|failure| plain(failure, "get the latest content"))
 }
 
-/// Rebases onto the fetched studio branch. On a conflict, puts everything back
-/// as it was and names the files.
-fn rebase(git: &Path, root: &Path, author: &Author, autostash: bool) -> Result<(), String> {
-    let identity = identity(author);
-    let mut args = vec!["rebase"];
-    if autostash {
-        args.push("--autostash");
+/// "a", "a and b", "a, b and c".
+fn file_list(files: &[String]) -> String {
+    match files {
+        [] => String::new(),
+        [only] => only.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
     }
-    args.push(REMOTE_REF);
-    match run(git, root, &with_identity(&identity, &args), &[]) {
-        Ok(output) if output.contains("Applying autostash resulted in conflicts") => Err(
-            "conflict: Your unsaved changes overlap with changes someone else saved. They're kept in git's stash; ask a developer for help."
-                .into(),
+}
+
+fn conflict_error(message: String, files: &[String]) -> String {
+    let list = serde_json::to_string(files).unwrap_or_else(|_| "[]".into());
+    format!("conflict: {message}{CONFLICT_FILES_PREFIX}{list}")
+}
+
+fn overlap_error(files: &[String]) -> String {
+    conflict_error(
+        format!(
+            "Someone else changed the same part of {}. Both versions are in the file now, marked “yours” and “theirs”. Resolve the highlighted conflicts, then save again.",
+            file_list(files)
         ),
-        Ok(_) => Ok(()),
-        Err(failure) => {
-            let files = run(git, root, &["diff", "--name-only", "--diff-filter=U"], &[])
-                .unwrap_or_default()
-                .lines()
-                .filter(|line| !line.is_empty())
-                .collect::<Vec<_>>()
-                .join(", ");
-            let _ = run(git, root, &with_identity(&identity, &["rebase", "--abort"]), &[]);
-            if files.is_empty() {
-                Err(plain(failure, "combine your changes with the latest content"))
-            } else {
-                Err(format!(
-                    "conflict: Someone else changed the same part of {files}. Your changes are still saved on this computer; ask a developer for help."
-                ))
+        files,
+    )
+}
+
+fn rev_parse(git: &Path, root: &Path, rev: &str) -> Option<String> {
+    run(git, root, &["rev-parse", "-q", "--verify", rev], &[]).ok().map(|oid| oid.trim().to_string())
+}
+
+/// A scratch file in the git dir: an index of our own, so building trees never
+/// touches the folder's real index, or a blob to hash. Removed on drop.
+struct GitScratch(PathBuf);
+
+impl GitScratch {
+    fn new(git: &Path, root: &Path, name: &str, copy_real_index: bool) -> Result<Self, String> {
+        let git_path = |name: &str| {
+            run(git, root, &["rev-parse", "--git-path", name], &[])
+                .map(|path| root.join(path.trim()))
+                .map_err(|failure| plain(failure, "read the folder's git data"))
+        };
+        let path = git_path(name)?;
+        let _ = std::fs::remove_file(&path);
+        // Starting from the real index lets git skip rehashing unchanged files.
+        if copy_real_index {
+            let _ = std::fs::copy(git_path("index")?, &path);
+        }
+        Ok(GitScratch(path))
+    }
+
+    fn index_env(&self) -> Vec<(String, String)> {
+        vec![("GIT_INDEX_FILE".into(), self.0.to_string_lossy().into_owned())]
+    }
+}
+
+impl Drop for GitScratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// The working tree as a tree object, untracked files included (ignored ones are not).
+fn snapshot(git: &Path, root: &Path) -> Result<String, String> {
+    let what = "keep a copy of your changes";
+    let index = GitScratch::new(git, root, "cowmark-snapshot-index", true)?;
+    run(git, root, &["add", "-A", "--", "."], &index.index_env()).map_err(|failure| plain(failure, what))?;
+    run(git, root, &["write-tree"], &index.index_env())
+        .map(|tree| tree.trim().to_string())
+        .map_err(|failure| plain(failure, what))
+}
+
+fn backup(git: &Path, root: &Path, author: &Author, tree: &str, parent: &str) -> Result<(), String> {
+    let what = "keep a copy of your changes";
+    let identity = identity(author);
+    let message = "CowMark: everything in the folder before combining with the latest content";
+    let commit = run(git, root, &with_identity(&identity, &["commit-tree", tree, "-p", parent, "-m", message]), &[])
+        .map_err(|failure| plain(failure, what))?;
+    run(git, root, &["update-ref", "--create-reflog", "-m", "cowmark backup", BACKUP_REF, commit.trim()], &[])
+        .map(|_| ())
+        .map_err(|failure| plain(failure, what))
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct Entry {
+    mode: String,
+    oid: String,
+}
+
+fn ls_tree(git: &Path, root: &Path, treeish: &str) -> Result<HashMap<String, Entry>, String> {
+    let output = run(git, root, &["ls-tree", "-r", "-z", "--full-tree", treeish], &[])
+        .map_err(|failure| plain(failure, "combine your changes with the latest content"))?;
+    Ok(output
+        .split('\0')
+        .filter_map(|record| {
+            let (meta, path) = record.split_once('\t')?;
+            let mut parts = meta.split(' ');
+            let mode = parts.next()?.to_string();
+            let oid = parts.nth(1)?.to_string();
+            Some((path.to_string(), Entry { mode, oid }))
+        })
+        .collect())
+}
+
+/// A blob's text; "" for a missing file, None when it isn't text.
+fn read_text(git: &Path, root: &Path, entry: Option<&Entry>) -> Option<String> {
+    let Some(entry) = entry else { return Some(String::new()) };
+    if !entry.mode.starts_with("100") {
+        return None; // symlinks and submodules aren't merged line by line
+    }
+    let bytes = run_bytes(git, root, &["cat-file", "blob", &entry.oid], &[]).ok()?;
+    if bytes.contains(&0) {
+        return None;
+    }
+    String::from_utf8(bytes).ok()
+}
+
+/// Merges a file both sides changed into a new blob: (oid, has conflicts).
+/// None when it isn't text.
+fn merge_file(
+    git: &Path,
+    root: &Path,
+    base: Option<&Entry>,
+    mine: &Entry,
+    theirs: &Entry,
+) -> Result<Option<(String, bool)>, String> {
+    let (Some(base), Some(mine_text), Some(theirs_text)) =
+        (read_text(git, root, base), read_text(git, root, Some(mine)), read_text(git, root, Some(theirs)))
+    else {
+        return Ok(None);
+    };
+    let merged = merge_text(&base, &mine_text, &theirs_text);
+    let blob = GitScratch::new(git, root, "cowmark-merged-blob", false)?;
+    std::fs::write(&blob.0, merged.text.as_bytes()).map_err(|error| error.to_string())?;
+    let oid = run(git, root, &["hash-object", "-w", "--no-filters", "--", &blob.0.to_string_lossy()], &[])
+        .map_err(|failure| plain(failure, "combine your changes with the latest content"))?;
+    Ok(Some((oid.trim().to_string(), merged.conflicts > 0)))
+}
+
+/// Moves HEAD to `target` and leaves `mine`'s changes since `base` in the
+/// working tree on top of it, uncommitted. Files both sides changed are merged;
+/// overlapping lines get conflict markers and those files are returned.
+/// Nothing is dropped: a file one side deleted and the other edited keeps the
+/// edit, and a non-text file both changed keeps yours (theirs is in `target`).
+fn replay_onto(git: &Path, root: &Path, base: &str, mine: &str, target: &str) -> Result<Vec<String>, String> {
+    let what = "combine your changes with the latest content";
+    let (base_entries, mine_entries, theirs_entries) =
+        (ls_tree(git, root, base)?, ls_tree(git, root, mine)?, ls_tree(git, root, target)?);
+    let result = GitScratch::new(git, root, "cowmark-combine-index", false)?;
+    let index_env = result.index_env();
+    run(git, root, &["read-tree", target], &index_env).map_err(|failure| plain(failure, what))?;
+
+    let paths: BTreeSet<&String> = base_entries.keys().chain(mine_entries.keys()).chain(theirs_entries.keys()).collect();
+    let mut conflicts = Vec::new();
+    for path in paths {
+        let (b, m, t) = (base_entries.get(path), mine_entries.get(path), theirs_entries.get(path));
+        if m == b || m == t {
+            continue;
+        }
+        let entry = if t == b {
+            m.cloned()
+        } else {
+            match (m, t) {
+                (Some(m), Some(t)) => match merge_file(git, root, b, m, t)? {
+                    Some((oid, conflicted)) => {
+                        if conflicted {
+                            conflicts.push(path.clone());
+                        }
+                        Some(Entry { mode: m.mode.clone(), oid })
+                    }
+                    None => Some(m.clone()),
+                },
+                // They deleted it and you edited it: keep your edit.
+                (Some(m), None) => Some(m.clone()),
+                // You deleted it and they edited it: keep their edit.
+                (None, _) => continue,
             }
+        };
+        let outcome = match entry {
+            Some(entry) => run(
+                git,
+                root,
+                &["update-index", "--add", "--cacheinfo", &format!("{},{},{path}", entry.mode, entry.oid)],
+                &index_env,
+            ),
+            None => run(git, root, &["update-index", "--force-remove", "--", path], &index_env),
+        };
+        outcome.map_err(|failure| plain(failure, what))?;
+    }
+    let tree = run(git, root, &["write-tree"], &index_env).map_err(|failure| plain(failure, what))?;
+
+    // The real index must describe the working tree for read-tree -u to know
+    // which files to rewrite or remove.
+    run(git, root, &["add", "-A", "--", "."], &[]).map_err(|failure| plain(failure, what))?;
+    run(git, root, &["read-tree", "--reset", "-u", tree.trim()], &[]).map_err(|failure| plain(failure, what))?;
+    run(git, root, &["reset", "--quiet", "--soft", target], &[]).map_err(|failure| plain(failure, what))?;
+    run(git, root, &["reset", "--quiet"], &[]).map_err(|failure| plain(failure, what))?;
+    Ok(conflicts)
+}
+
+enum CatchUp {
+    /// Local commits sit on top of the latest content.
+    Clean,
+    /// Local commits became uncommitted changes on the latest content, without conflicts.
+    Flattened,
+    /// HEAD is on the latest content (plus local commits that rebased cleanly)
+    /// and these files have conflict markers.
+    Conflicts(Vec<String>),
+}
+
+/// Rebases onto the fetched studio branch, carrying uncommitted changes along.
+/// When git can't (overlapping edits, or a new file of theirs where you have
+/// an unsaved one), every local change is replayed onto the latest content
+/// with conflict markers instead, leaving the folder ready to resolve.
+fn catch_up(git: &Path, root: &Path, author: &Author) -> Result<CatchUp, String> {
+    let before = rev_parse(git, root, "HEAD").ok_or("Couldn't read the folder's latest save.")?;
+    let stash_before = rev_parse(git, root, "refs/stash");
+    let mine = snapshot(git, root)?;
+    backup(git, root, author, &mine, &before)?;
+    let drop_new_autostash = || {
+        let stash_now = rev_parse(git, root, "refs/stash");
+        if stash_now.is_some() && stash_now != stash_before {
+            let _ = run(git, root, &["stash", "drop", "--quiet"], &[]);
+        }
+    };
+
+    let identity = identity(author);
+    match run(git, root, &with_identity(&identity, &["rebase", "--autostash", REMOTE_REF]), &[]) {
+        Ok(_) => {
+            // git keeps the autostash only when re-applying it conflicted.
+            if rev_parse(git, root, "refs/stash") == stash_before {
+                return Ok(CatchUp::Clean);
+            }
+            let rebased = rev_parse(git, root, "HEAD").ok_or("Couldn't read the folder's latest save.")?;
+            let conflicts = replay_onto(git, root, &before, &mine, &rebased)?;
+            // Only now are the stashed edits safely back in the working tree.
+            drop_new_autostash();
+            Ok(if conflicts.is_empty() { CatchUp::Clean } else { CatchUp::Conflicts(conflicts) })
+        }
+        Err(_) => {
+            let _ = run(git, root, &with_identity(&identity, &["rebase", "--abort"]), &[]);
+            let base = run(git, root, &["merge-base", &before, REMOTE_REF], &[])
+                .map_err(|failure| plain(failure, "combine your changes with the latest content"))?;
+            let conflicts = replay_onto(git, root, base.trim(), &mine, REMOTE_REF)?;
+            drop_new_autostash();
+            Ok(if conflicts.is_empty() { CatchUp::Flattened } else { CatchUp::Conflicts(conflicts) })
         }
     }
 }
@@ -240,6 +464,20 @@ fn require_studio(git: &Path, root: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Ticked files that still have conflict markers in them.
+fn unresolved(root: &Path, paths: &[String]) -> Vec<String> {
+    paths
+        .iter()
+        .filter(|path| {
+            std::fs::read(root.join(path))
+                .ok()
+                .and_then(|bytes| String::from_utf8(bytes).ok())
+                .is_some_and(|text| has_conflict_markers(&text))
+        })
+        .cloned()
+        .collect()
+}
+
 /// Commits only `paths` (the files the editor ticked) and pushes. Every other
 /// change stays in the working tree as a local draft. Paths that no longer have
 /// changes are ignored, so a stale selection can't stage anything else.
@@ -252,22 +490,18 @@ pub fn save(
     paths: &[String],
 ) -> Result<SyncResult, String> {
     require_studio(git, root)?;
-    run(git, root, &["reset", "--quiet"], &[]).map_err(|failure| plain(failure, "stage your changes"))?;
-    let changed: std::collections::HashSet<String> =
-        status(git, root)?.changes.into_iter().map(|change| change.path).collect();
-    let selected: Vec<&str> = paths.iter().map(String::as_str).filter(|path| changed.contains(*path)).collect();
-    if !selected.is_empty() {
-        let mut args = vec!["--literal-pathspecs", "add", "-A", "--"];
-        args.extend(selected);
-        run(git, root, &args, &[]).map_err(|failure| plain(failure, "stage your changes"))?;
+    let marked = unresolved(root, paths);
+    if !marked.is_empty() {
+        let verb = if marked.len() == 1 { "still has" } else { "still have" };
+        return Err(conflict_error(
+            format!(
+                "{} {verb} conflicts marked “yours” and “theirs”. Choose a version for each highlighted conflict, then save again.",
+                file_list(&marked)
+            ),
+            &marked,
+        ));
     }
-    let committed = run(git, root, &["diff", "--cached", "--quiet"], &[]).is_err();
-    if committed {
-        let message = if message.trim().is_empty() { "Update content" } else { message.trim() };
-        let identity = identity(author);
-        run(git, root, &with_identity(&identity, &["commit", "--quiet", "-m", message]), &[])
-            .map_err(|failure| plain(failure, "save your changes"))?;
-    }
+    let mut committed = commit_selected(git, root, author, message, paths)?;
 
     // Someone may push between our fetch and push; one retry covers that.
     let refspec = format!("HEAD:refs/heads/{STUDIO_BRANCH}");
@@ -275,8 +509,12 @@ pub fn save(
     loop {
         attempts += 1;
         fetch(git, root, remote)?;
-        // Unticked drafts are still in the working tree; carry them across.
-        rebase(git, root, author, true)?;
+        match catch_up(git, root, author)? {
+            CatchUp::Clean => {}
+            CatchUp::Conflicts(files) => return Err(overlap_error(&files)),
+            // The ticked files combined cleanly but are uncommitted again.
+            CatchUp::Flattened => committed = commit_selected(git, root, author, message, paths)?,
+        }
         match run(git, root, &["push", "--quiet", &remote.url, &refspec], &remote.env) {
             Ok(_) => break,
             Err(failure) if attempts < 2 && (failure.output.contains("rejected") || failure.output.contains("fetch first")) => {
@@ -293,8 +531,31 @@ pub fn save(
 pub fn update(git: &Path, root: &Path, remote: &Remote, author: &Author) -> Result<SyncResult, String> {
     require_studio(git, root)?;
     fetch(git, root, remote)?;
-    rebase(git, root, author, true)?;
+    if let CatchUp::Conflicts(files) = catch_up(git, root, author)? {
+        return Err(overlap_error(&files));
+    }
     Ok(SyncResult { committed: false, head: head(git, root) })
+}
+
+/// Commits the ticked `paths` that still have changes; false when none do.
+fn commit_selected(git: &Path, root: &Path, author: &Author, message: &str, paths: &[String]) -> Result<bool, String> {
+    run(git, root, &["reset", "--quiet"], &[]).map_err(|failure| plain(failure, "stage your changes"))?;
+    let changed: std::collections::HashSet<String> =
+        status(git, root)?.changes.into_iter().map(|change| change.path).collect();
+    let selected: Vec<&str> = paths.iter().map(String::as_str).filter(|path| changed.contains(*path)).collect();
+    if !selected.is_empty() {
+        let mut args = vec!["--literal-pathspecs", "add", "-A", "--"];
+        args.extend(selected);
+        run(git, root, &args, &[]).map_err(|failure| plain(failure, "stage your changes"))?;
+    }
+    let committed = run(git, root, &["diff", "--cached", "--quiet"], &[]).is_err();
+    if committed {
+        let message = if message.trim().is_empty() { "Update content" } else { message.trim() };
+        let identity = identity(author);
+        run(git, root, &with_identity(&identity, &["commit", "--quiet", "-m", message]), &[])
+            .map_err(|failure| plain(failure, "save your changes"))?;
+    }
+    Ok(committed)
 }
 
 pub fn default_folder(documents: Option<PathBuf>) -> PathBuf {
@@ -333,6 +594,7 @@ mod tests {
         git_ok(git, &seed, &["init", "--quiet", "-b", "studio"]);
         fs::create_dir_all(seed.join("content/blog")).unwrap();
         fs::write(seed.join("content/blog/a.md"), "line one\nline two\n").unwrap();
+        fs::write(seed.join("content/blog/b.md"), "b one\nb two\n").unwrap();
         git_ok(git, &seed, &["add", "."]);
         git_ok(git, &seed, &["-c", "user.name=Seed", "-c", "user.email=seed@example.com", "commit", "--quiet", "-m", "seed"]);
         git_ok(git, &seed, &["push", "--quiet", &bare.to_string_lossy(), "studio"]);
@@ -421,10 +683,82 @@ mod tests {
         let _ = fs::remove_dir_all(&base);
     }
 
+    fn conflict_files(error: &str) -> Vec<String> {
+        let (_, list) = error.split_once(CONFLICT_FILES_PREFIX).unwrap_or_else(|| panic!("no file list: {error}"));
+        serde_json::from_str(list).unwrap()
+    }
+
+    fn remote_head(git: &Path, base: &Path) -> String {
+        git_ok(git, &base.join("remote.git"), &["rev-parse", "studio"]).trim().to_string()
+    }
+
+    fn read(path: PathBuf) -> String {
+        fs::read_to_string(path).unwrap()
+    }
+
+    fn ticked(paths: &[&str]) -> Vec<String> {
+        paths.iter().map(|path| path.to_string()).collect()
+    }
+
     #[test]
-    fn a_conflicting_save_is_undone_and_names_the_file() {
+    fn a_conflicting_save_leaves_markers_on_the_latest_content_and_keeps_drafts() {
         let Some(git) = find_git() else { return };
         let base = temp("conflict");
+        let remote = remote_with_studio(&git, &base);
+        let mine = base.join("mine");
+        let theirs = base.join("theirs");
+        let check = base.join("check");
+        let me = Author::from_email("editor@catercow.com");
+        clone_into(&git, &remote, &mine).unwrap();
+        clone_into(&git, &remote, &theirs).unwrap();
+
+        fs::write(theirs.join("content/blog/a.md"), "line one\ntheir line\n").unwrap();
+        fs::write(theirs.join("content/blog/b.md"), "b zero\nb one\nb two\n").unwrap();
+        save(&git, &theirs, &remote, &Author::from_email("other@catercow.com"), "Theirs", &ticked(&["content/blog/a.md", "content/blog/b.md"])).unwrap();
+
+        fs::write(mine.join("content/blog/a.md"), "line one\nmy line\n").unwrap();
+        fs::write(mine.join("content/blog/b.md"), "b one\nb two\nmy b three\n").unwrap();
+        fs::write(mine.join("content/blog/draft.md"), "# Draft\n").unwrap();
+        let error = save(&git, &mine, &remote, &me, "Mine", &ticked(&["content/blog/a.md"])).unwrap_err();
+        assert!(error.starts_with("conflict: Someone else changed the same part of content/blog/a.md."), "{error}");
+        assert_eq!(conflict_files(&error), vec!["content/blog/a.md".to_string()]);
+
+        // On the latest content, the editor's commit turned back into changes, both sides kept.
+        assert!(!mine.join(".git/rebase-merge").exists() && !mine.join(".git/rebase-apply").exists());
+        assert_eq!(git_ok(&git, &mine, &["rev-parse", "HEAD"]).trim(), remote_head(&git, &base));
+        assert_eq!(status(&git, &mine).unwrap().ahead, 0);
+        assert_eq!(
+            read(mine.join("content/blog/a.md")),
+            "line one\n<<<<<<< yours\nmy line\n=======\ntheir line\n>>>>>>> theirs\n"
+        );
+        assert_eq!(read(mine.join("content/blog/b.md")), "b zero\nb one\nb two\nmy b three\n");
+        assert_eq!(read(mine.join("content/blog/draft.md")), "# Draft\n");
+        assert_eq!(git_ok(&git, &mine, &["stash", "list"]).trim(), "");
+        assert!(git_ok(&git, &mine, &["rev-parse", BACKUP_REF]).trim().len() == 40);
+
+        // Saving with the markers still in is refused and changes nothing.
+        let error = save(&git, &mine, &remote, &me, "Mine", &ticked(&["content/blog/a.md"])).unwrap_err();
+        assert!(error.starts_with("conflict: content/blog/a.md still has conflicts"), "{error}");
+        assert_eq!(conflict_files(&error), vec!["content/blog/a.md".to_string()]);
+        assert_eq!(git_ok(&git, &mine, &["rev-parse", "HEAD"]).trim(), remote_head(&git, &base));
+
+        // Resolved, the second save goes through and the drafts stay behind.
+        fs::write(mine.join("content/blog/a.md"), "line one\nmy line\ntheir line\n").unwrap();
+        assert!(save(&git, &mine, &remote, &me, "Mine", &ticked(&["content/blog/a.md"])).unwrap().committed);
+        clone_into(&git, &remote, &check).unwrap();
+        assert_eq!(read(check.join("content/blog/a.md")), "line one\nmy line\ntheir line\n");
+        assert_eq!(read(check.join("content/blog/b.md")), "b zero\nb one\nb two\n");
+        assert!(!check.join("content/blog/draft.md").exists());
+        let mut left: Vec<String> = status(&git, &mine).unwrap().changes.into_iter().map(|c| c.path).collect();
+        left.sort();
+        assert_eq!(left, vec!["content/blog/b.md".to_string(), "content/blog/draft.md".to_string()]);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn names_every_conflicting_file_including_an_unsaved_new_file_they_also_added() {
+        let Some(git) = find_git() else { return };
+        let base = temp("multi");
         let remote = remote_with_studio(&git, &base);
         let mine = base.join("mine");
         let theirs = base.join("theirs");
@@ -432,19 +766,108 @@ mod tests {
         clone_into(&git, &remote, &theirs).unwrap();
 
         fs::write(theirs.join("content/blog/a.md"), "line one\ntheir line\n").unwrap();
-        save(&git, &theirs, &remote, &Author::from_email("other@catercow.com"), "Theirs", &["content/blog/a.md".to_string()]).unwrap();
+        fs::write(theirs.join("content/blog/b.md"), "b one\ntheir b\n").unwrap();
+        fs::write(theirs.join("content/blog/new.md"), "# New\n\ntheir text\n").unwrap();
+        save(&git, &theirs, &remote, &Author::from_email("other@catercow.com"), "Theirs", &ticked(&["content/blog/a.md", "content/blog/b.md", "content/blog/new.md"])).unwrap();
 
         fs::write(mine.join("content/blog/a.md"), "line one\nmy line\n").unwrap();
-        let error = save(&git, &mine, &remote, &Author::from_email("editor@catercow.com"), "Mine", &["content/blog/a.md".to_string()]).unwrap_err();
-        assert!(error.starts_with("conflict:"), "{error}");
-        assert!(error.contains("content/blog/a.md"), "{error}");
+        fs::write(mine.join("content/blog/b.md"), "b one\nmy b\n").unwrap();
+        fs::write(mine.join("content/blog/new.md"), "# New\n\nmy text\n").unwrap();
+        fs::write(mine.join("content/blog/keep.md"), "# Keep\n").unwrap();
+        let error = save(&git, &mine, &remote, &Author::from_email("editor@catercow.com"), "Mine", &ticked(&["content/blog/a.md", "content/blog/b.md"])).unwrap_err();
+        assert_eq!(
+            conflict_files(&error),
+            ticked(&["content/blog/a.md", "content/blog/b.md", "content/blog/new.md"])
+        );
+        assert!(error.contains("content/blog/a.md, content/blog/b.md and content/blog/new.md"), "{error}");
+        assert_eq!(git_ok(&git, &mine, &["rev-parse", "HEAD"]).trim(), remote_head(&git, &base));
+        assert_eq!(read(mine.join("content/blog/b.md")), "b one\n<<<<<<< yours\nmy b\n=======\ntheir b\n>>>>>>> theirs\n");
+        assert_eq!(
+            read(mine.join("content/blog/new.md")),
+            "# New\n\n<<<<<<< yours\nmy text\n=======\ntheir text\n>>>>>>> theirs\n"
+        );
+        assert_eq!(read(mine.join("content/blog/keep.md")), "# Keep\n");
+        let _ = fs::remove_dir_all(&base);
+    }
 
-        // Rebase aborted, local commit kept, file as the editor wrote it.
-        assert!(!mine.join(".git/rebase-merge").exists() && !mine.join(".git/rebase-apply").exists());
-        let subject = git_ok(&git, &mine, &["log", "-1", "--format=%s"]);
-        assert_eq!(subject.trim(), "Mine");
-        assert_eq!(fs::read_to_string(mine.join("content/blog/a.md")).unwrap(), "line one\nmy line\n");
-        assert_eq!(status(&git, &mine).unwrap().ahead, 1);
+    #[test]
+    fn a_conflicting_draft_keeps_the_saved_commit_waiting_to_send() {
+        let Some(git) = find_git() else { return };
+        let base = temp("draft-conflict");
+        let remote = remote_with_studio(&git, &base);
+        let mine = base.join("mine");
+        let theirs = base.join("theirs");
+        let me = Author::from_email("editor@catercow.com");
+        clone_into(&git, &remote, &mine).unwrap();
+        clone_into(&git, &remote, &theirs).unwrap();
+
+        fs::write(theirs.join("content/blog/b.md"), "b one\ntheir b\n").unwrap();
+        save(&git, &theirs, &remote, &Author::from_email("other@catercow.com"), "Theirs", &ticked(&["content/blog/b.md"])).unwrap();
+
+        fs::write(mine.join("content/blog/a.md"), "line one\nmy line\n").unwrap();
+        fs::write(mine.join("content/blog/b.md"), "b one\nmy b\n").unwrap();
+        let error = save(&git, &mine, &remote, &me, "Mine", &ticked(&["content/blog/a.md"])).unwrap_err();
+        assert_eq!(conflict_files(&error), vec!["content/blog/b.md".to_string()]);
+        assert_eq!(read(mine.join("content/blog/b.md")), "b one\n<<<<<<< yours\nmy b\n=======\ntheir b\n>>>>>>> theirs\n");
+        assert_eq!(read(mine.join("content/blog/a.md")), "line one\nmy line\n");
+        assert_eq!(git_ok(&git, &mine, &["rev-parse", "HEAD^"]).trim(), remote_head(&git, &base));
+        assert_eq!(git_ok(&git, &mine, &["log", "-1", "--format=%s"]).trim(), "Mine");
+        assert_eq!(git_ok(&git, &mine, &["stash", "list"]).trim(), "");
+
+        // The draft isn't ticked, so the waiting commit can still be sent.
+        save(&git, &mine, &remote, &me, "", &[]).unwrap();
+        assert_eq!(git_ok(&git, &mine, &["rev-parse", "HEAD"]).trim(), remote_head(&git, &base));
+        assert!(has_conflict_markers(&read(mine.join("content/blog/b.md"))));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn get_latest_puts_overlapping_unsaved_edits_into_the_file_and_drops_the_stash() {
+        let Some(git) = find_git() else { return };
+        let base = temp("update-conflict");
+        let remote = remote_with_studio(&git, &base);
+        let mine = base.join("mine");
+        let theirs = base.join("theirs");
+        clone_into(&git, &remote, &mine).unwrap();
+        clone_into(&git, &remote, &theirs).unwrap();
+
+        fs::write(theirs.join("content/blog/a.md"), "line one\ntheir line\n").unwrap();
+        save(&git, &theirs, &remote, &Author::from_email("other@catercow.com"), "Theirs", &ticked(&["content/blog/a.md"])).unwrap();
+
+        fs::write(mine.join("content/blog/a.md"), "line one\nmy line\n").unwrap();
+        fs::write(mine.join("content/blog/draft.md"), "# Draft\n").unwrap();
+        let error = update(&git, &mine, &remote, &Author::from_email("editor@catercow.com")).unwrap_err();
+        assert_eq!(conflict_files(&error), vec!["content/blog/a.md".to_string()]);
+        assert_eq!(git_ok(&git, &mine, &["rev-parse", "HEAD"]).trim(), remote_head(&git, &base));
+        assert_eq!(read(mine.join("content/blog/a.md")), "line one\n<<<<<<< yours\nmy line\n=======\ntheir line\n>>>>>>> theirs\n");
+        assert_eq!(read(mine.join("content/blog/draft.md")), "# Draft\n");
+        assert_eq!(git_ok(&git, &mine, &["stash", "list"]).trim(), "");
+        assert_eq!(git_ok(&git, &mine, &["diff", "--name-only", "--diff-filter=U"]).trim(), "");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn an_unsaved_copy_of_a_file_they_added_does_not_block_the_save() {
+        let Some(git) = find_git() else { return };
+        let base = temp("same-new");
+        let remote = remote_with_studio(&git, &base);
+        let mine = base.join("mine");
+        let theirs = base.join("theirs");
+        let check = base.join("check");
+        clone_into(&git, &remote, &mine).unwrap();
+        clone_into(&git, &remote, &theirs).unwrap();
+
+        fs::write(theirs.join("content/blog/same.md"), "# Same\n").unwrap();
+        save(&git, &theirs, &remote, &Author::from_email("other@catercow.com"), "Theirs", &ticked(&["content/blog/same.md"])).unwrap();
+
+        fs::write(mine.join("content/blog/same.md"), "# Same\n").unwrap();
+        fs::write(mine.join("content/blog/a.md"), "line one\nmy line\n").unwrap();
+        let saved = save(&git, &mine, &remote, &Author::from_email("editor@catercow.com"), "Mine", &ticked(&["content/blog/a.md"])).unwrap();
+        assert!(saved.committed);
+        clone_into(&git, &remote, &check).unwrap();
+        assert_eq!(read(check.join("content/blog/a.md")), "line one\nmy line\n");
+        assert_eq!(read(check.join("content/blog/same.md")), "# Same\n");
+        assert!(status(&git, &mine).unwrap().changes.is_empty());
         let _ = fs::remove_dir_all(&base);
     }
 

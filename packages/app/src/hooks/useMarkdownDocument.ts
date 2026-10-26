@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { initialMarkdown } from "../constants/initial-markdown";
 import {
   clearStoredRecentMarkdownFiles,
@@ -36,6 +36,7 @@ import {
   type NativeMarkdownFile,
   type NativeMarkdownFolderFile
 } from "../lib/tauri";
+import type { MergeText } from "../lib/content-access";
 import { shouldBlockLargeMarkdownVisual } from "../lib/large-markdown";
 import { scheduleMarkdownSummaryIdle, shouldDeferMarkdownSummary } from "../lib/markdown-summary";
 import {
@@ -67,6 +68,10 @@ import {
 import { createEditorSyncState, type EditorSyncState } from "./markdown-document/editor-sync";
 
 export type { MarkdownDocumentTab } from "./markdown-document/document-model";
+
+function diskBaseKey(path: string) {
+  return normalizeComparablePath(path) ?? path;
+}
 
 function isBlankEditorWindow() {
   return new URLSearchParams(window.location.search).has("blank");
@@ -108,6 +113,12 @@ type ApplySavedCurrentDocumentOptions = {
 type MovedMarkdownDocumentUpdate = {
   content: string;
   dirty: boolean;
+};
+
+export type DiskFileMerge = {
+  /** Conflict blocks written into the document; 0 when the changes combined cleanly. */
+  conflicts: number;
+  path: string;
 };
 
 export type ActiveDiskFileContentChange = {
@@ -155,7 +166,13 @@ type UseMarkdownDocumentOptions = {
   getCurrentMarkdown: (fallbackContent: string) => string;
   globalIgnoreRules?: string;
   isCurrentMarkdownEquivalent?: (markdown: string) => boolean | undefined;
+  /**
+   * Merges a disk change into a tab with unsaved edits, keeping both sides.
+   * Without it such changes are ignored and the next save overwrites them.
+   */
+  mergeDiskText?: MergeText;
   onActiveDiskFileContentChange?: (change: ActiveDiskFileContentChange) => boolean | undefined;
+  onDiskFileMerged?: (merge: DiskFileMerge) => unknown;
   onMarkdownTreeChange?: (path: string) => unknown | Promise<unknown>;
   onTreeRootFromFolderPath: (
     path: string,
@@ -259,7 +276,9 @@ export function useMarkdownDocument({
   getCurrentMarkdown,
   globalIgnoreRules = "",
   isCurrentMarkdownEquivalent,
+  mergeDiskText,
   onActiveDiskFileContentChange,
+  onDiskFileMerged,
   onMarkdownTreeChange,
   onTreeRootFromFolderPath,
   onTreeRootFromFilePath,
@@ -291,6 +310,13 @@ export function useMarkdownDocument({
   const editorSyncStateRef = useRef<EditorSyncState | null>(null);
   if (editorSyncStateRef.current === null) editorSyncStateRef.current = createEditorSyncState();
   const editorSyncState = editorSyncStateRef.current;
+  const mergeDiskTextRef = useRef(mergeDiskText);
+  mergeDiskTextRef.current = mergeDiskText;
+  const onDiskFileMergedRef = useRef(onDiskFileMerged);
+  onDiskFileMergedRef.current = onDiskFileMerged;
+  // Each open file's content as last read from or written to disk (a clean
+  // tab's content): the base for merging a disk change into unsaved edits.
+  const diskBaseRef = useRef(new Map<string, string>());
   const largeDocumentSummariesBlocked = useMemo(
     () => shouldBlockLargeMarkdownVisual(document.content, { sizeBytes: document.sizeBytes }),
     [document.content, document.sizeBytes]
@@ -954,6 +980,98 @@ export function useMarkdownDocument({
     }]);
     return true;
   }, [editorSyncState, onActiveDiskFileContentChange]);
+
+  // Runs before effects so the watcher never merges against a base older than
+  // the content a save has just made clean.
+  useLayoutEffect(() => {
+    const bases = diskBaseRef.current;
+    const open = new Set<string>();
+    for (const tab of tabs) {
+      if (tab.path === null) continue;
+      const key = diskBaseKey(tab.path);
+      open.add(key);
+      if (!tab.dirty && !tab.deleted) bases.set(key, tab.content);
+    }
+    for (const key of [...bases.keys()]) {
+      if (!open.has(key)) bases.delete(key);
+    }
+  }, [tabs]);
+
+  /** The tab showing `path`, with the active editor's latest text. */
+  const currentFileTab = useCallback((path: string) => {
+    const tab = tabsRef.current.find((candidate) => candidate.path !== null && sameNativePath(candidate.path, path));
+    if (!tab) return null;
+    if (tab.id !== activeTabIdRef.current) return { active: false, tab };
+
+    const synced = syncActiveDocumentFromEditor();
+    return synced.path !== null && sameNativePath(synced.path, path)
+      ? { active: true, tab: createDocumentTab(synced, tab.id) }
+      : { active: true, tab };
+  }, [syncActiveDocumentFromEditor]);
+
+  const mergeDiskFileIntoDirtyTab = useCallback(async (file: NativeMarkdownFile) => {
+    const merge = mergeDiskTextRef.current;
+    if (!merge) return false;
+    const key = diskBaseKey(file.path);
+
+    // The user may type while the merge runs; retry against the newer text.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const current = currentFileTab(file.path);
+      if (!current || !current.tab.dirty || current.tab.deleted) return false;
+      const base = diskBaseRef.current.get(key);
+      if (file.content === base) return false;
+      if (file.content === current.tab.content) {
+        diskBaseRef.current.set(key, file.content);
+        return false;
+      }
+
+      const mine = current.tab.content;
+      // Without a known base (a restored draft), every differing line conflicts.
+      const merged = await merge(base ?? "", mine, file.content);
+      const latest = currentFileTab(file.path);
+      if (!latest || !latest.tab.dirty || latest.tab.id !== current.tab.id) return false;
+      if (latest.tab.content !== mine) continue;
+
+      const activeEditorUpdated =
+        latest.active &&
+        onActiveDiskFileContentChange?.({
+          content: merged.text,
+          path: file.path,
+          previousContent: mine,
+          revision: latest.tab.revision,
+          source: "merge"
+        }) === true;
+      const nextDocument = {
+        ...latest.tab,
+        content: merged.text,
+        dirty: true,
+        revision: activeEditorUpdated ? latest.tab.revision : latest.tab.revision + 1
+      };
+      const nextTabs = tabsRef.current.map((tab) =>
+        tab.id === latest.tab.id ? createDocumentTab(nextDocument, tab.id) : tab
+      );
+      diskBaseRef.current.set(key, file.content);
+      tabsRef.current = nextTabs;
+      setTabs(nextTabs);
+      if (latest.active) {
+        const activeDocument = documentFromTab(nextDocument);
+        documentRef.current = activeDocument;
+        setDocument(activeDocument);
+      }
+      persistWorkspaceState(draftWorkspacePatchFromTabs(nextTabs, activeTabIdRef.current));
+      debug(() => ["[markra-history] disk file merged into unsaved edits", {
+        conflicts: merged.conflicts,
+        diskPath: file.path,
+        tabId: latest.tab.id
+      }]);
+      onDiskFileMergedRef.current?.({ conflicts: merged.conflicts, path: file.path });
+      return true;
+    }
+    return false;
+  }, [currentFileTab, onActiveDiskFileContentChange]);
+  // Read through a ref so the file watchers aren't restarted whenever it changes.
+  const mergeDiskFileIntoDirtyTabRef = useRef(mergeDiskFileIntoDirtyTab);
+  mergeDiskFileIntoDirtyTabRef.current = mergeDiskFileIntoDirtyTab;
 
   const refreshCleanOpenTabFromDisk = useCallback((path: string, reason: string) => {
     const currentTab = tabsRef.current.find((tab) => tab.path !== null && sameNativePath(tab.path, path));
@@ -2279,7 +2397,8 @@ export function useMarkdownDocument({
       }
       if (!active) return;
 
-      applyDiskFileToCleanOpenTab(file, "watcher");
+      if (applyDiskFileToCleanOpenTab(file, "watcher")) return;
+      await mergeDiskFileIntoDirtyTabRef.current(file);
     };
 
     const drainWatchedFileRead = async (watchedPath: string, state: WatchedMarkdownFileReadState) => {

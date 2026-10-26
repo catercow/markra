@@ -6,6 +6,7 @@ mod app_logs;
 mod backup;
 mod clipboard;
 mod content_access;
+mod content_merge;
 mod content_preview;
 mod external_urls;
 mod fonts;
@@ -90,6 +91,7 @@ use content_access::{
     content_access_sign_in, content_access_sign_out, content_access_state, content_access_status,
     content_access_update, ContentAccessState,
 };
+use content_merge::content_merge_text;
 use content_preview::{
     content_preview_pending, content_preview_poll, content_preview_read_media, content_preview_stop,
     ContentPreviewState,
@@ -392,6 +394,7 @@ pub fn run() {
             content_access_status,
             content_access_save,
             content_access_update,
+            content_merge_text,
             list_markdown_file_history,
             read_markdown_file_history,
             read_markdown_image_file,

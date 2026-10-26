@@ -14,6 +14,7 @@ import {
 } from "./plugin.ts";
 import { livePreview, type LivePreviewConfig } from "./preview.ts";
 import { markraSlashMenu } from "./slash-menu.ts";
+import { markraConflictSyntax } from "./conflict-syntax.ts";
 import { markraMdc } from "./mdc-syntax.ts";
 import { markraSetextHeading } from "./setext-heading.ts";
 import { markraTheme } from "./theme.ts";
@@ -258,6 +259,8 @@ export interface LiveMarkdownConfig extends LivePreviewConfig {
   highlight?: boolean;
   /** Parse MDC components (`::name{...}` blocks, `:name[...]` inline). */
   mdc?: boolean;
+  /** Parse git conflict marker lines as their own blocks (see conflict-syntax.ts). */
+  conflicts?: boolean;
   plugins?: readonly MarkraPlugin[];
   slashMenu?: boolean;
 }
@@ -270,8 +273,8 @@ const markraLanguages = new Map<string, Extension>([["highlight", markraLanguage
 
 // One instance per syntax set, so reconfiguring with the same options keeps
 // the language (and its parse cache) instead of reparsing.
-export function markraMarkdownLanguage({ highlight = true, mdc = false } = {}): Extension {
-  const key = [highlight ? "highlight" : "", mdc ? "mdc" : ""].filter(Boolean).join("+");
+export function markraMarkdownLanguage({ conflicts = false, highlight = true, mdc = false } = {}): Extension {
+  const key = [highlight ? "highlight" : "", mdc ? "mdc" : "", conflicts ? "conflicts" : ""].filter(Boolean).join("+");
   let language = markraLanguages.get(key);
   if (!language) {
     language = markdown({
@@ -280,6 +283,7 @@ export function markraMarkdownLanguage({ highlight = true, mdc = false } = {}): 
         ...(highlight ? [markraHighlight] : []),
         markraSetextHeading,
         ...(mdc ? [markraMdc] : []),
+        ...(conflicts ? [markraConflictSyntax] : []),
       ],
     });
     markraLanguages.set(key, language);
@@ -289,6 +293,7 @@ export function markraMarkdownLanguage({ highlight = true, mdc = false } = {}): 
 
 export function liveMarkdown(config: LiveMarkdownConfig = {}): Extension {
   const {
+    conflicts = false,
     highlight = true,
     mdc = false,
     plugins = [],
@@ -296,7 +301,7 @@ export function liveMarkdown(config: LiveMarkdownConfig = {}): Extension {
     ...previewConfig
   } = config;
   return [
-    markraMarkdownLanguage({ highlight, mdc }),
+    markraMarkdownLanguage({ conflicts, highlight, mdc }),
     markdownSyntaxHighlighting,
     codeFolding(),
     livePreview(previewConfig),
@@ -306,6 +311,24 @@ export function liveMarkdown(config: LiveMarkdownConfig = {}): Extension {
   ];
 }
 export { markraMdc, scanMdcAttributes } from "./mdc-syntax.ts";
+export type { ConflictMarkerKind } from "./conflict-syntax.ts";
+export { conflictMarkerKind, markraConflictSyntax } from "./conflict-syntax.ts";
+export type {
+  ConflictBlock,
+  ConflictChoice,
+  ConflictLabels,
+  ConflictMarkersPluginOptions,
+  ConflictRange,
+} from "./conflicts.ts";
+export {
+  conflictMarkersPlugin,
+  conflictResolution,
+  countConflictBlocks,
+  defaultConflictLabels,
+  readConflictBlocks,
+  resolveConflictAt,
+  selectNextConflict,
+} from "./conflicts.ts";
 export type { MdcComponentsPluginOptions, MdcInsertion } from "./mdc-insert.ts";
 export {
   insertMdcComponent,

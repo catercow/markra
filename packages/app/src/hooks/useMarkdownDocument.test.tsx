@@ -1190,6 +1190,137 @@ describe("useMarkdownDocument", () => {
     });
   });
 
+  describe("disk changes to a tab with unsaved edits", () => {
+    const path = "/mock-files/guide.md";
+    const opened = "# Guide\n\nIntro\n\nEnd\n";
+    const mine = "# Guide\n\nIntro, edited here\n\nEnd\n";
+    const theirs = "# Guide\n\nIntro\n\nEnd, edited elsewhere\n";
+
+    async function openDirtyGuide(options: Partial<Parameters<typeof useMarkdownDocument>[0]> = {}) {
+      let emitExternalChange: (path: string) => unknown | Promise<unknown> = () => {};
+      mockedWatchNativeMarkdownFile.mockImplementation(async (_path, onChange) => {
+        emitExternalChange = onChange;
+        return () => {};
+      });
+      mockedReadNativeMarkdownFile.mockResolvedValueOnce({ content: opened, name: "guide.md", path });
+      const hook = renderHook(() =>
+        useMarkdownDocument({
+          documentTabsEnabled: true,
+          getCurrentMarkdown: (fallbackContent) => fallbackContent,
+          onTreeRootFromFilePath: vi.fn(),
+          onTreeRootFromFolderPath: vi.fn(),
+          preferencesReady: false,
+          restoreWorkspaceOnStartup: false,
+          ...options
+        })
+      );
+      await act(async () => {
+        await hook.result.current.openTreeMarkdownFile({ name: "guide.md", path, relativePath: "guide.md" });
+      });
+      await waitFor(() => expect(mockedWatchNativeMarkdownFile).toHaveBeenCalled());
+      act(() => {
+        hook.result.current.handleMarkdownChange(mine);
+      });
+      return { ...hook, emit: () => emitExternalChange(path) };
+    }
+
+    it("merges the change against the last disk content as one editor update and stays dirty", async () => {
+      const mergeDiskText = vi.fn(async () => ({ conflicts: 0, text: "merged" }));
+      const onActiveDiskFileContentChange = vi.fn(() => true);
+      const onDiskFileMerged = vi.fn();
+      const { emit, result } = await openDirtyGuide({ mergeDiskText, onActiveDiskFileContentChange, onDiskFileMerged });
+      const revision = result.current.document.revision;
+      mockedReadNativeMarkdownFile.mockResolvedValueOnce({ content: theirs, name: "guide.md", path });
+
+      await act(async () => {
+        await emit();
+      });
+
+      expect(mergeDiskText).toHaveBeenCalledWith(opened, mine, theirs);
+      expect(onActiveDiskFileContentChange).toHaveBeenCalledWith(expect.objectContaining({
+        content: "merged",
+        path,
+        previousContent: mine,
+        source: "merge"
+      }));
+      expect(result.current.document).toMatchObject({ content: "merged", dirty: true, path, revision });
+      expect(result.current.tabs.find((tab) => tab.path === path)).toMatchObject({ content: "merged", dirty: true });
+      expect(onDiskFileMerged).toHaveBeenCalledWith({ conflicts: 0, path });
+    });
+
+    it("uses the merged-in disk content as the next base", async () => {
+      const mergeDiskText = vi.fn(async (_base: string, _mine: string, incoming: string) => ({ conflicts: 1, text: `merged ${incoming}` }));
+      const { emit, result } = await openDirtyGuide({ mergeDiskText, onActiveDiskFileContentChange: () => true });
+      mockedReadNativeMarkdownFile
+        .mockResolvedValueOnce({ content: theirs, name: "guide.md", path })
+        .mockResolvedValueOnce({ content: "third", name: "guide.md", path });
+
+      await act(async () => {
+        await emit();
+      });
+      await act(async () => {
+        await emit();
+      });
+
+      expect(mergeDiskText).toHaveBeenLastCalledWith(theirs, `merged ${theirs}`, "third");
+      expect(result.current.document.content).toBe("merged third");
+    });
+
+    it("ignores a disk change that matches the base or the edits", async () => {
+      const mergeDiskText = vi.fn(async () => ({ conflicts: 0, text: "merged" }));
+      const { emit, result } = await openDirtyGuide({ mergeDiskText });
+      mockedReadNativeMarkdownFile
+        .mockResolvedValueOnce({ content: opened, name: "guide.md", path })
+        .mockResolvedValueOnce({ content: mine, name: "guide.md", path });
+
+      await act(async () => {
+        await emit();
+      });
+      await act(async () => {
+        await emit();
+      });
+
+      expect(mergeDiskText).not.toHaveBeenCalled();
+      expect(result.current.document).toMatchObject({ content: mine, dirty: true });
+    });
+
+    it("merges again when the user types while a merge is running", async () => {
+      let finishFirst!: (merged: { conflicts: number; text: string }) => void;
+      const mergeDiskText = vi.fn()
+        .mockImplementationOnce(() => new Promise((resolve) => { finishFirst = resolve; }))
+        .mockImplementationOnce(async () => ({ conflicts: 0, text: "merged later" }));
+      const { emit, result } = await openDirtyGuide({ mergeDiskText, onActiveDiskFileContentChange: () => true });
+      mockedReadNativeMarkdownFile.mockResolvedValueOnce({ content: theirs, name: "guide.md", path });
+
+      let pending: unknown;
+      await act(async () => {
+        pending = emit();
+        await waitFor(() => expect(mergeDiskText).toHaveBeenCalledTimes(1));
+      });
+      act(() => {
+        result.current.handleMarkdownChange(`${mine}more\n`);
+      });
+      await act(async () => {
+        finishFirst({ conflicts: 0, text: "stale" });
+        await pending;
+      });
+
+      expect(mergeDiskText).toHaveBeenLastCalledWith(opened, `${mine}more\n`, theirs);
+      expect(result.current.document).toMatchObject({ content: "merged later", dirty: true });
+    });
+
+    it("leaves unsaved edits alone without a merger", async () => {
+      const { emit, result } = await openDirtyGuide();
+      mockedReadNativeMarkdownFile.mockResolvedValueOnce({ content: theirs, name: "guide.md", path });
+
+      await act(async () => {
+        await emit();
+      });
+
+      expect(result.current.document).toMatchObject({ content: mine, dirty: true });
+    });
+  });
+
   it("coalesces repeated native watcher file events while a disk read is in flight", async () => {
     const path = "/mock-files/guide.md";
     const firstWatcherRead = createDeferredNativeMarkdownFile();

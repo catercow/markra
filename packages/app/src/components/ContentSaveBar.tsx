@@ -14,10 +14,12 @@ type ContentSaveBarProps = {
   managed: ManagedContent;
   /** Writes open documents to disk first, so git sees unsaved edits. */
   beforeSave?: () => Promise<unknown>;
+  /** Folder-relative files left with conflict markers; shown so the conflicts can be resolved. */
+  onConflictFiles?: (paths: string[]) => unknown;
 };
 
 /** The preview panel's footer in CowMark: who is signed in, what changed, Save to studio. */
-export function ContentSaveBar({ beforeSave, language, managed }: ContentSaveBarProps) {
+export function ContentSaveBar({ beforeSave, language, managed, onConflictFiles }: ContentSaveBarProps) {
   const label = useCallback((key: I18nKey) => t(language, key), [language]);
   const access = getAppRuntime().files.contentAccess;
   const [status, setStatus] = useState<ContentGitStatus | null>(null);
@@ -49,8 +51,11 @@ export function ContentSaveBar({ beforeSave, language, managed }: ContentSaveBar
   }, [refresh]);
 
   const handleFailure = (error: unknown, failedKey: I18nKey) => {
-    const { code, message: text } = contentAccessError(error);
-    if (code === "signed_out") {
+    const { code, files, message: text } = contentAccessError(error);
+    if (code === "conflict" && files.length > 0) {
+      setNotice({ tone: "error", text: label("app.cowmark.resolveConflicts").replace("{files}", files.join(", ")) });
+      onConflictFiles?.(files);
+    } else if (code === "signed_out") {
       setSessionLost(true);
       managed.onSignedOut();
       setNotice({ tone: "error", text: label("app.cowmark.signInAgain") });

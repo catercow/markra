@@ -115,10 +115,10 @@ describe("ContentSaveBar", () => {
     await waitFor(() => expect(access.save).toHaveBeenCalledWith("/work/c", "", []));
   });
 
-  it("shows a conflict in plain words", async () => {
+  it("shows a conflict without a file list in plain words", async () => {
     mockAccess({
       save: vi.fn(async () => {
-        throw new Error("conflict: Someone else changed the same part of content/blog/a.md. Your changes are still saved on this computer; ask a developer for help.");
+        throw new Error("conflict: Someone else changed the same part of content/blog/a.md.");
       })
     });
     render(<ContentSaveBar language="en" managed={managed("editor@catercow.com")} />);
@@ -126,6 +126,40 @@ describe("ContentSaveBar", () => {
     fireEvent.click(await screen.findByRole("checkbox", { name: "content/blog/a.md" }));
     fireEvent.click(screen.getByRole("button", { name: "Save 1 to studio" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Someone else changed the same part of content/blog/a.md.");
+  });
+
+  it("opens the files a conflict left to resolve and says to save again, keeping the ticks", async () => {
+    mockAccess({
+      save: vi.fn(async () => {
+        throw new Error(
+          'conflict: Someone else changed the same part of content/blog/a.md and content/blog/b.md. Both versions are in the file now.\nconflict-files: ["content/blog/a.md","content/blog/b.md"]'
+        );
+      })
+    });
+    const onConflictFiles = vi.fn();
+    render(<ContentSaveBar language="en" managed={managed("editor@catercow.com")} onConflictFiles={onConflictFiles} />);
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "content/blog/a.md" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save 1 to studio" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Someone else changed the same lines. Resolve the highlighted conflicts in content/blog/a.md, content/blog/b.md, then save again."
+    );
+    expect(onConflictFiles).toHaveBeenCalledWith(["content/blog/a.md", "content/blog/b.md"]);
+    expect(screen.getByRole("checkbox", { name: "content/blog/a.md" })).toBeChecked();
+  });
+
+  it("treats a Get latest conflict the same way", async () => {
+    mockAccess({
+      update: vi.fn(async () => {
+        throw new Error('conflict: Someone else changed the same part of content/blog/a.md.\nconflict-files: ["content/blog/a.md"]');
+      })
+    });
+    const onConflictFiles = vi.fn();
+    render(<ContentSaveBar language="en" managed={managed("editor@catercow.com")} onConflictFiles={onConflictFiles} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Get latest" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Resolve the highlighted conflicts in content/blog/a.md, then save again.");
+    expect(onConflictFiles).toHaveBeenCalledWith(["content/blog/a.md"]);
   });
 
   it("asks to sign in again when the session expired, keeping the message", async () => {

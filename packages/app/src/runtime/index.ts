@@ -1,5 +1,5 @@
 import type { AppLanguage } from "@markra/shared";
-import type { ContentAccessRuntime } from "../lib/content-access";
+import type { ContentAccessRuntime, MergeText } from "../lib/content-access";
 import type { ContentPreviewRuntime } from "../lib/content-preview";
 import type { MarkdownShortcutMap } from "@markra/editor";
 import type { DesktopPlatform } from "../lib/platform";
@@ -213,6 +213,8 @@ export type AppFileRuntime = {
   contentAccess?: ContentAccessRuntime;
   /** Git-backed change listing for the CaterCow content preview; desktop only. */
   contentPreview?: ContentPreviewRuntime;
+  /** Three-way merge with conflict markers, for disk changes to a document with unsaved edits; desktop only. */
+  mergeText?: MergeText;
   /** Reads any text file by runtime path; resolves null when it is missing or unreadable. */
   readWorkspaceTextFile?: (path: string) => Promise<string | null>;
   renameMarkdownTreeFile: (
