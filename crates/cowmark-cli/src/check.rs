@@ -66,6 +66,32 @@ impl CheckReport {
         out
     }
 
+    /// GitHub Actions workflow commands that annotate the files: errors, and
+    /// warnings too when `warnings`.
+    pub fn to_github(&self, warnings: bool) -> String {
+        let escape_data = |text: &str| text.replace('%', "%25").replace('\r', "%0D").replace('\n', "%0A");
+        let escape_property = |text: &str| escape_data(text).replace(':', "%3A").replace(',', "%2C");
+        let mut out = String::new();
+        for diagnostic in &self.diagnostics {
+            let level = match diagnostic.severity {
+                Severity::Error => "error",
+                Severity::Warning if warnings => "warning",
+                Severity::Warning => continue,
+            };
+            out.push_str(&format!(
+                "::{level} file={},line={},col={},endLine={},endColumn={},title={}::{}\n",
+                escape_property(&diagnostic.file),
+                diagnostic.line,
+                diagnostic.column,
+                diagnostic.end_line,
+                diagnostic.end_column,
+                escape_property(&format!("cowmark {}", diagnostic.rule)),
+                escape_data(&diagnostic.message)
+            ));
+        }
+        out
+    }
+
     pub fn summary(&self) -> String {
         let plural = |count: usize, word: &str| format!("{count} {word}{}", if count == 1 { "" } else { "s" });
         format!(
@@ -201,6 +227,16 @@ mod tests {
         assert!(all.errors() >= 1);
         assert_eq!(all.exit_code(false), 1);
         assert_eq!(all.to_json()["files"], 3);
+        let annotations = all.to_github(false);
+        assert!(
+            annotations.starts_with("::error file=content/blog/bad.md,line=1,col=1,"),
+            "{annotations}"
+        );
+        assert!(!annotations.contains("::warning"));
+        assert!(
+            all.to_github(true)
+                .contains("::warning file=content/blog/warn.md,line=5,col=1,")
+        );
 
         assert!(check(&root, &["content/blog/missing.md".into()]).is_err());
         assert!(check(&root, &["../elsewhere".into()]).is_err());

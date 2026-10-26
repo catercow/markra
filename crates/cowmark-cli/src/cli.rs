@@ -38,6 +38,9 @@ pub enum Command {
         /// Fail on warnings too.
         #[arg(long)]
         strict: bool,
+        /// Also print errors as GitHub Actions annotations (warnings with --strict).
+        #[arg(long)]
+        github: bool,
     },
     /// List changed files that aren't published yet.
     Status {
@@ -81,7 +84,12 @@ pub fn run(cli: Cli, context: &Context, out: &mut dyn Write, err: &mut dyn Write
 fn execute(command: Command, context: &Context, out: &mut dyn Write, err: &mut dyn Write) -> Result<i32, String> {
     let io = |error: std::io::Error| error.to_string();
     match command {
-        Command::Check { paths, json, strict } => {
+        Command::Check {
+            paths,
+            json,
+            strict,
+            github,
+        } => {
             let root = context.root()?;
             let paths: Vec<String> = paths.iter().map(|path| cwd_relative(context, path)).collect();
             let report = check::check(&root.path, &paths)?;
@@ -94,6 +102,9 @@ fn execute(command: Command, context: &Context, out: &mut dyn Write, err: &mut d
                 .map_err(io)?;
             } else {
                 write!(out, "{}", report.to_text()).map_err(io)?;
+            }
+            if github {
+                write!(out, "{}", report.to_github(strict)).map_err(io)?;
             }
             Ok(report.exit_code(strict))
         }

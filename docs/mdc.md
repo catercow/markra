@@ -47,7 +47,7 @@ CowMark can stay in front while people edit in another app (VS Code, Obsidian, C
 
 - **Companion view** (the title bar button next to the globe, remembered per user) hides the editor, file tree and AI panel. The preview and the save bar fill the window, sized for a narrow window beside another editor. The preview follows the most recently saved file: when one poll finds several saved pages, only the last navigates. Click the button again for the normal layout.
 - **Browser preview.** While the managed folder is open, CowMark serves `http://localhost:4100` on 127.0.0.1 only (`crates/cowmark-core/src/preview_server.rs`). The page frames the site at the same path and relays the same draft messages as the panel: pending changes once the site is ready, then saved files over server-sent events, and images. Unsaved typing in CowMark's editor is not sent; saved files are. Every request needs the per-launch token in `?token=`, and the Host header must be `localhost:4100` or `127.0.0.1:4100`. **Open in browser** in the preview panel opens the current page there. The port is fixed because the site's allowlist names it exactly: if another program holds it, the panel says so and CowMark doesn't try another port.
-- **The `cowmark` command** (to come: a CLI and MCP server) talks to the running app over the control connection below, and opens the app first if it isn't running. Publishing from it is a proposal: it ticks files and fills in the message, and a person clicks Save to studio.
+- **The `cowmark` command** (below) checks content, and talks to the running app over the control connection, opening the app first if it isn't running. `cowmark mcp` offers the same to Claude Desktop and other agents. Publishing from it is a proposal: it ticks files and fills in the message, and a person clicks Save to studio. Neither ever sees git credentials.
 
 ### Control connection
 
@@ -72,6 +72,7 @@ Paths are relative to the content folder (or absolute inside it). Anything outsi
 | `focus` | none | `{}`; brings the window forward |
 | `open` | `{ path }`, a Markdown file that exists | `{ path }`; opens it in the editor and shows it in the preview. Doesn't focus the window |
 | `propose_publish` | `{ paths: [...], message }` | `{ paths, message }`; ticks exactly these files in the checklist (no folder expansion), fills in the trimmed message, shows and flashes the save bar and focuses the window. Every path must have changes. Never saves |
+| `get_latest` | none | `{ started: true }`; opens the preview panel and runs its Get latest, as if clicked (open documents are saved first). Returns once started; the outcome shows in the save bar and in `status` |
 
 | Error code | Meaning |
 | --- | --- |
@@ -82,7 +83,59 @@ Paths are relative to the content folder (or absolute inside it). Anything outsi
 | -32004 | A proposed path has no changes |
 | -32005 | The app couldn't do it (git failed, no window) |
 
-`crates/cowmark-core/tests/control_client.rs` is a minimal client that calls every method; `tests/preview_server.rs` covers the browser preview.
+`control::Client` is the client the `cowmark` command uses. `crates/cowmark-core/tests/control_client.rs` calls every method; `tests/preview_server.rs` covers the browser preview.
+
+### The `cowmark` command
+
+`crates/cowmark-cli`, a binary named `cowmark`. Release builds ship it inside the app as a Tauri sidecar: `CowMark.app/Contents/MacOS/cowmark` on macOS and `cowmark.exe` beside `CowMark.exe` on Windows, so editors install nothing else.
+
+- **Which folder.** `--root <folder>` (or `COWMARK_ROOT`), else the content checkout around the working directory (a folder with `content/` and `schema/collections.json`), else the running app's folder, else the folder CowMark remembers in `content-access.json`. Every path is checked with `control::resolve_in_folder`: nothing outside the folder, through `..` or a symlink, or in `.git`. Commands that change files touch only Markdown and images under `content/`, never through a symlink.
+- **Which app.** The app data dir is `~/Library/Application Support/com.catercow.cowmark` (macOS) or `%APPDATA%\com.catercow.cowmark` (Windows); `COWMARK_DATA_DIR` overrides it, for a CowMark started with `--user-data-dir`. When the app isn't answering, commands that need it start it (the app around the sidecar, else `open -b com.catercow.cowmark`, else `%LOCALAPPDATA%\CowMark\CowMark.exe`) and wait up to 45 seconds for `ping`; the control connection only opens once the managed folder does, so a CowMark still on its sign-in screen times out with a message. With `COWMARK_DATA_DIR` set it never starts the app.
+
+| Command | Needs the app | What it does |
+| --- | --- | --- |
+| `cowmark check [paths…] [--json] [--strict] [--github]` | no | Lints Markdown files (default: all of `content/`) with cowmark-lint, as the editor does. Prints `file:line:col: severity [rule] message`. Exit 0 when clean or only warnings, 1 on errors (or warnings with `--strict`), 2 when it couldn't run. `--github` adds GitHub Actions annotations for errors |
+| `cowmark status [--json]` | no | Changed files, branch and commits waiting to be sent: from the app when it runs on this folder, else from git |
+| `cowmark open <path>` | yes | Opens a page in the editor and preview |
+| `cowmark propose <paths…> -m <message>` | yes | `propose_publish`: ticks the files and fills in the message. Doesn't publish |
+| `cowmark preview-url [path]` | yes | The browser preview's address with its token, at the page's URL (from its collection's `url` pattern) when given |
+| `cowmark focus` / `cowmark get-latest` | yes | `focus` / `get_latest` |
+| `cowmark mcp` | when a tool needs it | MCP server on stdin/stdout |
+| `cowmark mcp-config` | no | Prints the Claude Desktop config entry for this binary |
+
+Paths on the command line are relative to the working directory when they exist there, else to the content folder.
+
+### MCP server (Claude Desktop)
+
+`cowmark mcp` serves MCP over stdio with the official Rust SDK (`rmcp`). It finds the folder again on every tool call, so it follows CowMark being opened, closed or set up. Its instructions tell the agent the workflow: read the schemas, edit, run `check`, then `propose_publish` and ask the person to review and click Save to studio in CowMark.
+
+| Tool | Hints | |
+| --- | --- | --- |
+| `list_files`, `read_file` | read-only | Any file in the folder but `.git`; text up to 2 MB |
+| `write_file`, `rename_file`, `delete_file` | destructive | Markdown (and, for rename and delete, images) under `content/` only. `write_file` writes through a temporary file and returns the check result. Writing a file open with unsaved edits in CowMark is fine: the tab merges it |
+| `list_components`, `get_component_schema`, `get_collection_schema` | read-only | From `schema/components.json` and `schema/collections.json`, with notes on dates, lengths and images |
+| `new_page` | creates only | `<collection folder>/<slug>.md` with the title, the required fields (dates today, the rest empty unless given) and an optional body; lists the fields left to fill |
+| `add_image` | creates only | Copies a local file or base64 data (PNG, JPEG, GIF, WebP, AVIF, SVG, up to 25 MB, checked by content) to `content/<collection>/<slug>/<name>`, named like the editor names imports, and returns the relative reference and a Markdown snippet. Not resized, unlike the editor's import |
+| `check`, `status`, `preview_link` | read-only | As the commands |
+| `get_latest`, `open_in_cowmark` | not destructive | As the commands |
+| `propose_publish` | not destructive | Ticks files and fills in the message; says nothing was published and a person must click Save to studio |
+
+To add it to Claude Desktop, run the bundled binary's `mcp-config` and paste the `cowmark` entry under `mcpServers` in Claude Desktop's config (Settings → Developer → Edit Config), then restart Claude Desktop:
+
+```sh
+/Applications/CowMark.app/Contents/MacOS/cowmark mcp-config
+# Windows: "%LOCALAPPDATA%\CowMark\cowmark.exe" mcp-config
+```
+
+```json
+{ "mcpServers": { "cowmark": { "command": "/Applications/CowMark.app/Contents/MacOS/cowmark", "args": ["mcp"] } } }
+```
+
+The path changes if CowMark is installed elsewhere; run `mcp-config` again after moving it.
+
+### Checking content in CI
+
+Each release also carries `cowmark-linux-x64.tar.gz`, built by the `cli-linux` job in `catercow-desktop.yml`. The content repository's workflow downloads it from the release (this repository is public, so no token is needed) and runs `cowmark check --root . --github` on pushes to `studio` and `main` and on pull requests to `main`. The release's `latest` checker is used unless the workflow pins a tag.
 
 ## CowMark: images and page details
 
@@ -111,4 +164,4 @@ The fork ships as its own app, **CowMark** (`com.catercow.cowmark`), CaterCow's 
   - **Mac:** right-click the app and choose Open, or allow it under System Settings → Privacy & Security.
   - **Windows:** SmartScreen shows "Windows protected your PC"; choose More info → Run anyway.
 - **No auto-update.** The updater is only configured in upstream's release workflow, so these builds never replace themselves with stock Markra. Install a new release to update.
-- **Local build** (needs Rust 1.85+): `pnpm --filter @markra/desktop tauri build --config src-tauri/tauri.catercow.conf.json --bundles dmg`. Without Xcode 26 this uses the classic `.icns` icon. CI adds `tauri.catercow-ci.conf.json` to build the adaptive icon.
+- **Local build** (needs Rust 1.85+ and Node 22.18+): `pnpm --filter @markra/desktop tauri build --config src-tauri/tauri.catercow.conf.json --bundles dmg`. Its `beforeBuildCommand` also builds the `cowmark` sidecar into `src-tauri/binaries/cowmark-<target triple>` (`apps/desktop/scripts/cowmark-cli.mjs`; `pnpm build:cowmark-cli` runs it alone). Plain `cargo build` and `pnpm tauri dev` use the stock config and don't need it. Without Xcode 26 this uses the classic `.icns` icon. CI adds `tauri.catercow-ci.conf.json` to build the adaptive icon.

@@ -11,6 +11,7 @@
     "build:quicklook-extension": "bash scripts/build-macos-quicklook.sh",
     "build:quicklook": "node scripts/quicklook.mjs",
     "build:icon": "node scripts/icon.mjs",
+    "build:cowmark-cli": "node scripts/cowmark-cli.mjs",
     "test": "vitest run",
     "test:quicklook": "bash scripts/test-macos-quicklook.sh",
     "test:watch": "vitest",
