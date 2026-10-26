@@ -1,0 +1,581 @@
+{
+  "generatedBy": "scripts/marketing-content/agent-files.mjs (catercow repo)",
+  "components": [
+    {
+      "name": "address-cta",
+      "component": "AddressCta",
+      "group": "Calls to action",
+      "purpose": "Address box that sends the reader to catering search for their address; use near the top and end of a page.",
+      "props": [
+        {
+          "name": "headline",
+          "type": "string",
+          "required": false,
+          "description": "Bold line above the address box, e.g. \"Find retirement party catering near you\".",
+          "default": "\"\""
+        },
+        {
+          "name": "subhead",
+          "type": "string",
+          "required": false,
+          "description": "Smaller line under the headline.",
+          "default": "\"\""
+        },
+        {
+          "name": "note",
+          "type": "string",
+          "required": false,
+          "description": "Short reassurance line under the box, e.g. \"Office lunches · Buffets · On-time delivery guarantee\".",
+          "default": "\"\""
+        },
+        {
+          "name": "forward-to",
+          "type": "string",
+          "required": false,
+          "description": "Search results page the address is sent to. Add filters to it, e.g. /search?package_type=breakfast.",
+          "default": "\"/search\""
+        },
+        {
+          "name": "cta",
+          "type": "string",
+          "required": false,
+          "description": "Button text.",
+          "default": "\"Search\""
+        },
+        {
+          "name": "background",
+          "type": "\"warm\" | \"none\" | \"blue\"",
+          "required": false,
+          "description": "Box color: none, warm (cream with a peach border), or blue with white text.",
+          "default": "\"warm\"",
+          "options": [
+            "warm",
+            "none",
+            "blue"
+          ]
+        }
+      ],
+      "content": true,
+      "example": {
+        "from": "blog/baby-shower-catering.md",
+        "markdown": "::address-cta\n---\nheadline: Find baby shower catering near you\nsubhead: Enter the shower's delivery address to see brunch spreads, platters and finger foods from vetted local restaurants.\nnote: Brunch spreads · Platters & trays · On-time delivery guarantee\nforward-to: /search?search_type=packages&h1=Baby+Shower+Catering+Near+You\n---\n::"
+      }
+    },
+    {
+      "name": "callout",
+      "component": "Callout",
+      "group": "Text and lists",
+      "purpose": "Highlighted note or tip set apart from the body text.",
+      "props": [
+        {
+          "name": "title",
+          "type": "string",
+          "required": false,
+          "description": "Small uppercase label above the text, e.g. \"Pro tip\".",
+          "default": "\"\""
+        }
+      ],
+      "content": true,
+      "example": {
+        "from": "blog/olive-garden-catering-comprehensive-guide-to-menus-pricing-and-event-planning-2.md",
+        "markdown": "::callout{title=\"Need every meal labeled?\"}\nCaterCow delivers Italian catering from local restaurants, including [individually boxed pasta meals](https://www.catercow.com/dishes/individually-packaged-italian-and-pasta) labeled with each guest's name and dietary needs. Your first order of $100 or more also earns a [$100 Olive Garden gift card](https://www.catercow.com/blog/8-olive-garden-catering-promo-codes).\n::"
+      }
+    },
+    {
+      "name": "caterers",
+      "component": "Caterers",
+      "group": "Live CaterCow data",
+      "purpose": "Live list of CaterCow caterers matching a search URL.",
+      "props": [
+        {
+          "name": "search-url",
+          "type": "string",
+          "required": false,
+          "description": "Paste a catercow.com search URL to show the caterers it finds. Empty shows popular caterers near the visitor.",
+          "default": "\"\""
+        },
+        {
+          "name": "limit",
+          "type": "number",
+          "required": false,
+          "description": "How many caterers to show.",
+          "default": "6"
+        },
+        {
+          "name": "button-text",
+          "type": "string",
+          "required": false,
+          "description": "Text for a button under the list that opens the full search. Leave empty for no button.",
+          "default": "\"\""
+        },
+        {
+          "name": "small",
+          "type": "boolean",
+          "required": false,
+          "description": "Smaller logo tiles.",
+          "default": "false"
+        },
+        {
+          "name": "hide-names",
+          "type": "boolean",
+          "required": false,
+          "description": "Show logos only, without caterer names.",
+          "default": "false"
+        }
+      ],
+      "content": true
+    },
+    {
+      "name": "chipotle-cost-calculator",
+      "component": "ChipotleCostCalculator",
+      "group": "Calculators",
+      "purpose": "Interactive calculator estimating Chipotle catering cost by metro and headcount. No props.",
+      "props": [],
+      "content": false,
+      "example": {
+        "from": "blog/chipotle-catering-cost-calculator.md",
+        "markdown": "::chipotle-cost-calculator\n::"
+      }
+    },
+    {
+      "name": "cta-banner",
+      "component": "CtaBanner",
+      "group": "Calls to action",
+      "purpose": "Banner with text and one button linking to a CaterCow page; the main call to action.",
+      "props": [
+        {
+          "name": "to",
+          "type": "string",
+          "required": true,
+          "description": "Where the button goes: a site path like /get-started, or a full URL."
+        },
+        {
+          "name": "cta",
+          "type": "string",
+          "required": true,
+          "description": "Button label."
+        }
+      ],
+      "content": true,
+      "example": {
+        "from": "blog/chick-fil-a-catering-promo-code-100-off-200.md",
+        "markdown": "::cta-banner{to=\"https://www.catercow.com/brands/9109-chickfila\" cta=\"Order Chick-fil-A catering →\"}\n**Last checked: October 7, 2026.** Chick-fil-A rarely offers promo codes for catering. On CaterCow, you can get **$100 off any Chick-fil-A catering order of $200 or more** in Chicago, Washington, DC, and Atlanta. Enter your city's code at checkout. Codes are valid through March 31, 2027.\n::"
+      }
+    },
+    {
+      "name": "facts-grid",
+      "component": "FactsGrid",
+      "group": "Pricing and numbers",
+      "purpose": "Grid of short label/value facts, such as an at-a-glance summary.",
+      "props": [
+        {
+          "name": "items",
+          "type": "Fact[]",
+          "required": false,
+          "description": "One card per fact.",
+          "default": "[]",
+          "items": [
+            {
+              "name": "label",
+              "type": "string",
+              "required": true,
+              "description": "Small label, e.g. \"Lead time\"."
+            },
+            {
+              "name": "value",
+              "type": "string",
+              "required": true,
+              "description": "The fact itself, e.g. \"24 hours\"."
+            }
+          ]
+        }
+      ],
+      "content": false,
+      "example": {
+        "from": "catering-guides/bjs.md",
+        "markdown": "::facts-grid\n---\nitems:\n  - label: Starting Price\n    value: \"From $39.99 per platter\"\n  - label: Lead Time\n    value: 24 hours (made fresh to order)\n  - label: Membership Required\n    value: Yes — Club or Club+ tier\n  - label: Format\n    value: In-club pickup\n---\n::"
+      }
+    },
+    {
+      "name": "faqs",
+      "component": "Faqs",
+      "group": "Text and lists",
+      "purpose": "Frequently asked questions. Write each question as a ### heading inside the block and its answer under it. The page also publishes them to search engines as FAQ structured data, so keep answers accurate.",
+      "props": [],
+      "content": true,
+      "example": {
+        "from": "blog/50-off-red-heat-tavern-catering.md",
+        "markdown": "::faqs\n### How do I redeem the RHTBOS50 coupon code?\n\nEnter `RHTBOS50` at checkout on the [Red Heat Tavern catering page](https://www.catercow.com/brands/9310). The $50 discount applies automatically to orders of $200 or more.\n\n### What's the minimum order for Red Heat Tavern catering?\n\nThe $50 coupon requires a $200 order subtotal. A single tray of Roasted Steak Tips ($160) plus a side and dessert clears it; a Hearty Comfort Classics Buffet for 14 people lands you there too.\n\n### Which areas does Red Heat Tavern deliver to?\n\nWith five locations across Bedford MA, Milford MA, Westborough MA, Wilmington MA, and South Windsor CT, they cover the greater Boston area, MetroWest, Worcester, and the Hartford metro for office catering. Enter your office address in CaterCow to see which kitchen serves you and your delivery radius.\n\n### How far in advance do I need to order?\n\nLead time is 20 hours for most orders. For larger events with multiple trays or special dietary needs, we recommend at least 24 hours.\n::"
+      }
+    },
+    {
+      "name": "food-truck-cost-calculator",
+      "component": "FoodTruckCostCalculator",
+      "group": "Calculators",
+      "purpose": "Interactive calculator estimating food truck catering cost. No props.",
+      "props": [],
+      "content": false,
+      "example": {
+        "from": "blog/food-truck-cost-calculator.md",
+        "markdown": "::food-truck-cost-calculator\n::"
+      }
+    },
+    {
+      "name": "gallery",
+      "component": "Gallery",
+      "group": "Layout",
+      "purpose": "Rows of images shown side by side.",
+      "props": [
+        {
+          "name": "rows",
+          "type": "GalleryImage[][]",
+          "required": false,
+          "description": "Each row is shown side by side on wide screens and stacked on phones. Write the caption inside the block.",
+          "default": "[]"
+        }
+      ],
+      "content": true,
+      "example": {
+        "from": "blog/to-the-boss-ladies-of-the-catering-world.md",
+        "markdown": "::gallery\n---\nrows:\n  - - src: /blog/to-the-boss-ladies-of-the-catering-world/sajj1.jpg\n      alt: \"\"\n---\nSanta Berzina with her team volunteering at Second Harvest Food Bank\n::"
+      }
+    },
+    {
+      "name": "instagram-post",
+      "component": "InstagramPost",
+      "group": "Layout",
+      "purpose": "Embedded Instagram post.",
+      "props": [
+        {
+          "name": "url",
+          "type": "string",
+          "required": true,
+          "description": "The post's link (Share → Copy link), e.g. https://www.instagram.com/p/DMd8x-TRioJ/"
+        },
+        {
+          "name": "caption",
+          "type": "string",
+          "required": false,
+          "description": "Shown until Instagram's script replaces the box."
+        }
+      ],
+      "content": false,
+      "example": {
+        "from": "blog/chick-fil-a-breakfast-menu.md",
+        "markdown": "::instagram-post\n---\nurl: https://www.instagram.com/p/DMd8x-TRioJ/\ncaption: A post shared by The Hapeville Dwarf House (@thedwarfhouse)\n---\n::"
+      }
+    },
+    {
+      "name": "logo-strip",
+      "component": "LogoStrip",
+      "group": "Text and lists",
+      "purpose": "Row of customer or partner logos, from a preset or a custom list.",
+      "props": [
+        {
+          "name": "preset",
+          "type": "\"customers\" | \"custom\"",
+          "required": false,
+          "description": "\"customers\" shows the standard CaterCow customer logos; \"custom\" shows the logos listed below.",
+          "default": "\"customers\"",
+          "options": [
+            "customers",
+            "custom"
+          ]
+        },
+        {
+          "name": "logos",
+          "type": "Logo[]",
+          "required": false,
+          "description": "Logos to show when preset is \"custom\".",
+          "default": "[]",
+          "items": [
+            {
+              "name": "src",
+              "type": "string",
+              "required": true,
+              "description": "Logo image URL (SVG or a transparent PNG works best)."
+            },
+            {
+              "name": "alt",
+              "type": "string",
+              "required": true,
+              "description": "The company name, for screen readers."
+            },
+            {
+              "name": "href",
+              "type": "string",
+              "required": false,
+              "description": "Optional link when the logo is clicked."
+            }
+          ]
+        }
+      ],
+      "content": true
+    },
+    {
+      "name": "packages",
+      "component": "Packages",
+      "group": "Live CaterCow data",
+      "purpose": "Live list of CaterCow catering packages matching a search.",
+      "props": [
+        {
+          "name": "search-url",
+          "type": "string",
+          "required": false,
+          "description": "Paste a catercow.com search URL to show the same results (its filters win over the fields below).",
+          "default": "\"\""
+        },
+        {
+          "name": "limit",
+          "type": "number",
+          "required": false,
+          "description": "How many packages to show.",
+          "default": "12"
+        },
+        {
+          "name": "button-text",
+          "type": "string",
+          "required": false,
+          "description": "Text for a button under the list that opens the full search. Leave empty for no button.",
+          "default": "\"\""
+        },
+        {
+          "name": "package-type",
+          "type": "\"\" | \"breakfast\" | \"lunch_or_dinner\" | \"appetizer_snack\" | \"dessert\"",
+          "required": false,
+          "description": "Meal type.",
+          "default": "\"\"",
+          "options": [
+            "",
+            "breakfast",
+            "lunch_or_dinner",
+            "appetizer_snack",
+            "dessert"
+          ]
+        },
+        {
+          "name": "package-category",
+          "type": "string",
+          "required": false,
+          "description": "Cuisine category key, e.g. \"lunch_mexican\" (the same key the catering guide front matter uses).",
+          "default": "\"\""
+        },
+        {
+          "name": "presentation-type",
+          "type": "\"\" | \"individual\" | \"buffet\"",
+          "required": false,
+          "description": "Show only individually wrapped meals, or only buffet-style.",
+          "default": "\"\"",
+          "options": [
+            "",
+            "individual",
+            "buffet"
+          ]
+        },
+        {
+          "name": "show-pagination",
+          "type": "boolean",
+          "required": false,
+          "description": "Add page links when there are more results than the limit.",
+          "default": "false"
+        }
+      ],
+      "content": true,
+      "example": {
+        "from": "catering-guides/applebees.md",
+        "markdown": "::packages{package-category=\"lunch_traditional_meals\"}\n::"
+      }
+    },
+    {
+      "name": "pricing-grid",
+      "component": "PricingGrid",
+      "group": "Pricing and numbers",
+      "purpose": "Grid of menu items with counts, prices, per-person prices and descriptions.",
+      "props": [
+        {
+          "name": "items",
+          "type": "PricedItem[]",
+          "required": false,
+          "description": "One card per item.",
+          "default": "[]",
+          "items": [
+            {
+              "name": "name",
+              "type": "string",
+              "required": true,
+              "description": "Item or package name."
+            },
+            {
+              "name": "count",
+              "type": "string",
+              "required": false,
+              "description": "Second line under the name, e.g. \"Serves 10\"."
+            },
+            {
+              "name": "price",
+              "type": "number",
+              "required": false,
+              "description": "Price in dollars, e.g. 12.5."
+            },
+            {
+              "name": "per-person",
+              "type": "boolean",
+              "required": false,
+              "description": "Add \"/ person\" after the price."
+            },
+            {
+              "name": "description",
+              "type": "string",
+              "required": false,
+              "description": "Line breaks are kept."
+            },
+            {
+              "name": "tag",
+              "type": "string",
+              "required": false,
+              "description": "Badge above the name, e.g. \"Most popular\"."
+            }
+          ]
+        }
+      ],
+      "content": false,
+      "example": {
+        "from": "catering-guides/ihop.md",
+        "markdown": "::pricing-grid\n---\nitems:\n  - name: The Classic Breakfast Egg Burrito Pack\n    price: 11.50\n    description: 10 Classic Breakfast Burritos with scrambled eggs, Jack cheese, and fillings. Feeds 10. ($115.00 total.)\n    tag: Insider Pick\n---\n::"
+      }
+    },
+    {
+      "name": "promo-codes",
+      "component": "PromoCodes",
+      "group": "Pricing and numbers",
+      "purpose": "Table of promo codes, one row per location, with copy buttons and fine print.",
+      "props": [
+        {
+          "name": "items",
+          "type": "PromoCode[]",
+          "required": false,
+          "description": "One row per code.",
+          "default": "[]",
+          "items": [
+            {
+              "name": "label",
+              "type": "string",
+              "required": true,
+              "description": "Where the code applies, e.g. a city."
+            },
+            {
+              "name": "url",
+              "type": "string",
+              "required": false,
+              "description": "Optional link for the label, e.g. the city's catering page."
+            },
+            {
+              "name": "code",
+              "type": "string",
+              "required": true,
+              "description": "The code readers copy, e.g. 100OFFPANERAATX."
+            }
+          ]
+        },
+        {
+          "name": "label-heading",
+          "type": "string",
+          "required": false,
+          "description": "Heading for the first column.",
+          "default": "\"Location\""
+        },
+        {
+          "name": "code-heading",
+          "type": "string",
+          "required": false,
+          "description": "Heading for the code column, e.g. \"Code for a $100 Panera Gift Card\".",
+          "default": "\"Code\""
+        }
+      ],
+      "content": true,
+      "example": {
+        "from": "blog/wawa-catering-gift-card-promotion.md",
+        "markdown": "::promo-codes\n---\nlabel-heading: Area\ncode-heading: Code for a $100 Wawa Gift Card\nitems:\n  - label: New York City & North Jersey\n    url: https://www.catercow.com/explore/new-york-city/cuisines/sandwich-catering\n    code: 100OFFWAWANYC\n  - label: Washington, DC Area\n    url: https://www.catercow.com/explore/washington-dc/cuisines/sandwich-catering\n    code: 100OFFWAWADC\n---\nValid on your first CaterCow order of $100+ through March 31, 2027. Gift card arrives by email in about two weeks.\n::"
+      }
+    },
+    {
+      "name": "reviews",
+      "component": "Reviews",
+      "group": "Live CaterCow data",
+      "purpose": "Live CaterCow customer reviews, optionally for one brand or package.",
+      "props": [
+        {
+          "name": "limit",
+          "type": "number",
+          "required": false,
+          "description": "How many reviews to show.",
+          "default": "3"
+        },
+        {
+          "name": "brand-id",
+          "type": "number",
+          "required": false,
+          "description": "Only reviews of this caterer (brand ID from the admin). Empty shows recent reviews across CaterCow.",
+          "default": "0"
+        },
+        {
+          "name": "package-id",
+          "type": "number",
+          "required": false,
+          "description": "Only reviews of this package (package ID from the admin).",
+          "default": "0"
+        },
+        {
+          "name": "show-google-rating",
+          "type": "boolean",
+          "required": false,
+          "description": "Show CaterCow's Google rating badge above the reviews.",
+          "default": "false"
+        }
+      ],
+      "content": true
+    },
+    {
+      "name": "tips",
+      "component": "Tips",
+      "group": "Layout",
+      "purpose": "Numbered tips in two columns. Write each tip as a ### heading inside the block with its text under it; each heading starts a new card.",
+      "props": [],
+      "content": true,
+      "example": {
+        "from": "catering-guides/dunkin.md",
+        "markdown": "::tips\n### Stack Dunkin' Rewards\n\nThe Dunkin' Rewards program earns points on most in-store and app orders, including large dozen-boxes and Box O' Joe. If you're the one regularly ordering for the team, route the orders through your own Rewards account — a 20-person breakfast run can earn you a free drink, and the points roll over.\n\n### Call ahead for 5+ dozen\n\nThe online ordering flow caps at 3 dozen donuts. For anything bigger, the recommended approach is to phone the store the day before, ask to speak with the morning manager, and confirm a pickup time. Walking in cold with a 5-dozen request will get you waited on, but you'll wait — and you might not get your first-choice flavors.\n::"
+      }
+    },
+    {
+      "name": "video-block",
+      "component": "VideoBlock",
+      "group": "Layout",
+      "purpose": "Embedded video with an optional poster image and caption.",
+      "props": [
+        {
+          "name": "url",
+          "type": "string",
+          "required": false,
+          "description": "A YouTube or Vimeo link (any form, including share links), or a direct .mp4 URL.",
+          "default": "\"\""
+        },
+        {
+          "name": "caption",
+          "type": "string",
+          "required": false,
+          "description": "Text shown under the video.",
+          "default": "\"\""
+        },
+        {
+          "name": "poster",
+          "type": "string",
+          "required": false,
+          "description": "Still image shown before an .mp4 plays. Ignored for YouTube and Vimeo.",
+          "default": "\"\""
+        }
+      ],
+      "content": false
+    }
+  ]
+}

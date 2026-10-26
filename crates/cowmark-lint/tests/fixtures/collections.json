@@ -1,0 +1,174 @@
+{
+  "generatedBy": "scripts/marketing-content/agent-files.mjs (catercow repo)",
+  "collections": [
+    {
+      "name": "cuisines",
+      "folder": "content/cuisines",
+      "url": "/cuisines/<file name without .md>-catering",
+      "fields": [
+        {
+          "name": "title",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "cuisine",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "subtitle",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "package_type",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "package_category",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "dishes",
+      "folder": "content/dishes",
+      "url": "/dishes/<file name without .md>",
+      "fields": [
+        {
+          "name": "title",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "active",
+          "type": "boolean",
+          "required": false,
+          "default": true
+        },
+        {
+          "name": "hero_heading",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "hero_image",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "package_template_id",
+          "type": "number",
+          "required": true
+        },
+        {
+          "name": "package_category",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "main_description",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "menus_description",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "faqs",
+          "type": "list of { question: string, answer: string }",
+          "required": false,
+          "default": []
+        },
+        {
+          "name": "features",
+          "type": "list of { image: string, title: string, description: string }",
+          "required": false,
+          "default": []
+        },
+        {
+          "name": "ingredients",
+          "type": "list of { category: string, items: list of string }",
+          "required": false,
+          "default": []
+        }
+      ]
+    },
+    {
+      "name": "cateringGuides",
+      "folder": "content/catering-guides",
+      "url": "/catering-guides/<file name without .md>",
+      "fields": [
+        {
+          "name": "title",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "eyebrow",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "hero_image",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "active",
+          "type": "boolean",
+          "required": false,
+          "default": false
+        }
+      ]
+    },
+    {
+      "name": "blog",
+      "folder": "content/blog",
+      "url": "/blog/<file name without .md>",
+      "fields": [
+        {
+          "name": "title",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "feature_image",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "published_at",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "category",
+          "type": "\"ordering-catering\" | \"company-culture\" | \"caterer-profile\" | \"catering-promotions\"",
+          "required": false
+        },
+        {
+          "name": "schema_org",
+          "type": "list of object",
+          "required": false,
+          "default": []
+        }
+      ]
+    }
+  ]
+}
