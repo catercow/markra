@@ -21,7 +21,7 @@ The file is saved exactly as typed. Cards and forms never change text by themsel
 
 When the open folder has a `preview.json` (`{ "site": "https://…" }`), the globe button in the title bar opens the site beside the editor. The site shows the folder's changes before they are committed:
 
-- **On load**, the site sends `catercow:draft:ready` with the commit it was built from. `content_preview_pending` (`apps/desktop/src-tauri/src/content_preview.rs`) diffs the folder against that commit with git (committed, staged, unstaged and untracked files under `content/` and `public/`), and the panel posts every change. Without that commit it falls back to `origin/studio` and says so.
+- **On load**, the site sends `catercow:draft:ready` with the commit it was built from. `content_preview_pending` (`crates/cowmark-core/src/preview.rs`) diffs the folder against that commit with git (committed, staged, unstaged and untracked files under `content/` and `public/`), and the panel posts every change. Without that commit it falls back to `origin/studio` and says so.
 - **While open**, `content_preview_poll` rescans the folder each second, so saves from any app appear. The open document is sent as you type, unsaved edits included.
 - Git is the system `git` or the copy inside GitHub Desktop.
 
@@ -36,7 +36,7 @@ Builds made with `VITE_CATERCOW_PREVIEW_SITE` set (the CaterCow release workflow
 - **The preview panel footer** lists changed files with a checkbox each (none ticked by default; ticking `content/x/<slug>.md` also ticks the changed files in `content/x/<slug>/`) and has a message box, **Save to studio** (saves open documents, commits only the ticked files, rebases on `origin/studio` carrying the rest along, pushes; unticked changes stay on the computer as drafts) and **Get latest** (fetch and rebase, keeping uncommitted edits). If someone else changed the same lines, the rebase is undone and the editor's commit stays on this computer; the footer says to ask a developer.
 - **Expired session (401):** the session is cleared and the footer asks to sign in again; edits are kept. **Removed from the allowlist (403):** "This email can no longer save CaterCow content. Ask a developer."
 - **Tokens** are requested only to download, save or get latest. They are short-lived GitHub tokens from the preview site, held in memory, and reach git only through `GIT_CONFIG_COUNT` environment variables as an `http.https://github.com/.extraheader` (with `credential.helper` emptied). They never appear in command arguments, URLs, `.git/config` or logs. This needs git 2.31 or later.
-- **Code:** `apps/desktop/src-tauri/src/content_access.rs` (sign-in, session, tokens) and `content_git.rs` (clone, status, save, update); `packages/app/src/components/CowMarkGate.tsx` and `ContentSaveBar.tsx`. The server side is in the CaterCow monorepo.
+- **Code:** `crates/cowmark-core` (`access.rs`: sign-in, session, tokens; `git.rs`: clone, status, save, update), wrapped as Tauri commands in `apps/desktop/src-tauri/src/content_access.rs`; `packages/app/src/components/CowMarkGate.tsx` and `ContentSaveBar.tsx`. The server side is in the CaterCow monorepo.
 
 ## CowMark: images and page details
 

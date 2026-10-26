@@ -62,7 +62,9 @@ jobs:
 
       - uses: swatinem/rust-cache@v2
         with:
-          workspaces: ${{ env.DESKTOP_DIR }}/src-tauri -> target
+          workspaces: |
+            ${{ env.DESKTOP_DIR }}/src-tauri -> target
+            crates/cowmark-core -> target
           cache-bin: false
 
       - run: pnpm install --frozen-lockfile
@@ -79,8 +81,12 @@ jobs:
           --target ${{ matrix.target }}
           --bundles ${{ matrix.bundle }}
 
+      - name: Test the content preview, access and git (cowmark-core)
+        working-directory: crates/cowmark-core
+        run: cargo test --release --target ${{ matrix.target }}
+
       # After the build: compiling the crate needs the frontend bundle it embeds.
-      - name: Test the content preview, access and git
+      - name: Test the desktop crate's content commands
         working-directory: ${{ env.DESKTOP_DIR }}/src-tauri
         run: cargo test --release --target ${{ matrix.target }} content_
 
