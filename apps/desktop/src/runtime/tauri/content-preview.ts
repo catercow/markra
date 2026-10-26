@@ -4,6 +4,7 @@ import { invokeNative } from "./invoke";
 
 type ContentPreviewRuntime = NonNullable<AppRuntime["files"]["contentPreview"]>;
 type ContentAccessRuntime = NonNullable<AppRuntime["files"]["contentAccess"]>;
+type MergeText = NonNullable<AppRuntime["files"]["mergeText"]>;
 
 export const nativeContentPreview: ContentPreviewRuntime = {
   pending: (root, previewCommit) => invokeNative("content_preview_pending", { previewCommit, root }),
@@ -25,3 +26,6 @@ export const nativeContentAccess: ContentAccessRuntime = {
   status: (root) => invoke("content_access_status", { root }),
   update: (root) => invokeNative("content_access_update", { root })
 };
+
+// Document text is large and private, so this skips invokeNative's logging.
+export const nativeMergeText: MergeText = (base, mine, theirs) => invoke("content_merge_text", { base, mine, theirs });
