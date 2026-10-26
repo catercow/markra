@@ -203,4 +203,41 @@ mod tests {
             .message
             .contains("isn't closed"));
     }
+
+    /// The app sends `editor.mdcLint.*` and `editor.contentLint.*` as the templates; in English
+    /// they must be the linter's own, so the editor and `cowmark check` read the same.
+    #[test]
+    fn english_app_messages_match_the_linter() {
+        let en = std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../packages/shared/src/i18n/locales/en.ts"),
+        )
+        .unwrap();
+        let mut templates = serde_json::Map::new();
+        for line in en.lines().map(str::trim) {
+            let Some(rest) = line
+                .strip_prefix("\"editor.mdcLint.")
+                .or_else(|| line.strip_prefix("\"editor.contentLint."))
+            else {
+                continue;
+            };
+            let (key, value) = rest.split_once("\": ").unwrap();
+            let value: String = serde_json::from_str(value.trim_end_matches(',')).unwrap();
+            templates.insert(key.to_string(), value.into());
+        }
+        assert_eq!(templates.len(), 31);
+        let defaults = format!("{:?}", Messages::default());
+        for key in templates.keys() {
+            // A key the linter doesn't know would be ignored silently.
+            let one: Messages =
+                serde_json::from_value(serde_json::json!({ key: "changed" })).unwrap();
+            assert_ne!(
+                format!("{one:?}"),
+                defaults,
+                "the linter has no `{key}` message"
+            );
+        }
+        let app: Messages = serde_json::from_value(templates.into()).unwrap();
+        assert_eq!(format!("{app:?}"), format!("{:?}", Messages::default()));
+    }
 }
