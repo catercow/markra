@@ -1,10 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { AppRuntime } from "@markra/app/runtime";
+import { safeNativeEventCleanup } from "./events";
 import { invokeNative } from "./invoke";
 
 type ContentPreviewRuntime = NonNullable<AppRuntime["files"]["contentPreview"]>;
 type ContentAccessRuntime = NonNullable<AppRuntime["files"]["contentAccess"]>;
 type MergeText = NonNullable<AppRuntime["files"]["mergeText"]>;
+type CowMarkCompanionRuntime = NonNullable<AppRuntime["files"]["cowmarkCompanion"]>;
 
 export const nativeContentPreview: ContentPreviewRuntime = {
   pending: (root, previewCommit) => invokeNative("content_preview_pending", { previewCommit, root }),
@@ -29,3 +32,11 @@ export const nativeContentAccess: ContentAccessRuntime = {
 
 // Document text is large and private, so this skips invokeNative's logging.
 export const nativeMergeText: MergeText = (base, mine, theirs) => invoke("content_merge_text", { base, mine, theirs });
+
+export const nativeCowMarkCompanion: CowMarkCompanionRuntime = {
+  start: (root, site) => invokeNative("cowmark_companion_start", { root, site }),
+  // The backend sends requests to the window that started the companion only.
+  listen: async (handler) => safeNativeEventCleanup(
+    await getCurrentWindow().listen<Parameters<typeof handler>[0]>("cowmark://control", (event) => handler(event.payload))
+  )
+};

@@ -8,6 +8,7 @@ mod clipboard;
 mod content_access;
 mod content_merge;
 mod content_preview;
+mod cowmark_companion;
 mod external_urls;
 mod fonts;
 mod image_upload;
@@ -241,7 +242,8 @@ pub fn run() {
         .manage(AcpAgentProcessState::default())
         .manage(PortableUpdateState::default())
         .manage(ContentPreviewState::default())
-        .manage(ContentAccessState::default());
+        .manage(ContentAccessState::default())
+        .manage(cowmark_companion::CowMarkCompanionState::default());
 
     #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
@@ -395,6 +397,7 @@ pub fn run() {
             content_access_save,
             content_access_update,
             content_merge_text,
+            cowmark_companion::cowmark_companion_start,
             list_markdown_file_history,
             read_markdown_file_history,
             read_markdown_image_file,
@@ -468,6 +471,7 @@ pub fn run() {
             tauri::RunEvent::ExitRequested { code, api, .. } => {
                 handle_app_exit_requested(app, code, api);
             }
+            tauri::RunEvent::Exit => cowmark_companion::shutdown(app),
             #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
             tauri::RunEvent::Opened { urls } => {
                 queue_opened_markdown_paths(app, opened_markdown_paths_from_urls(&urls));

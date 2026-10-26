@@ -25,7 +25,7 @@ When the open folder has a `preview.json` (`{ "site": "https://…" }`), the glo
 - **While open**, `content_preview_poll` rescans the folder each second, so saves from any app appear. The open document is sent as you type, unsaved edits included.
 - Git is the system `git` or the copy inside GitHub Desktop.
 
-The site accepts messages only from origins in its `NUXT_PUBLIC_DRAFT_PREVIEW_ALLOWED_ORIGINS`, which must include `tauri://localhost` (macOS) and `http://tauri.localhost` (Windows). The protocol and the site side are in the CaterCow monorepo, `js/nuxt4/modules/draft-preview`.
+The site accepts messages only from origins in its `NUXT_PUBLIC_DRAFT_PREVIEW_ALLOWED_ORIGINS`, which must include `tauri://localhost` (macOS), `http://tauri.localhost` (Windows) and, for the browser preview, `http://localhost:4100` (not `127.0.0.1`). The protocol and the site side are in the CaterCow monorepo, `js/nuxt4/modules/draft-preview`.
 
 ## CowMark: sign-in, Save to studio, Get latest
 
@@ -39,7 +39,50 @@ Builds made with `VITE_CATERCOW_PREVIEW_SITE` set (the CaterCow release workflow
 - **Conflict bars** (`packages/editor/src/codemirror/conflicts.ts`): each marker block shows your lines and their lines, highlighted, with **Keep mine**, **Use theirs** and **Keep both** above it; a choice rewrites only that block. A bar above the document counts the conflicts left and jumps to the next. Marker lines are parsed as their own blocks (`conflict-syntax.ts`), so `=======` doesn't turn your last line into a heading. Stock Markra builds show markers as plain text and ignore disk changes to unsaved tabs, as before.
 - **Expired session (401):** the session is cleared and the footer asks to sign in again; edits are kept. **Removed from the allowlist (403):** "This email can no longer save CaterCow content. Ask a developer."
 - **Tokens** are requested only to download, save or get latest. They are short-lived GitHub tokens from the preview site, held in memory, and reach git only through `GIT_CONFIG_COUNT` environment variables as an `http.https://github.com/.extraheader` (with `credential.helper` emptied). They never appear in command arguments, URLs, `.git/config` or logs. This needs git 2.31 or later.
-- **Code:** `crates/cowmark-core` (`access.rs`: sign-in, session, tokens; `git.rs`: clone, status, save, update, conflicts; `merge.rs`: three-way merge), wrapped as Tauri commands in `apps/desktop/src-tauri/src/content_access.rs`; `packages/app/src/components/CowMarkGate.tsx` and `ContentSaveBar.tsx`. The server side is in the CaterCow monorepo.
+- **Code:** `crates/cowmark-core` (`access.rs`: sign-in, session, tokens; `git.rs`: clone, status, save, update, conflicts; `merge.rs`: three-way merge; `preview_server.rs` and `control.rs`: see CowMark as a hub), wrapped as Tauri commands in `apps/desktop/src-tauri/src/content_access.rs`; `packages/app/src/components/CowMarkGate.tsx` and `ContentSaveBar.tsx`. The server side is in the CaterCow monorepo.
+
+## CowMark as a hub
+
+CowMark can stay in front while people edit in another app (VS Code, Obsidian, Claude Desktop). Everything runs inside the app: there is no background process, and quitting CowMark stops the browser preview and the control connection.
+
+- **Companion view** (the title bar button next to the globe, remembered per user) hides the editor, file tree and AI panel. The preview and the save bar fill the window, sized for a narrow window beside another editor. The preview follows the most recently saved file: when one poll finds several saved pages, only the last navigates. Click the button again for the normal layout.
+- **Browser preview.** While the managed folder is open, CowMark serves `http://localhost:4100` on 127.0.0.1 only (`crates/cowmark-core/src/preview_server.rs`). The page frames the site at the same path and relays the same draft messages as the panel: pending changes once the site is ready, then saved files over server-sent events, and images. Unsaved typing in CowMark's editor is not sent; saved files are. Every request needs the per-launch token in `?token=`, and the Host header must be `localhost:4100` or `127.0.0.1:4100`. **Open in browser** in the preview panel opens the current page there. The port is fixed because the site's allowlist names it exactly: if another program holds it, the panel says so and CowMark doesn't try another port.
+- **The `cowmark` command** (to come: a CLI and MCP server) talks to the running app over the control connection below, and opens the app first if it isn't running. Publishing from it is a proposal: it ticks files and fills in the message, and a person clicks Save to studio.
+
+### Control connection
+
+`crates/cowmark-core/src/control.rs`; the app side is `apps/desktop/src-tauri/src/cowmark_companion.rs`.
+
+- **Where.** In the app data dir (macOS: `~/Library/Application Support/com.catercow.cowmark`), the `control/` directory (mode 0700) holds `cowmark.sock`, a Unix domain socket (mode 0600), and `token`. On Windows the endpoint is the named pipe `\\.\pipe\cowmark-<id>`, where `<id>` is the first 16 hex digits of the SHA-256 of the app data dir path; its DACL allows only the pipe's owner and SYSTEM. `ControlPaths::for_data_dir` computes both.
+- **Token.** `control/token` holds 64 hex characters, is rewritten (mode 0600) at every launch and deleted on quit. Every request carries it.
+- **One owner.** The app starts listening when the managed folder opens. If another live CowMark answers on the endpoint, the second one doesn't listen. A socket file left by a crash is replaced.
+- **Framing.** Newline-delimited JSON-RPC 2.0: one UTF-8 JSON object per line, at most 1 MiB. A connection can carry many requests; replies come back in order, one line each.
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"propose_publish","params":{"paths":["content/blog/new-post.md"],"message":"New post"},"token":"<contents of control/token>"}
+{"jsonrpc":"2.0","id":1,"result":{"paths":["content/blog/new-post.md"],"message":"New post"}}
+```
+
+Paths are relative to the content folder (or absolute inside it). Anything outside the folder, through `..` or a symlink, or inside `.git`, is rejected.
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `ping` | none | `{ app: "CowMark", version, protocol: 1, email, folder, previewUrl }`; `email` and `folder` are null when signed out or not set up, `previewUrl` when the browser preview isn't running |
+| `status` | none | `{ branch, changes: [{ path, status }], ahead }`, as the save bar shows them |
+| `focus` | none | `{}`; brings the window forward |
+| `open` | `{ path }`, a Markdown file that exists | `{ path }`; opens it in the editor and shows it in the preview. Doesn't focus the window |
+| `propose_publish` | `{ paths: [...], message }` | `{ paths, message }`; ticks exactly these files in the checklist (no folder expansion), fills in the trimmed message, shows and flashes the save bar and focuses the window. Every path must have changes. Never saves |
+
+| Error code | Meaning |
+| --- | --- |
+| -32700 / -32600 / -32601 / -32602 | Not JSON / not a request / unknown method / bad params |
+| -32001 | Missing or wrong token |
+| -32002 | No content folder yet |
+| -32003 | Path outside the content folder |
+| -32004 | A proposed path has no changes |
+| -32005 | The app couldn't do it (git failed, no window) |
+
+`crates/cowmark-core/tests/control_client.rs` is a minimal client that calls every method; `tests/preview_server.rs` covers the browser preview.
 
 ## CowMark: images and page details
 

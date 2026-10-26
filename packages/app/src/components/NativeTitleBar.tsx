@@ -10,6 +10,7 @@ import {
   History,
   ImageIcon,
   Moon,
+  PanelRightDashed,
   PanelLeft,
   PanelRight,
   Save,
@@ -66,6 +67,9 @@ type NativeTitleBarProps = {
   aiAgentPressed?: boolean;
   contentPreviewOpen?: boolean;
   onToggleContentPreview?: () => unknown;
+  /** CowMark: only the preview and save bar, for a narrow window beside another editor. */
+  companionMode?: boolean;
+  onToggleCompanionMode?: () => unknown;
   aiAgentResizing?: boolean;
   aiAgentWidth?: number;
   compactLayout?: boolean;
@@ -127,6 +131,8 @@ export function NativeTitleBar({
   aiAgentPressed,
   contentPreviewOpen = false,
   onToggleContentPreview,
+  companionMode = false,
+  onToggleCompanionMode,
   aiAgentResizing = false,
   aiAgentWidth = 384,
   compactLayout = false,
@@ -628,6 +634,18 @@ export function NativeTitleBar({
           onClick={() => onToggleContentPreview()}
         >
           <Globe aria-hidden="true" size={15} />
+        </IconButton>
+      ) : null}
+      {onToggleCompanionMode ? (
+        <IconButton
+          className={companionMode
+            ? "bg-(--bg-active) text-(--text-heading) opacity-100"
+            : "bg-transparent text-(--text-secondary) hover:bg-(--bg-hover) hover:text-(--text-heading)"}
+          label={label("app.cowmark.companionView")}
+          pressed={companionMode}
+          onClick={() => onToggleCompanionMode()}
+        >
+          <PanelRightDashed aria-hidden="true" size={15} />
         </IconButton>
       ) : null}
       <DndContext

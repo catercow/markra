@@ -18,9 +18,12 @@ function mockContentPreview() {
   return preview;
 }
 
-function renderPanel(activeDocument: { content: string; path: string | null } | null) {
+type PanelProps = Partial<Parameters<typeof ContentPreviewPanel>[0]>;
+
+function renderPanel(activeDocument: { content: string; path: string | null } | null, props: PanelProps = {}) {
   const view = render(
     <ContentPreviewPanel
+      {...props}
       activeDocument={activeDocument}
       config={config}
       language="en"
@@ -39,7 +42,8 @@ function renderPanel(activeDocument: { content: string; path: string | null } | 
       window.dispatchEvent(new MessageEvent("message", { data, origin: from, source: frame.contentWindow }));
     });
   };
-  return { ...view, fromSite, postMessage };
+  const posted = () => postMessage.mock.calls.map((call) => call[0] as { type: string; fsPath?: string; navigate?: boolean });
+  return { ...view, fromSite, postMessage, posted };
 }
 
 describe("ContentPreviewPanel", () => {
@@ -93,5 +97,75 @@ describe("ContentPreviewPanel", () => {
 
     fromSite({ type: "catercow:draft:error", fsPath: "blog/a.md", message: "bad YAML" });
     expect(screen.getByText("Couldn't show blog/a.md: bad YAML")).toBeInTheDocument();
+  });
+
+  it("follows the most recently saved file", async () => {
+    const preview = mockContentPreview();
+    preview.pending.mockResolvedValue({ events: [], warning: null });
+    preview.poll.mockResolvedValueOnce([
+      { kind: "draft", fsPath: "blog/a.md", content: "a" },
+      { kind: "media", path: "/blog/b.png", mime: "image/png" },
+      { kind: "draft", fsPath: "blog/b.md", content: "b" }
+    ]);
+    const { fromSite, posted } = renderPanel(null);
+
+    fromSite({ type: "catercow:draft:ready", contentCommit: "abc1234" });
+
+    await waitFor(() => expect(posted()).toHaveLength(3));
+    expect(posted()).toEqual([
+      expect.objectContaining({ type: "catercow:draft:media" }),
+      expect.objectContaining({ type: "catercow:draft", fsPath: "blog/a.md", navigate: false }),
+      expect.objectContaining({ type: "catercow:draft", fsPath: "blog/b.md", navigate: true })
+    ]);
+  });
+
+  it("shows the open document again when asked, even if it was already sent", async () => {
+    const preview = mockContentPreview();
+    preview.pending.mockResolvedValue({ events: [], warning: null });
+    const document = { content: "# Open", path: "/work/mc/content/blog/open.md" };
+    const { fromSite, posted, rerender } = renderPanel(document, { revealRequest: 0 });
+    fromSite({ type: "catercow:draft:ready", contentCommit: "abc1234" });
+    await waitFor(() => expect(posted()).toHaveLength(1));
+
+    rerender(
+      <ContentPreviewPanel
+        activeDocument={document}
+        config={config}
+        language="en"
+        maxWidth={1200}
+        minWidth={360}
+        revealRequest={1}
+        rootPath="/work/mc"
+        width={520}
+        onClose={() => {}}
+        onResize={() => {}}
+      />
+    );
+    await waitFor(() => expect(posted()).toHaveLength(2));
+    expect(posted()[1]).toEqual(expect.objectContaining({ fsPath: "blog/open.md", navigate: true }));
+  });
+
+  it("fills the window in the companion layout, without close or resize", () => {
+    mockContentPreview();
+    const { container } = renderPanel(null, { fill: true });
+
+    expect(container.querySelector(".content-preview-panel")).toHaveStyle({ width: "100%" });
+    expect(screen.queryByRole("button", { name: "Close site preview" })).toBeNull();
+    expect(screen.queryByRole("separator")).toBeNull();
+  });
+
+  it("opens the browser preview through CowMark and shows why it couldn't", async () => {
+    mockContentPreview();
+    const onOpenInBrowser = vi.fn(async () => { throw new Error("Port 4100 is in use by another program."); });
+    const openExternalUrl = vi.spyOn(getAppRuntime().window, "openExternalUrl");
+    renderPanel(null, { onOpenInBrowser });
+
+    act(() => {
+      screen.getByRole("button", { name: "Open this page in your browser" }).click();
+    });
+
+    expect(onOpenInBrowser).toHaveBeenCalledWith(null);
+    expect(await screen.findByText("Port 4100 is in use by another program.")).toBeInTheDocument();
+    expect(openExternalUrl).not.toHaveBeenCalled();
   });
 });

@@ -22,6 +22,7 @@ import {
   type ContentPreviewEvent,
   type ContentPreviewMessage
 } from "../lib/content-preview";
+import { navigationFlags, type ContentSaveProposal } from "../lib/cowmark-companion";
 
 const pollIntervalMs = 1000;
 const typingDelayMs = 300;
@@ -30,6 +31,14 @@ const connectTimeoutMs = 20_000;
 type ConnectionStatus = "connecting" | "ready" | "offline";
 
 type ContentPreviewPanelProps = {
+  /** CowMark's companion layout: the panel fills the window and can't be closed or resized. */
+  fill?: boolean;
+  /** CowMark: opens the page in the browser preview; rejects with a message to show. */
+  onOpenInBrowser?: (pagePath: string | null) => Promise<unknown>;
+  /** Passed to the save bar; see ContentSaveBar. */
+  proposal?: ContentSaveProposal | null;
+  /** Bumped to show the open document again, e.g. after the `cowmark` command opened it. */
+  revealRequest?: number;
   /** Writes open documents to disk before Save to studio. */
   beforeSave?: () => Promise<unknown>;
   /** CowMark's managed folder: shows the sign-in and Save to studio footer. */
@@ -52,6 +61,10 @@ type ContentPreviewPanelProps = {
 
 export function ContentPreviewPanel({
   activeDocument,
+  fill = false,
+  onOpenInBrowser,
+  proposal,
+  revealRequest = 0,
   beforeSave,
   managed,
   onConflictFiles,
@@ -99,9 +112,11 @@ export function ContentPreviewPanel({
 
   const send = useCallback(async (events: ContentPreviewEvent[], navigate: boolean) => {
     if (!contentPreview) return;
-    for (const event of orderContentPreviewEvents(events)) {
+    const ordered = orderContentPreviewEvents(events);
+    const navigateFlags = navigationFlags(ordered, navigate);
+    for (const [index, event] of ordered.entries()) {
       try {
-        const outgoing = await messageForEvent(event, navigate, (path) => contentPreview.readMedia(rootPath, path));
+        const outgoing = await messageForEvent(event, navigateFlags[index], (path) => contentPreview.readMedia(rootPath, path));
         if (outgoing) post(outgoing);
       } catch (cause) {
         setError(`${contentPreviewEventLabel(event)}: ${String((cause as Error)?.message ?? cause)}`);
@@ -191,6 +206,12 @@ export function ContentPreviewPanel({
   }, [activeDocument?.content, activeDocument?.path, sendActiveDocument, status]);
 
   useEffect(() => {
+    if (!revealRequest) return;
+    sentDocumentRef.current = null;
+    sendActiveDocument();
+  }, [revealRequest, sendActiveDocument]);
+
+  useEffect(() => {
     setStatus("connecting");
     statusRef.current = "connecting";
     const timer = setTimeout(() => {
@@ -205,6 +226,11 @@ export function ContentPreviewPanel({
   };
 
   const openInBrowser = () => {
+    if (onOpenInBrowser) {
+      setError(null);
+      onOpenInBrowser(pagePath).catch((cause) => setError(String((cause as Error)?.message ?? cause)));
+      return;
+    }
     const target = pagePath ? new URL(pagePath, config.site).href : config.site;
     getAppRuntime().window.openExternalUrl(target).catch(() => {});
   };
@@ -267,9 +293,9 @@ export function ContentPreviewPanel({
       className="content-preview-panel relative flex h-full min-h-0 w-full flex-col border-l border-(--border-default) bg-(--bg-secondary) text-(--text-primary)"
       role="complementary"
       aria-label={label("app.contentPreview")}
-      style={{ maxWidth: width, minWidth: width, width }}
+      style={fill ? { width: "100%" } : { maxWidth: width, minWidth: width, width }}
     >
-      <div
+      {fill ? null : <div
         className="absolute top-10 bottom-0 left-0 z-30 w-2 cursor-col-resize touch-none outline-none"
         role="separator"
         tabIndex={0}
@@ -280,11 +306,13 @@ export function ContentPreviewPanel({
         aria-valuenow={width}
         onKeyDown={handleResizeKeyDown}
         onPointerDown={handleResizePointerDown}
-      />
+      />}
       <header className="flex min-h-12 shrink-0 items-center gap-1 border-b border-(--border-default) px-2 py-1.5">
-        <IconButton label={label("app.contentPreviewClose")} size="icon-md" onClick={onClose}>
-          <X aria-hidden="true" size={15} />
-        </IconButton>
+        {fill ? null : (
+          <IconButton label={label("app.contentPreviewClose")} size="icon-md" onClick={onClose}>
+            <X aria-hidden="true" size={15} />
+          </IconButton>
+        )}
         <div className="min-w-0 flex-1 px-1">
           <h2 className="m-0 truncate text-[13px] leading-5 font-[560] text-(--text-heading)">
             {label("app.contentPreview")}
@@ -322,7 +350,13 @@ export function ContentPreviewPanel({
         title={label("app.contentPreview")}
       />
       {managed ? (
-        <ContentSaveBar beforeSave={beforeSave} language={language} managed={managed} onConflictFiles={onConflictFiles} />
+        <ContentSaveBar
+          beforeSave={beforeSave}
+          language={language}
+          managed={managed}
+          onConflictFiles={onConflictFiles}
+          proposal={proposal}
+        />
       ) : null}
     </aside>
   );

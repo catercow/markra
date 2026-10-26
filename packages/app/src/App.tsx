@@ -95,6 +95,7 @@ import { useWorkspaceSearch } from "./hooks/useWorkspaceSearch";
 import { useWorkspaceAssetCleanup } from "./hooks/useWorkspaceAssetCleanup";
 import { useMdcSchema } from "./hooks/useMdcSchema";
 import { useContentPreviewConfig } from "./hooks/useContentPreviewConfig";
+import { useCompanionMode, useCowMarkCompanion } from "./hooks/useCowMarkCompanion";
 import { CowMarkGate } from "./components/CowMarkGate";
 import { catercowPreviewSite, type ManagedContent } from "./lib/content-access";
 import { contentFsPathFor, parseContentPreviewConfig } from "./lib/content-preview";
@@ -844,8 +845,12 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
   }, [fileTreeSourcePath, managedRoot, openFolderPath]);
   const [contentPreviewWidth, setContentPreviewWidth] = useState(contentPreviewDefaultWidth);
   const [contentPreviewResizing, setContentPreviewResizing] = useState(false);
-  const visibleContentPreviewOpen = Boolean(contentPreviewConfig && defaultMarkdownSaveDirectory) && contentPreviewOpen;
-  const contentPreviewInsetPx = visibleContentPreviewOpen ? contentPreviewWidth : 0;
+  // CowMark companion layout: only the preview and the save bar, beside another editor.
+  const [companionPreferred, toggleCompanionMode] = useCompanionMode();
+  const companionAvailable = Boolean(managedContent && appFiles.cowmarkCompanion && contentPreviewConfig && defaultMarkdownSaveDirectory);
+  const companionMode = companionAvailable && companionPreferred;
+  const visibleContentPreviewOpen = Boolean(contentPreviewConfig && defaultMarkdownSaveDirectory) && (contentPreviewOpen || companionMode);
+  const contentPreviewInsetPx = visibleContentPreviewOpen && !companionMode ? contentPreviewWidth : 0;
   const savedExtendedSyntax = editorPreferences.preferences.extendedSyntax;
   // A workspace that ships a components schema is an MDC workspace.
   const extendedSyntax = useMemo(
@@ -978,7 +983,7 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
     viewModeChrome.fileList ||
     viewModeChrome.outline ||
     documentLinksVisible;
-  const visibleFileTreeOpen = viewModeChrome.fileTree && fileTreeContentVisible && fileTreeOpen;
+  const visibleFileTreeOpen = viewModeChrome.fileTree && fileTreeContentVisible && fileTreeOpen && !companionMode;
   const compactViewport = !nativeRuntimeAvailable && viewportWidth <= 900;
   const visibleWorkspaceLayoutStyle = {
     ...workspaceLayoutStyle,
@@ -1627,7 +1632,7 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
   const handleAiAgentSessionRestore = useCallback((session: { panelOpen: boolean; panelWidth: number | null }) => {
     restoreAiAgentPanelSession(session);
   }, [restoreAiAgentPanelSession]);
-  const visibleAiAgentOpen = viewModeChrome.aiPanel && aiFeatureEnabled && aiAgentOpen;
+  const visibleAiAgentOpen = viewModeChrome.aiPanel && aiFeatureEnabled && aiAgentOpen && !companionMode;
   const aiAgentInset = visibleAiAgentOpen ? `${aiAgentPanelWidth}px` : "0px";
   const rightPanelsWidth = contentPreviewInsetPx + (visibleAiAgentOpen ? aiAgentPanelWidth : 0);
   const editorAreaWidth = Math.max(0, viewportWidth -
@@ -2830,6 +2835,19 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
       editorPreferences.preferences.showDocumentTabs ? openTreeMarkdownFileInBackground : undefined
     ).catch(() => {});
   }, [editorPreferences.preferences.showDocumentTabs, handleOpenTreeFile, managedRoot, openTreeMarkdownFileInBackground]);
+  const openCompanionFile = useCallback(async (path: string) => {
+    const root = defaultMarkdownSaveDirectory ?? "";
+    const relativePath = path.startsWith(root) ? path.slice(root.length).replace(/^[\\/]+/u, "") : path;
+    await handleOpenTreeFile({ name: path.split(/[\\/]/u).pop() ?? path, path, relativePath });
+  }, [defaultMarkdownSaveDirectory, handleOpenTreeFile]);
+  const cowmarkCompanion = useCowMarkCompanion({
+    enabled: Boolean(managedContent),
+    language: appLanguage.language,
+    rootPath: managedRoot,
+    site: contentPreviewConfig?.site ?? null,
+    onOpenFile: openCompanionFile,
+    onShowSaveBar: () => setContentPreviewOpen(true)
+  });
   const handleQuickOpenOpen = useCallback(() => {
     hideGlobalSearch();
     hideDocumentSearch();
@@ -4876,6 +4894,10 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
         minWidth={contentPreviewMinWidth}
         rootPath={defaultMarkdownSaveDirectory}
         width={contentPreviewWidth}
+        fill={companionMode}
+        proposal={cowmarkCompanion.proposal}
+        revealRequest={cowmarkCompanion.revealRequest}
+        onOpenInBrowser={cowmarkCompanion.openInBrowser}
         onClose={() => setContentPreviewOpen(false)}
         onResize={setContentPreviewWidth}
         onResizeEnd={() => setContentPreviewResizing(false)}
@@ -4922,13 +4944,15 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
           aiAgentResizing={aiAgentPanelResizing || contentPreviewResizing}
           aiAgentWidth={rightPanelsWidth}
           contentPreviewOpen={visibleContentPreviewOpen}
-          onToggleContentPreview={contentPreviewConfig ? () => setContentPreviewOpen((open) => !open) : undefined}
+          onToggleContentPreview={contentPreviewConfig && !companionMode ? () => setContentPreviewOpen((open) => !open) : undefined}
+          companionMode={companionMode}
+          onToggleCompanionMode={companionAvailable ? toggleCompanionMode : undefined}
           compactLayout={compactViewport}
           dirty={!activeImageFile && hasOpenDocument && document.dirty}
           documentKind={titleDocumentKind}
           documentName={titleDocumentName}
           language={appLanguage.language}
-          markdownFilesButtonVisible={viewModeChrome.fileTreeButton && viewModeChrome.fileTree && fileTreeContentVisible}
+          markdownFilesButtonVisible={viewModeChrome.fileTreeButton && viewModeChrome.fileTree && fileTreeContentVisible && !companionMode}
           markdownFilesOpen={visibleFileTreeOpen}
           markdownFilesResizing={fileTreeResizing}
           markdownFilesWidth={fileTreeWidth}
@@ -4944,7 +4968,7 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
           sourceModeDisabled={!sourceModeAvailable}
           theme={appTheme.resolvedTheme}
           titlebarActions={appTitlebarActions}
-          titleContent={titlebarDocumentTabs}
+          titleContent={companionMode ? undefined : titlebarDocumentTabs}
           viewMode={editorPreferences.preferences.viewMode}
           onSelectViewMode={handleViewModeSelect}
           onCreateMarkdownFile={handleQuickCreateMarkdownTreeFile}
@@ -5004,7 +5028,9 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
           editorAgentLayoutClassName={editorAgentLayoutClassName}
           editorAgentLayoutStyle={{
             "--markra-ai-agent-inset": `${rightPanelsWidth}px`,
-            gridTemplateColumns: `minmax(0,1fr) ${contentPreviewInsetPx}px ${aiAgentInset}`
+            gridTemplateColumns: companionMode
+              ? "0px minmax(0,1fr) 0px"
+              : `minmax(0,1fr) ${contentPreviewInsetPx}px ${aiAgentInset}`
           } as CSSProperties}
           editorDropTargetActive={editorTabDropTargetActive}
           fileTree={{

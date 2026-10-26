@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { t, type AppLanguage, type I18nKey } from "@markra/shared";
 import { Button, Textarea } from "@markra/ui";
 import { getAppRuntime } from "../runtime";
 import { contentAccessError, type ContentGitStatus, type ManagedContent } from "../lib/content-access";
 import { pruneSelection, toggleSelection } from "../lib/content-selection";
+import type { ContentSaveProposal } from "../lib/cowmark-companion";
 
 const statusPollMs = 4000;
 
@@ -16,10 +17,12 @@ type ContentSaveBarProps = {
   beforeSave?: () => Promise<unknown>;
   /** Folder-relative files left with conflict markers; shown so the conflicts can be resolved. */
   onConflictFiles?: (paths: string[]) => unknown;
+  /** From the `cowmark` command: tick exactly these files and fill in the message. Never saves. */
+  proposal?: ContentSaveProposal | null;
 };
 
 /** The preview panel's footer in CowMark: who is signed in, what changed, Save to studio. */
-export function ContentSaveBar({ beforeSave, language, managed, onConflictFiles }: ContentSaveBarProps) {
+export function ContentSaveBar({ beforeSave, language, managed, onConflictFiles, proposal }: ContentSaveBarProps) {
   const label = useCallback((key: I18nKey) => t(language, key), [language]);
   const access = getAppRuntime().files.contentAccess;
   const [status, setStatus] = useState<ContentGitStatus | null>(null);
@@ -49,6 +52,34 @@ export function ContentSaveBar({ beforeSave, language, managed, onConflictFiles 
     const timer = setInterval(() => { refresh(); }, statusPollMs);
     return () => clearInterval(timer);
   }, [refresh]);
+
+  const footerRef = useRef<HTMLElement | null>(null);
+  const [flash, setFlash] = useState(false);
+  const proposalNonce = proposal?.nonce;
+  const proposalRef = useRef(proposal);
+  proposalRef.current = proposal;
+  const appliedProposalRef = useRef<number | null>(null);
+  useEffect(() => {
+    const current = proposalRef.current;
+    if (!current || appliedProposalRef.current === current.nonce) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // Refresh first, so the proposed files are in the list before they're ticked.
+    refresh().finally(() => {
+      if (!active) return;
+      appliedProposalRef.current = current.nonce;
+      setSelected(new Set(current.paths));
+      setMessage(current.message);
+      setNotice({ tone: "info", text: label("app.cowmark.proposalReady") });
+      setFlash(true);
+      footerRef.current?.scrollIntoView?.({ block: "nearest" });
+      timer = setTimeout(() => setFlash(false), 1600);
+    });
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [label, proposalNonce, refresh]);
 
   const handleFailure = (error: unknown, failedKey: I18nKey) => {
     const { code, files, message: text } = contentAccessError(error);
@@ -143,7 +174,13 @@ export function ContentSaveBar({ beforeSave, language, managed, onConflictFiles 
       : label("app.cowmark.changeCount").replace("{count}", String(changeCount));
 
   return (
-    <footer className="content-save-bar flex shrink-0 flex-col gap-2 border-t border-(--border-default) px-3 py-2 text-[12px]">
+    <footer
+      ref={footerRef}
+      className={`content-save-bar flex shrink-0 flex-col gap-2 border-t border-(--border-default) px-3 py-2 text-[12px] transition-shadow duration-300 ${
+        flash ? "shadow-[inset_0_0_0_2px_var(--accent)]" : ""
+      }`}
+      data-proposal-flash={flash ? "true" : undefined}
+    >
       <div className="flex min-w-0 items-center justify-between gap-2">
         <p className="m-0 truncate text-(--text-secondary)" title={status?.changes.map((change) => `${change.status}: ${change.path}`).join("\n")}>
           {summary}
