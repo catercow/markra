@@ -89,6 +89,11 @@ pub trait ControlUi: Send + Sync + 'static {
     /// Ticks exactly `paths` (relative to the content folder, `/`-separated) in
     /// the save checklist, fills in `message` and shows the save bar. Never saves.
     fn propose_publish(&self, paths: &[String], message: &str) -> Result<(), String>;
+    /// Starts Get latest in the save bar, as if it were clicked. Returns once
+    /// it has started; the outcome shows in the save bar and in `status`.
+    fn get_latest(&self) -> Result<(), String> {
+        Err("this CowMark can't get the latest changes on request".into())
+    }
     /// The browser preview's address with its token, when it's running.
     fn preview_url(&self) -> Option<String> {
         None
@@ -199,13 +204,64 @@ fn listener_options(endpoint: &str) -> std::io::Result<ListenerOptions<'_>> {
     Ok(options)
 }
 
+// --- client ----------------------------------------------------------------------
+
+/// A blocking client for the control connection, as the `cowmark` command uses it.
+pub struct Client {
+    reader: BufReader<Stream>,
+    token: String,
+    next_id: u64,
+}
+
+impl Client {
+    /// Connects to the running app for `paths` with the token it wrote.
+    pub fn connect(paths: &ControlPaths) -> std::io::Result<Self> {
+        let token = std::fs::read_to_string(&paths.token)?.trim().to_string();
+        Ok(Self { reader: BufReader::new(connect(&paths.endpoint)?), token, next_id: 1 })
+    }
+
+    /// Sends one request and waits for its reply. I/O failures come back as
+    /// [`APP_ERROR`] with the message prefixed `connection:`.
+    pub fn call(&mut self, method: &str, params: Value) -> Result<Value, RpcError> {
+        let id = self.next_id;
+        self.next_id += 1;
+        let request = json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params, "token": self.token });
+        let lost = |error: std::io::Error| rpc_error(APP_ERROR, format!("connection: {error}"));
+        let mut line = request.to_string();
+        line.push('\n');
+        let stream = self.reader.get_mut();
+        stream.write_all(line.as_bytes()).map_err(lost)?;
+        stream.flush().map_err(lost)?;
+        let mut reply = String::new();
+        if (&mut self.reader).take(MAX_LINE_BYTES).read_line(&mut reply).map_err(lost)? == 0 {
+            return Err(rpc_error(APP_ERROR, "connection: CowMark closed the connection"));
+        }
+        let reply: Value = serde_json::from_str(&reply).map_err(|error| rpc_error(PARSE_ERROR, error.to_string()))?;
+        if let Some(error) = reply.get("error") {
+            return Err(rpc_error(
+                error.get("code").and_then(Value::as_i64).unwrap_or(APP_ERROR),
+                error.get("message").and_then(Value::as_str).unwrap_or("unknown error"),
+            ));
+        }
+        Ok(reply.get("result").cloned().unwrap_or(Value::Null))
+    }
+}
+
 // --- requests --------------------------------------------------------------------
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RpcError {
     pub code: i64,
     pub message: String,
 }
+
+impl std::fmt::Display for RpcError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for RpcError {}
 
 fn rpc_error(code: i64, message: impl Into<String>) -> RpcError {
     RpcError { code, message: message.into() }
@@ -305,6 +361,11 @@ fn dispatch(context: &Context, method: &str, params: &Value) -> Result<Value, Rp
             }
             context.ui.open(&absolute).map_err(|error| rpc_error(APP_ERROR, error))?;
             Ok(json!({ "path": relative }))
+        }
+        "get_latest" => {
+            content_folder(context)?;
+            context.ui.get_latest().map_err(|error| rpc_error(APP_ERROR, error))?;
+            Ok(json!({ "started": true }))
         }
         "propose_publish" => {
             let folder = content_folder(context)?;

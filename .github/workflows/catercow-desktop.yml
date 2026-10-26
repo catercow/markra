@@ -1,8 +1,8 @@
 name: CaterCow desktop build
 
-# Builds "CowMark" (CaterCow's edition of Markra) for macOS and Windows and publishes it as a GitHub release on
-# this fork. Push a tag such as `catercow-v2.14.1-mdc.1` to run it. Upstream's
-# release workflow only runs for `v*` tags, so it stays idle.
+# Builds "CowMark" (CaterCow's edition of Markra) for macOS and Windows, with the `cowmark` command inside, plus a
+# Linux `cowmark` for the content repository's CI, and publishes them as a GitHub release on this fork. Push a tag
+# such as `catercow-v2.14.1-mdc.1` to run it. Upstream's release workflow only runs for `v*` tags, so it stays idle.
 
 on:
   push:
@@ -65,6 +65,7 @@ jobs:
           workspaces: |
             ${{ env.DESKTOP_DIR }}/src-tauri -> target
             crates/cowmark-core -> target
+            crates/cowmark-cli -> target
           cache-bin: false
 
       - run: pnpm install --frozen-lockfile
@@ -72,6 +73,7 @@ jobs:
       - name: Test the editor packages
         run: pnpm --filter @markra/editor --filter @markra/editor-react --filter @markra/shared test
 
+      # beforeBuildCommand also builds the `cowmark` sidecar for this target (scripts/cowmark-cli.mjs).
       - name: Build app
         working-directory: ${{ env.DESKTOP_DIR }}
         run: >-
@@ -83,6 +85,10 @@ jobs:
 
       - name: Test the content preview, access and git (cowmark-core)
         working-directory: crates/cowmark-core
+        run: cargo test --release --target ${{ matrix.target }}
+
+      - name: Test the cowmark command and MCP server (cowmark-cli)
+        working-directory: crates/cowmark-cli
         run: cargo test --release --target ${{ matrix.target }}
 
       # After the build: compiling the crate needs the frontend bundle it embeds.
@@ -116,6 +122,7 @@ jobs:
           mount="$(mktemp -d)"
           hdiutil attach -nobrowse -readonly -mountpoint "$mount" "${{ steps.installer.outputs.path }}"
           codesign --verify --deep --verbose=2 "$mount/CowMark.app"
+          "$mount/CowMark.app/Contents/MacOS/cowmark" --version
           hdiutil detach "$mount"
 
       - uses: actions/upload-artifact@v4
@@ -124,8 +131,38 @@ jobs:
           path: ${{ steps.installer.outputs.path }}
           if-no-files-found: error
 
+  # A Linux `cowmark` for the content repository's CI (`cowmark check`); the desktop builds carry their own.
+  cli-linux:
+    name: cowmark (linux x64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: crates/cowmark-cli -> target
+          cache-bin: false
+
+      - name: Test
+        working-directory: crates/cowmark-cli
+        run: cargo test --release --locked
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          crates/cowmark-cli/target/release/cowmark --version
+          tar -czf cowmark-linux-x64.tar.gz -C crates/cowmark-cli/target/release cowmark
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cowmark-linux-x64
+          path: cowmark-linux-x64.tar.gz
+          if-no-files-found: error
+
   release:
-    needs: build
+    needs: [build, cli-linux]
     if: startsWith(github.ref, 'refs/tags/catercow-v')
     runs-on: ubuntu-latest
     steps:
@@ -143,6 +180,8 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "CowMark ${TAG#catercow-}" \
             --notes "CowMark: CaterCow's edition of Markra, for editing the CaterCow marketing content with a live preview. Built from $GITHUB_SHA.
+
+          cowmark-linux-x64.tar.gz is the \`cowmark\` command for Linux, for checking content in CI; the apps include their own.
 
           These builds are not signed by Apple or Microsoft, so the first launch asks for confirmation:
           - Mac: open the .dmg, drag the app to Applications, then right-click it and choose Open (or allow it under System Settings → Privacy & Security).

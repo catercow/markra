@@ -124,6 +124,18 @@ describe("CowMark as a companion", () => {
     expect(access.save).not.toHaveBeenCalled();
   });
 
+  it("gets the latest changes when the cowmark command asks", async () => {
+    const { access, send } = mockCowMark();
+    render(<App />);
+    expect(await screen.findByText("2 changed files")).toBeInTheDocument();
+
+    await send({ action: "getLatest" });
+
+    await waitFor(() => expect(access.update).toHaveBeenCalledTimes(1));
+    expect(access.update).toHaveBeenCalledWith(root);
+    expect(access.save).not.toHaveBeenCalled();
+  });
+
   it("opens a file the cowmark command names", async () => {
     const { readMarkdownFile, send } = mockCowMark();
     render(<App />);

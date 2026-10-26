@@ -34,6 +34,7 @@ pub(crate) struct CompanionStatus {
 enum ControlEvent {
     Open { path: String },
     ProposePublish { paths: Vec<String>, message: String },
+    GetLatest,
 }
 
 struct TauriControlUi {
@@ -74,6 +75,10 @@ impl ControlUi for TauriControlUi {
 
     fn propose_publish(&self, paths: &[String], message: &str) -> Result<(), String> {
         self.emit(ControlEvent::ProposePublish { paths: paths.to_vec(), message: message.to_string() })
+    }
+
+    fn get_latest(&self) -> Result<(), String> {
+        self.emit(ControlEvent::GetLatest)
     }
 
     fn preview_url(&self) -> Option<String> {

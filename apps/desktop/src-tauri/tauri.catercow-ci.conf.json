@@ -1,6 +1,6 @@
 {
   "build": {
-    "beforeBuildCommand": "pnpm build && pnpm build:icon"
+    "beforeBuildCommand": "pnpm build && pnpm build:icon && pnpm build:cowmark-cli"
   },
   "bundle": {
     "macOS": {

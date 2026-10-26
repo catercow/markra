@@ -52,6 +52,8 @@ export function useCowMarkCompanion({
   const active = Boolean(enabled && companion && rootPath && site);
   const [proposal, setProposal] = useState<ContentSaveProposal | null>(null);
   const [revealRequest, setRevealRequest] = useState(0);
+  // Non-zero while a Get latest from the `cowmark` command waits for the save bar.
+  const [getLatestRequest, setGetLatestRequest] = useState(0);
   const statusRef = useRef<CowMarkCompanionStatus | null>(null);
   const handlersRef = useRef({ onOpenFile, onShowSaveBar });
   handlersRef.current = { onOpenFile, onShowSaveBar };
@@ -75,6 +77,9 @@ export function useCowMarkCompanion({
             nonce: (current?.nonce ?? 0) + 1,
             paths: [...request.paths]
           }));
+        } else if (request.action === "getLatest") {
+          handlersRef.current.onShowSaveBar();
+          setGetLatestRequest((count) => count + 1);
         }
       })
       .then((stop) => {
@@ -111,8 +116,12 @@ export function useCowMarkCompanion({
     );
   }, [companion, language, rootPath, site]);
 
+  const getLatestStarted = useCallback(() => setGetLatestRequest(0), []);
+
   return {
     active,
+    getLatestRequest,
+    getLatestStarted,
     openInBrowser: active ? openInBrowser : undefined,
     proposal,
     revealRequest

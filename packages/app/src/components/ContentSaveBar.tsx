@@ -19,10 +19,21 @@ type ContentSaveBarProps = {
   onConflictFiles?: (paths: string[]) => unknown;
   /** From the `cowmark` command: tick exactly these files and fill in the message. Never saves. */
   proposal?: ContentSaveProposal | null;
+  /** Non-zero when the `cowmark` command asked for Get latest; cleared through onGetLatestStarted. */
+  getLatestRequest?: number;
+  onGetLatestStarted?: () => unknown;
 };
 
 /** The preview panel's footer in CowMark: who is signed in, what changed, Save to studio. */
-export function ContentSaveBar({ beforeSave, language, managed, onConflictFiles, proposal }: ContentSaveBarProps) {
+export function ContentSaveBar({
+  beforeSave,
+  getLatestRequest = 0,
+  language,
+  managed,
+  onConflictFiles,
+  onGetLatestStarted,
+  proposal
+}: ContentSaveBarProps) {
   const label = useCallback((key: I18nKey) => t(language, key), [language]);
   const access = getAppRuntime().files.contentAccess;
   const [status, setStatus] = useState<ContentGitStatus | null>(null);
@@ -133,6 +144,15 @@ export function ContentSaveBar({ beforeSave, language, managed, onConflictFiles,
       refresh();
     }
   };
+
+  const updateRef = useRef(update);
+  updateRef.current = update;
+  useEffect(() => {
+    // A request that arrives mid-save waits until the bar is free again.
+    if (!getLatestRequest || busy !== null) return;
+    onGetLatestStarted?.();
+    updateRef.current().catch(() => {});
+  }, [busy, getLatestRequest, onGetLatestStarted]);
 
   const signIn = async () => {
     if (!access) return;

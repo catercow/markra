@@ -2,7 +2,7 @@
   "productName": "CowMark",
   "identifier": "com.catercow.cowmark",
   "build": {
-    "beforeBuildCommand": "pnpm build"
+    "beforeBuildCommand": "pnpm build && pnpm build:cowmark-cli"
   },
   "bundle": {
     "macOS": {
@@ -11,6 +11,9 @@
         "PlugIns/MarkraQuickLookPreview.appex": null,
         "Resources/Assets.car": null
       }
-    }
+    },
+    "externalBin": [
+      "binaries/cowmark"
+    ]
   }
 }

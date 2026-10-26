@@ -1,0 +1,27 @@
+[package]
+name = "cowmark-cli"
+version = "0.1.0"
+description = "The cowmark command and MCP server: check, preview and propose CaterCow content changes through CowMark"
+license = "AGPL-3.0-only"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "cowmark"
+path = "src/main.rs"
+
+[lib]
+name = "cowmark_cli"
+path = "src/lib.rs"
+
+[dependencies]
+base64 = "0.22"
+clap = { version = "4.6", features = ["derive"] }
+cowmark-core = { path = "../cowmark-core" }
+cowmark-lint = { path = "../cowmark-lint" }
+rmcp = { version = "3.8", default-features = false, features = ["server", "transport-io"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = ["rt", "macros", "io-std"] }
+
+[profile.release]
+strip = true
