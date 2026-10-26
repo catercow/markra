@@ -6,7 +6,6 @@ mod app_logs;
 mod backup;
 mod clipboard;
 mod content_access;
-mod content_git;
 mod content_preview;
 mod external_urls;
 mod fonts;

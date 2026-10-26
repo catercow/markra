@@ -738,6 +738,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cowmark-core"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "getrandom 0.3.4",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "cpufeatures"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2453,12 +2465,15 @@ name = "markra"
 version = "2.14.1"
 dependencies = [
  "arboard",
+ "base64 0.22.1",
  "cap-fs-ext",
  "cap-std",
  "core-foundation",
+ "cowmark-core",
  "dirs",
  "dispatch2",
  "fontdb",
+ "getrandom 0.3.4",
  "hmac",
  "ignore",
  "notify",

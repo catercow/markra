@@ -7,24 +7,24 @@ use std::path::{Path, PathBuf};
 
 use base64::Engine;
 
-use crate::content_preview::git_command;
+use crate::git_tool::git_command;
 
-pub(crate) const STUDIO_BRANCH: &str = "studio";
+pub const STUDIO_BRANCH: &str = "studio";
 const REMOTE_REF: &str = "refs/remotes/origin/studio";
 
 /// Where to fetch from and push to, and the env that authenticates it.
-pub(crate) struct Remote {
-    pub(crate) url: String,
-    pub(crate) env: Vec<(String, String)>,
+pub struct Remote {
+    pub url: String,
+    pub env: Vec<(String, String)>,
 }
 
-pub(crate) struct Author {
-    pub(crate) name: String,
-    pub(crate) email: String,
+pub struct Author {
+    pub name: String,
+    pub email: String,
 }
 
 impl Author {
-    pub(crate) fn from_email(email: &str) -> Self {
+    pub fn from_email(email: &str) -> Self {
         let name = email.split('@').next().filter(|name| !name.is_empty()).unwrap_or(email);
         Author { name: name.to_string(), email: email.to_string() }
     }
@@ -32,29 +32,29 @@ impl Author {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ContentChange {
-    pub(crate) path: String,
-    pub(crate) status: String,
+pub struct ContentChange {
+    pub path: String,
+    pub status: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ContentGitStatus {
-    pub(crate) branch: String,
-    pub(crate) changes: Vec<ContentChange>,
-    pub(crate) ahead: u32,
+pub struct ContentGitStatus {
+    pub branch: String,
+    pub changes: Vec<ContentChange>,
+    pub ahead: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct SyncResult {
-    pub(crate) committed: bool,
-    pub(crate) head: String,
+pub struct SyncResult {
+    pub committed: bool,
+    pub head: String,
 }
 
 /// GIT_CONFIG_* env that adds the token as a header for github.com only and
 /// turns off credential helpers, so git neither prompts nor stores anything.
-pub(crate) fn auth_env(token: &str) -> Vec<(String, String)> {
+pub fn auth_env(token: &str) -> Vec<(String, String)> {
     let basic = base64::engine::general_purpose::STANDARD.encode(format!("x-access-token:{token}"));
     vec![
         ("GIT_CONFIG_COUNT".into(), "2".into()),
@@ -118,7 +118,7 @@ fn with_identity<'a>(identity: &'a [String; 4], args: &[&'a str]) -> Vec<&'a str
     identity.iter().map(String::as_str).chain(args.iter().copied()).collect()
 }
 
-pub(crate) fn clone_into(git: &Path, remote: &Remote, dest: &Path) -> Result<(), String> {
+pub fn clone_into(git: &Path, remote: &Remote, dest: &Path) -> Result<(), String> {
     if dest.exists() && dest.read_dir().map(|mut entries| entries.next().is_some()).unwrap_or(true) {
         return Err(format!("{} already has files in it. Choose an empty or new folder.", dest.display()));
     }
@@ -137,7 +137,7 @@ pub(crate) fn clone_into(git: &Path, remote: &Remote, dest: &Path) -> Result<(),
         .map_err(|failure| plain(failure, "download the content"))
 }
 
-pub(crate) fn is_checkout(git: &Path, root: &Path) -> bool {
+pub fn is_checkout(git: &Path, root: &Path) -> bool {
     root.join(".git").exists() && run(git, root, &["rev-parse", "--is-inside-work-tree"], &[]).is_ok()
 }
 
@@ -165,7 +165,7 @@ fn parse_porcelain(output: &str) -> Vec<ContentChange> {
     changes
 }
 
-pub(crate) fn status(git: &Path, root: &Path) -> Result<ContentGitStatus, String> {
+pub fn status(git: &Path, root: &Path) -> Result<ContentGitStatus, String> {
     let branch = run(git, root, &["rev-parse", "--abbrev-ref", "HEAD"], &[])
         .map_err(|failure| plain(failure, "read the folder's branch"))?
         .trim()
@@ -243,7 +243,7 @@ fn require_studio(git: &Path, root: &Path) -> Result<(), String> {
 /// Commits only `paths` (the files the editor ticked) and pushes. Every other
 /// change stays in the working tree as a local draft. Paths that no longer have
 /// changes are ignored, so a stale selection can't stage anything else.
-pub(crate) fn save(
+pub fn save(
     git: &Path,
     root: &Path,
     remote: &Remote,
@@ -290,14 +290,14 @@ pub(crate) fn save(
     Ok(SyncResult { committed, head: head(git, root) })
 }
 
-pub(crate) fn update(git: &Path, root: &Path, remote: &Remote, author: &Author) -> Result<SyncResult, String> {
+pub fn update(git: &Path, root: &Path, remote: &Remote, author: &Author) -> Result<SyncResult, String> {
     require_studio(git, root)?;
     fetch(git, root, remote)?;
     rebase(git, root, author, true)?;
     Ok(SyncResult { committed: false, head: head(git, root) })
 }
 
-pub(crate) fn default_folder(documents: Option<PathBuf>) -> PathBuf {
+pub fn default_folder(documents: Option<PathBuf>) -> PathBuf {
     documents
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Documents")))
         .or_else(|| std::env::var_os("USERPROFILE").map(|home| PathBuf::from(home).join("Documents")))
@@ -308,13 +308,13 @@ pub(crate) fn default_folder(documents: Option<PathBuf>) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::content_preview::find_git;
+    use crate::git_tool::find_git;
     use std::fs;
 
     const SECRET: &str = "ghs_SECRET-TOKEN-123";
 
     fn temp(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("markra-content-git-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("cowmark-core-git-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir

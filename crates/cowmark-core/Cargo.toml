@@ -1,0 +1,18 @@
+[package]
+name = "cowmark-core"
+version = "0.1.0"
+description = "CowMark's content-folder logic: sign-in, session, git and preview diffs, without Tauri"
+license = "AGPL-3.0-only"
+edition = "2021"
+publish = false
+
+[dependencies]
+base64 = "0.22"
+getrandom = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10.9"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros"] }
