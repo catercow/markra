@@ -337,8 +337,14 @@ export {
   mdcComponentsPlugin,
   nestMdcSnippet,
 } from "./mdc-insert.ts";
-export type { MdcLintMessages, MdcLintPluginOptions } from "./mdc-lint.ts";
-export { defaultMdcLintMessages, lintMdcDocument, mdcLintPlugin } from "./mdc-lint.ts";
+export type { ExternalLintDiagnostic, ExternalMdcLint, MdcLintMessages, MdcLintPluginOptions } from "./mdc-lint.ts";
+export {
+  defaultMdcLintMessages,
+  externalLintDiagnostics,
+  lintMdcDocument,
+  lintMdcView,
+  mdcLintPlugin,
+} from "./mdc-lint.ts";
 export type { MdcBlock, MdcRange } from "./mdc-blocks.ts";
 export { mdcBlockAt, mdcBlocksForState, readMdcBlocks, readMdcBlocksFromTree } from "./mdc-blocks.ts";
 export type { MdcPreviewComponentInfo, MdcPreviewPluginOptions } from "./mdc-preview.ts";

@@ -8,7 +8,13 @@ import * as acp from "./tauri/acp";
 import * as ai from "./tauri/native-ai";
 import * as aiChatAttachments from "./tauri/ai-chat-attachments";
 import * as dialog from "./tauri/dialog";
-import { nativeContentAccess, nativeContentPreview, nativeCowMarkCompanion, nativeMergeText } from "./tauri/content-preview";
+import {
+  nativeContentAccess,
+  nativeContentLint,
+  nativeContentPreview,
+  nativeCowMarkCompanion,
+  nativeMergeText
+} from "./tauri/content-preview";
 import * as files from "./tauri/file";
 import * as fonts from "./tauri/fonts";
 import * as logs from "./tauri/logs";
@@ -124,6 +130,7 @@ export const desktopRuntime = {
     contentPreview: nativeContentPreview,
     contentAccess: nativeContentAccess,
     mergeText: nativeMergeText,
+    contentLint: nativeContentLint,
     cowmarkCompanion: nativeCowMarkCompanion,
     renameMarkdownTreeFile: files.renameNativeMarkdownTreeFile,
     resolveMarkdownPath: files.resolveNativeMarkdownPath,

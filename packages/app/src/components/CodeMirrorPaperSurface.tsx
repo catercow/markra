@@ -76,6 +76,9 @@ import {
 } from "../lib/document-links";
 import { isLocalAttachmentHref } from "../lib/markdown-link-target";
 import { catercowPreviewSite } from "../lib/content-access";
+import { contentLintSource } from "../lib/content-lint";
+import { useCowMarkPagesContext } from "../hooks/useCowMarkPages";
+import { getAppRuntime } from "../runtime";
 import {
   mergeSpellcheckIgnoredWords,
   spellcheckMenuPosition,
@@ -151,6 +154,8 @@ function editableExtension(readOnly: boolean, language: AppLanguage): Extension 
 }
 
 interface MarkdownExtensionOptions {
+  /** CowMark's managed content folder; null outside CowMark. */
+  contentRoot: () => string | null | undefined;
   documentPath: () => string | null | undefined;
   extendedSyntax?: ExtendedSyntaxPreferences;
   language: AppLanguage;
@@ -205,6 +210,7 @@ function conflictLabels(language: AppLanguage): ConflictLabels {
 }
 
 function markdownExtension({
+  contentRoot,
   documentPath,
   extendedSyntax,
   language,
@@ -308,7 +314,12 @@ function markdownExtension({
       }),
       conflictMarkersPlugin({ enabled: conflicts, labels: conflictLabels(language) }),
       mdcPreviewPlugin({ components: mdcComponents, enabled: mdc }),
-      mdcLintPlugin({ components: mdcComponents, enabled: mdc, messages: mdcLintMessages(language) }),
+      mdcLintPlugin({
+        components: mdcComponents,
+        enabled: mdc,
+        external: contentLintSource({ contentRoot, documentPath, language, lint: getAppRuntime().files.contentLint }),
+        messages: mdcLintMessages(language),
+      }),
       ...(mdcInsertable.length > 0
         ? [mdcComponentsPlugin({ components: mdcInsertable, sectionLabel: t(language, "editor.mdcComponents") })]
         : []),
@@ -482,6 +493,8 @@ export function CodeMirrorPaperSurface({
   const workspaceFilesRef = useRef(workspaceFiles);
   const mdcSchemaRef = useRef(mdcSchema);
   const pageDetailsLabelRef = useRef<string | null>(null);
+  const contentRootRef = useRef<string | null>(null);
+  contentRootRef.current = useCowMarkPagesContext()?.rootPath ?? null;
   pageDetailsLabelRef.current = usePageDetailsAvailable(documentPath) ? t(language, "app.cowmark.pageDetails") : null;
 
   useEffect(() => {
@@ -620,6 +633,7 @@ export function CodeMirrorPaperSurface({
           EditorView.lineWrapping,
           markdownCompartmentRef.current.of(
             markdownExtension({
+              contentRoot: () => contentRootRef.current,
               documentPath: () => documentPathRef.current,
               extendedSyntax: extendedSyntaxRef.current,
               language,
@@ -771,6 +785,7 @@ export function CodeMirrorPaperSurface({
     view.dispatch({
       effects: markdownCompartmentRef.current.reconfigure(
         markdownExtension({
+          contentRoot: () => contentRootRef.current,
           documentPath: () => documentPathRef.current,
           extendedSyntax,
           language,

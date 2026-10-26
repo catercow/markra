@@ -7,6 +7,7 @@ import { invokeNative } from "./invoke";
 type ContentPreviewRuntime = NonNullable<AppRuntime["files"]["contentPreview"]>;
 type ContentAccessRuntime = NonNullable<AppRuntime["files"]["contentAccess"]>;
 type MergeText = NonNullable<AppRuntime["files"]["mergeText"]>;
+type ContentLint = NonNullable<AppRuntime["files"]["contentLint"]>;
 type CowMarkCompanionRuntime = NonNullable<AppRuntime["files"]["cowmarkCompanion"]>;
 
 export const nativeContentPreview: ContentPreviewRuntime = {
@@ -32,6 +33,10 @@ export const nativeContentAccess: ContentAccessRuntime = {
 
 // Document text is large and private, so this skips invokeNative's logging.
 export const nativeMergeText: MergeText = (base, mine, theirs) => invoke("content_merge_text", { base, mine, theirs });
+
+// Runs on every pause in typing with the document's text, so it skips invokeNative's logging too.
+export const nativeContentLint: ContentLint = (root, path, text, messages) =>
+  invoke("cowmark_lint", { messages, path, root, text });
 
 export const nativeCowMarkCompanion: CowMarkCompanionRuntime = {
   start: (root, site) => invokeNative("cowmark_companion_start", { root, site }),

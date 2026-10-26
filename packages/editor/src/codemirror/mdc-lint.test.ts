@@ -1,12 +1,18 @@
 import { markdown } from "@codemirror/lang-markdown";
-import { diagnosticCount, forceLinting, setDiagnostics } from "@codemirror/lint";
+import { diagnosticCount, forceLinting, forEachDiagnostic, setDiagnostics, type Diagnostic } from "@codemirror/lint";
 import { EditorSelection, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { GFM } from "@lezer/markdown";
 import { afterEach, describe, expect, it } from "vitest";
 import { catalog, component } from "../mdc/components.fixtures.ts";
 import { liveMarkdown } from "./index.ts";
-import { lintMdcDocument, mdcLintPlugin } from "./mdc-lint.ts";
+import {
+  externalLintDiagnostics,
+  lintMdcDocument,
+  lintMdcView,
+  mdcLintPlugin,
+  type ExternalLintDiagnostic,
+} from "./mdc-lint.ts";
 import { mdcPreviewPlugin } from "./mdc-preview.ts";
 import { markraMdc } from "./mdc-syntax.ts";
 import "./dom.test-support.ts";
@@ -229,5 +235,126 @@ describe("mdcLintPlugin", () => {
 
   it("does nothing when disabled", () => {
     expect(mdcLintPlugin({ enabled: false }).extension).toEqual([]);
+  });
+});
+
+describe("external lint", () => {
+  function createView(doc: string, plugins = [mdcPreviewPlugin()]) {
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({
+      parent,
+      state: EditorState.create({ doc, extensions: [liveMarkdown({ mdc: true, plugins })] }),
+    });
+    views.push(view);
+    return view;
+  }
+
+  function found(fromUtf16: number, toUtf16: number, rest: Partial<ExternalLintDiagnostic> = {}): ExternalLintDiagnostic {
+    return { fromUtf16, message: "Problem with `x`.", rule: "missing-image", severity: "warning", toUtf16, ...rest };
+  }
+
+  function deferred() {
+    let resolve!: (value: ExternalLintDiagnostic[]) => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<ExternalLintDiagnostic[]>((done, fail) => {
+      resolve = done;
+      reject = fail;
+    });
+    return { promise, reject, resolve };
+  }
+
+  it("maps UTF-16 offsets and keeps severity, message and rule", () => {
+    const doc = "😀 ![](gone.jpg)\n";
+    const state = EditorState.create({ doc });
+    const [diagnostic] = externalLintDiagnostics(state.doc, [found(3, 16, { rule: "missing-image", severity: "error" })]);
+
+    expect(doc.slice(diagnostic!.from, diagnostic!.to)).toBe("![](gone.jpg)");
+    expect(diagnostic).toMatchObject({ message: "Problem with `x`.", severity: "error", source: "missing-image" });
+  });
+
+  it("clamps offsets to the document", () => {
+    const state = EditorState.create({ doc: "short" });
+    const ranges = externalLintDiagnostics(state.doc, [found(3, 99), found(40, 50), found(-2, 1), found(4, 2)])
+      .map(({ from, to }) => [from, to]);
+    expect(ranges).toEqual([[3, 5], [5, 5], [0, 1], [4, 4]]);
+  });
+
+  it("shows text between backticks as code", () => {
+    const view = createView("text");
+    const [diagnostic] = externalLintDiagnostics(view.state.doc, [found(0, 1)]);
+    const element = diagnostic!.renderMessage!(view) as HTMLElement;
+    expect(element.querySelector("code")?.textContent).toBe("x");
+  });
+
+  it("uses the external result when it applies", async () => {
+    const view = createView("::promo-code\n::\n");
+    const texts: string[] = [];
+    const diagnostics = await lintMdcView(view, {
+      components: () => catalog,
+      external: (text) => {
+        texts.push(text);
+        return Promise.resolve([found(2, 12, { rule: "unknown-component", severity: "error" })]);
+      },
+    });
+    expect(texts).toEqual(["::promo-code\n::\n"]);
+    expect(diagnostics.map((diagnostic) => diagnostic.source)).toEqual(["unknown-component"]);
+  });
+
+  it("falls back to the built-in lint when the external one doesn't apply or fails", async () => {
+    const view = createView("::promo-code\n::\n");
+    const builtIn = await lintMdcView(view, { components: () => catalog, external: () => null });
+    expect(builtIn.map((diagnostic) => diagnostic.source)).toEqual(["MDC"]);
+
+    const failed = await lintMdcView(view, {
+      components: () => catalog,
+      external: () => Promise.reject(new Error("offline")),
+    });
+    expect(failed.map((diagnostic) => diagnostic.source)).toEqual(["MDC"]);
+  });
+
+  it("drops results for text that changed while waiting", async () => {
+    const view = createView("Intro\n");
+    const pending = deferred();
+    const result = lintMdcView(view, { external: () => pending.promise });
+    view.dispatch({ changes: { from: 0, insert: "New " } });
+    pending.resolve([found(0, 5)]);
+    expect(await result).toEqual([]);
+  });
+
+  it("keeps the shown diagnostics when a stale result arrives", async () => {
+    const calls: Array<ReturnType<typeof deferred>> = [];
+    const view = createView("Intro\n", [
+      mdcLintPlugin({
+        external: () => {
+          const call = deferred();
+          calls.push(call);
+          return call.promise;
+        },
+      }),
+    ]);
+    const shown = () => {
+      const all: Diagnostic[] = [];
+      forEachDiagnostic(view.state, (diagnostic) => all.push(diagnostic));
+      return all.map((diagnostic) => [diagnostic.from, diagnostic.to, diagnostic.source]);
+    };
+
+    forceLinting(view);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    calls[0]!.resolve([found(0, 5, { rule: "image-alt" })]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(shown()).toEqual([[0, 5, "image-alt"]]);
+
+    forceLinting(view);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(calls).toHaveLength(1);
+
+    view.dispatch({ changes: { from: 0, insert: "New " } });
+    forceLinting(view);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    view.dispatch({ changes: { from: 0, insert: "Really " } });
+    calls[1]!.resolve([found(1, 2, { rule: "broken-link" })]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(shown().map(([, , source]) => source)).toEqual(["image-alt"]);
   });
 });
