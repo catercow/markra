@@ -35,11 +35,6 @@ jobs:
             platform: macos
             arch: arm64
             bundle: dmg
-          - os: macos-26-intel
-            target: x86_64-apple-darwin
-            platform: macos
-            arch: x64
-            bundle: dmg
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             platform: windows

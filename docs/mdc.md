@@ -60,7 +60,7 @@ Builds made with `VITE_CATERCOW_PREVIEW_SITE` set (the CaterCow release workflow
 
 The fork ships as its own app, **CowMark** (`com.catercow.cowmark`), CaterCow's edition of Markra,, so it can sit next to a stock Markra install without sharing settings. `apps/desktop/src-tauri/tauri.catercow.conf.json` sets the name and ID. It also leaves out the Quick Look extension, whose bundle ID is tied to upstream's app ID.
 
-- **Release:** push a `catercow-v*` tag (for example `catercow-v2.14.1-mdc.2`). `.github/workflows/catercow-desktop.yml` builds a macOS `.dmg` for Apple Silicon and Intel and a Windows `setup.exe`, then attaches them to a GitHub release on this fork.
+- **Release:** push a `catercow-v*` tag (for example `catercow-v2.14.1-mdc.2`). `.github/workflows/catercow-desktop.yml` builds a macOS `.dmg` for Apple Silicon and a Windows `setup.exe`, then attaches them to a GitHub release on this fork.
 - **Not notarized or code-signed.** The first launch needs one confirmation:
   - **Mac:** right-click the app and choose Open, or allow it under System Settings → Privacy & Security.
   - **Windows:** SmartScreen shows "Windows protected your PC"; choose More info → Run anyway.
