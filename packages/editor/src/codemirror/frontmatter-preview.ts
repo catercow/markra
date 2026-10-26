@@ -2,6 +2,8 @@ import {
   EditorSelection,
   EditorState,
   Prec,
+  StateEffect,
+  StateField,
   type Range,
 } from "@codemirror/state";
 import {
@@ -142,13 +144,41 @@ function removeFrontmatter(
   return true;
 }
 
+export interface FrontmatterPreviewOptions {
+  /**
+   * Label for a button on the card that opens a host-drawn form for the YAML
+   * front matter (`openFrontmatterDetails`). No button when it returns nothing.
+   */
+  detailsLabel?: () => string | null | undefined;
+}
+
+export const openFrontmatterDetails = StateEffect.define<boolean>();
+
+/** Whether the host's front matter form is open. */
+export const frontmatterDetailsField = StateField.define<boolean>({
+  create: () => false,
+  update(value, transaction) {
+    for (const effect of transaction.effects) {
+      if (effect.is(openFrontmatterDetails)) value = effect.value;
+    }
+    return value;
+  },
+});
+
 class FrontmatterWidget extends WidgetType {
-  constructor(readonly range: CodeMirrorFrontmatterRange) {
+  constructor(
+    readonly range: CodeMirrorFrontmatterRange,
+    readonly detailsLabel: string | null = null,
+  ) {
     super();
   }
 
   eq(other: FrontmatterWidget) {
-    return other.range.source === this.range.source && other.range.kind === this.range.kind;
+    return (
+      other.range.source === this.range.source &&
+      other.range.kind === this.range.kind &&
+      other.detailsLabel === this.detailsLabel
+    );
   }
 
   ignoreEvent() {
@@ -157,6 +187,8 @@ class FrontmatterWidget extends WidgetType {
 
   updateDOM(dom: HTMLElement, view: CodeMirrorView) {
     if (!dom.classList.contains("cm-markra-frontmatter")) return false;
+    const button = dom.querySelector<HTMLButtonElement>(".cm-markra-frontmatter-details");
+    if ((button?.textContent ?? null) !== this.detailsLabel) return false;
     this.syncDOM(dom, view);
     return true;
   }
@@ -249,13 +281,32 @@ class FrontmatterWidget extends WidgetType {
       if (composing || event.isComposing) return;
       syncEditorValue();
     });
-    root.append(label, editor);
+    if (this.detailsLabel && this.range.kind === "yaml") {
+      const header = document.createElement("div");
+      const button = document.createElement("button");
+      header.className = "cm-markra-frontmatter-header";
+      button.className = "cm-markra-frontmatter-details";
+      button.type = "button";
+      button.textContent = this.detailsLabel;
+      button.addEventListener("mousedown", (event) => event.preventDefault());
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        view.dispatch({ effects: openFrontmatterDetails.of(true) });
+      });
+      header.append(label, button);
+      root.append(header, editor);
+    } else {
+      root.append(label, editor);
+    }
     this.syncDOM(root, view);
     return root;
   }
 }
 
-function buildFrontmatterDecorations(view: CodeMirrorView) {
+function buildFrontmatterDecorations(
+  view: CodeMirrorView,
+  options: FrontmatterPreviewOptions,
+) {
   const range = readCodeMirrorFrontmatter(view.state.doc.toString());
   if (!range) return Decoration.none;
 
@@ -263,7 +314,9 @@ function buildFrontmatterDecorations(view: CodeMirrorView) {
   const firstLine = view.state.doc.lineAt(range.from);
   const lastLine = view.state.doc.lineAt(range.to);
   decorations.push(
-    Decoration.replace({ widget: new FrontmatterWidget(range) }).range(
+    Decoration.replace({
+      widget: new FrontmatterWidget(range, options.detailsLabel?.() || null),
+    }).range(
       range.from,
       Math.min(firstLine.to, range.to),
     ),
@@ -344,6 +397,30 @@ const frontmatterTheme = EditorView.baseTheme({
     whiteSpace: "pre-wrap",
     width: "100%",
   },
+  ".cm-markra-frontmatter-header": {
+    alignItems: "center",
+    display: "flex",
+    gap: "0.5em",
+    justifyContent: "space-between",
+    marginBottom: "0.4em",
+  },
+  ".cm-markra-frontmatter-header .cm-markra-frontmatter-label": {
+    marginBottom: "0",
+  },
+  ".cm-markra-frontmatter-details": {
+    background: "transparent",
+    border: "1px solid color-mix(in srgb, currentColor 22%, transparent)",
+    borderRadius: "0.4em",
+    color: "inherit",
+    cursor: "pointer",
+    fontFamily: 'var(--font-ui, "Noto Sans SC Variable", sans-serif)',
+    fontSize: "0.75em",
+    fontWeight: "560",
+    padding: "0.15em 0.6em",
+  },
+  ".cm-markra-frontmatter-details:hover": {
+    background: "color-mix(in srgb, currentColor 8%, transparent)",
+  },
   ".cm-markra-frontmatter-label": {
     display: "block",
     fontFamily: 'var(--font-ui, "Noto Sans SC Variable", sans-serif)',
@@ -379,16 +456,17 @@ const frontmatterTheme = EditorView.baseTheme({
   },
 });
 
-export function frontmatterPreviewPlugin() {
+export function frontmatterPreviewPlugin(options: FrontmatterPreviewOptions = {}) {
   return defineMarkraPlugin({
     id: "markra.frontmatter-preview",
     extension: [
+      frontmatterDetailsField,
       ViewPlugin.fromClass(
         class {
           decorations: DecorationSet;
 
           constructor(view: CodeMirrorView) {
-            this.decorations = buildFrontmatterDecorations(view);
+            this.decorations = buildFrontmatterDecorations(view, options);
           }
 
           update(update: ViewUpdate) {
@@ -397,7 +475,7 @@ export function frontmatterPreviewPlugin() {
               update.focusChanged ||
               update.viewportChanged
             ) {
-              this.decorations = buildFrontmatterDecorations(update.view);
+              this.decorations = buildFrontmatterDecorations(update.view, options);
             }
           }
         },

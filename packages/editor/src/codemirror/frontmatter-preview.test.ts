@@ -1,19 +1,19 @@
 import { EditorSelection, EditorState } from "@codemirror/state";
 import { EditorView, runScopeHandlers } from "@codemirror/view";
 import { afterEach, describe, expect, it } from "vitest";
-import { frontmatterPreviewPlugin, liveMarkdown } from "./index.ts";
+import { frontmatterDetailsField, frontmatterPreviewPlugin, liveMarkdown } from "./index.ts";
 import "./dom.test-support.ts";
 
 const views: EditorView[] = [];
 
-function createView(doc: string) {
+function createView(doc: string, detailsLabel?: () => string | null) {
   const parent = document.createElement("div");
   document.body.append(parent);
   const view = new EditorView({
     parent,
     state: EditorState.create({
       doc,
-      extensions: [liveMarkdown({ plugins: [frontmatterPreviewPlugin()] })],
+      extensions: [liveMarkdown({ plugins: [frontmatterPreviewPlugin({ detailsLabel })] })],
       selection: EditorSelection.cursor(doc.length),
     }),
   });
@@ -29,6 +29,23 @@ afterEach(() => {
 });
 
 describe("frontmatterPreviewPlugin", () => {
+  it("opens the host's details form from the YAML card's button", () => {
+    const source = ["---", "title: Synthetic", "---", "", "# Body"].join("\n");
+    const view = createView(source, () => "Page details");
+    const button = view.dom.querySelector<HTMLButtonElement>(".cm-markra-frontmatter-details");
+
+    expect(button?.textContent).toBe("Page details");
+    expect(view.state.field(frontmatterDetailsField)).toBe(false);
+    button?.click();
+    expect(view.state.field(frontmatterDetailsField)).toBe(true);
+    expect(view.state.doc.toString()).toBe(source);
+  });
+
+  it("shows no details button without a label", () => {
+    const view = createView(["---", "title: Synthetic", "---"].join("\n"), () => null);
+    expect(view.dom.querySelector(".cm-markra-frontmatter-details")).toBeNull();
+  });
+
   it.each([
     {
       kind: "yaml",

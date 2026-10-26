@@ -130,9 +130,12 @@ export { toggleAllCodeMirrorFolds } from "./folding.ts";
 export type {
   CodeMirrorFrontmatterKind,
   CodeMirrorFrontmatterRange,
+  FrontmatterPreviewOptions,
 } from "./frontmatter-preview.ts";
 export {
+  frontmatterDetailsField,
   frontmatterPreviewPlugin,
+  openFrontmatterDetails,
   readCodeMirrorFrontmatter,
 } from "./frontmatter-preview.ts";
 export type {

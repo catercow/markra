@@ -18,3 +18,7 @@ export {
   type MarkraMdcPropsEditorState,
   useMarkraMdcPropsEditor,
 } from "./mdc.ts";
+export {
+  type MarkraFrontmatterDetailsState,
+  useMarkraFrontmatterDetails,
+} from "./frontmatter.ts";
