@@ -43,14 +43,42 @@ export type ManagedContent = {
 
 export type ContentAccessErrorCode = "conflict" | "not_allowed" | "offline" | "other" | "signed_out";
 
-/** Splits the backend's `code: message` errors. */
-export function contentAccessError(error: unknown): { code: ContentAccessErrorCode; message: string } {
+export type ContentAccessError = {
+  code: ContentAccessErrorCode;
+  /** Folder-relative files a `conflict` left with markers to resolve. */
+  files: string[];
+  message: string;
+};
+
+const conflictFilesPrefix = "\nconflict-files: ";
+
+function conflictFiles(list: string) {
+  try {
+    const files: unknown = JSON.parse(list);
+    return Array.isArray(files) ? files.filter((file): file is string => typeof file === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Splits the backend's `code: message` errors, and a conflict's trailing file list. */
+export function contentAccessError(error: unknown): ContentAccessError {
   const text = String((error as Error)?.message ?? error ?? "").trim();
   const match = /^(conflict|not_allowed|offline|signed_out):\s*/u.exec(text);
-  if (!match) return { code: "other", message: text };
+  if (!match) return { code: "other", files: [], message: text };
 
-  return { code: match[1] as ContentAccessErrorCode, message: text.slice(match[0].length) };
+  const rest = text.slice(match[0].length);
+  const split = rest.indexOf(conflictFilesPrefix);
+  return {
+    code: match[1] as ContentAccessErrorCode,
+    files: split < 0 ? [] : conflictFiles(rest.slice(split + conflictFilesPrefix.length)),
+    message: split < 0 ? rest : rest.slice(0, split)
+  };
 }
+
+/** A three-way merge of an open document with a change made on disk. */
+export type MergedText = { conflicts: number; text: string };
+export type MergeText = (base: string, mine: string, theirs: string) => Promise<MergedText>;
 
 let previewSiteOverride: string | null | undefined;
 
@@ -72,3 +100,9 @@ export function joinFolderPath(parent: string, name: string) {
 }
 
 export const managedFolderName = "catercow-content";
+
+/** A git path (always `/`) inside the managed folder, in the folder's own separators. */
+export function managedFilePath(root: string, relativePath: string) {
+  const backslashes = root.includes("\\") && !root.includes("/");
+  return joinFolderPath(root, backslashes ? relativePath.replaceAll("/", "\\") : relativePath);
+}

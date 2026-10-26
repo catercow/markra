@@ -75,6 +75,7 @@ import {
   readAppClipboardText,
 } from "./lib/plain-text-paste";
 import { useMarkdownDocument, type ActiveDiskFileContentChange } from "./hooks/useMarkdownDocument";
+import { openConflictFiles, useCowMarkDiskMerge } from "./hooks/useCowMarkMerge";
 import { useMarkdownFileTree } from "./hooks/useMarkdownFileTree";
 import { useSelectionToolbarAnchorRefresh } from "./hooks/useSelectionToolbarAnchorRefresh";
 import { useSharedEditorHistory } from "./hooks/useSharedEditorHistory";
@@ -870,6 +871,7 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
     syncSettings,
     translate
   });
+  const cowmarkDiskMerge = useCowMarkDiskMerge(translate);
   const markdownDocument = useMarkdownDocument({
     autoSaveEnabled: editorPreferences.preferences.autoSaveEnabled,
     autoSaveIntervalMinutes: editorPreferences.preferences.autoSaveIntervalMinutes,
@@ -881,7 +883,9 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
     getCurrentMarkdown: readCurrentMarkdownForDocument,
     globalIgnoreRules: fileIgnoreSettings.settings.rules,
     isCurrentMarkdownEquivalent: isCurrentMarkdownEquivalentForDocument,
+    mergeDiskText: cowmarkDiskMerge.mergeDiskText,
     onActiveDiskFileContentChange: handleActiveDiskFileContentChange,
+    onDiskFileMerged: cowmarkDiskMerge.onDiskFileMerged,
     onMarkdownTreeChange: refreshMarkdownFileTree,
     onTreeRootFromFolderPath: openFolderPath,
     onTreeRootFromFilePath: setRootFromMarkdownFilePath,
@@ -2817,6 +2821,15 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
     setActiveImageFile(null);
     return openTreeMarkdownFile(file);
   }, [captureActiveDocumentViewState, handleOpenLocalAttachment, openImageTab, openTreeMarkdownFile]);
+  const handleContentConflictFiles = useCallback((paths: string[]) => {
+    if (!managedRoot) return;
+    openConflictFiles(
+      managedRoot,
+      paths,
+      handleOpenTreeFile,
+      editorPreferences.preferences.showDocumentTabs ? openTreeMarkdownFileInBackground : undefined
+    ).catch(() => {});
+  }, [editorPreferences.preferences.showDocumentTabs, handleOpenTreeFile, managedRoot, openTreeMarkdownFileInBackground]);
   const handleQuickOpenOpen = useCallback(() => {
     hideGlobalSearch();
     hideDocumentSearch();
@@ -4869,6 +4882,7 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
         onResizeStart={() => setContentPreviewResizing(true)}
         managed={managedContent}
         beforeSave={saveDirtyMarkdownFiles}
+        onConflictFiles={handleContentConflictFiles}
         onNewPost={cowmarkPages?.collections.some((collection) => collection.name === "blog") ? handleNewContentPost : undefined}
       />
     </Suspense>

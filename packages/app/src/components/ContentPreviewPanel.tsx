@@ -34,6 +34,7 @@ type ContentPreviewPanelProps = {
   beforeSave?: () => Promise<unknown>;
   /** CowMark's managed folder: shows the sign-in and Save to studio footer. */
   managed?: ManagedContent;
+  onConflictFiles?: (paths: string[]) => unknown;
   activeDocument: { content: string; path: string | null } | null;
   config: ContentPreviewConfig;
   language: AppLanguage;
@@ -53,6 +54,7 @@ export function ContentPreviewPanel({
   activeDocument,
   beforeSave,
   managed,
+  onConflictFiles,
   config,
   language,
   maxWidth,
@@ -319,7 +321,9 @@ export function ContentPreviewPanel({
         src={config.site}
         title={label("app.contentPreview")}
       />
-      {managed ? <ContentSaveBar beforeSave={beforeSave} language={language} managed={managed} /> : null}
+      {managed ? (
+        <ContentSaveBar beforeSave={beforeSave} language={language} managed={managed} onConflictFiles={onConflictFiles} />
+      ) : null}
     </aside>
   );
 }

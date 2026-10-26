@@ -2,6 +2,8 @@ import {
   blocksPlugin,
   codeMirrorBlockDragPlugin,
   calloutPreviewPlugin,
+  conflictMarkersPlugin,
+  type ConflictLabels,
   mdcComponentsPlugin,
   mdcLintPlugin,
   mdcPreviewPlugin,
@@ -73,6 +75,7 @@ import {
   type MarkdownDocumentLinkFile,
 } from "../lib/document-links";
 import { isLocalAttachmentHref } from "../lib/markdown-link-target";
+import { catercowPreviewSite } from "../lib/content-access";
 import {
   mergeSpellcheckIgnoredWords,
   spellcheckMenuPosition,
@@ -188,6 +191,19 @@ function mdcLintMessages(language: AppLanguage): MdcLintMessages {
   };
 }
 
+function conflictLabels(language: AppLanguage): ConflictLabels {
+  return {
+    count: t(language, "app.cowmark.conflictCount"),
+    countOne: t(language, "app.cowmark.conflictCountOne"),
+    keepBoth: t(language, "app.cowmark.conflictKeepBoth"),
+    keepMine: t(language, "app.cowmark.conflictKeepMine"),
+    next: t(language, "app.cowmark.conflictNext"),
+    theirs: t(language, "app.cowmark.conflictTheirs"),
+    useTheirs: t(language, "app.cowmark.conflictUseTheirs"),
+    yours: t(language, "app.cowmark.conflictYours"),
+  };
+}
+
 function markdownExtension({
   documentPath,
   extendedSyntax,
@@ -208,6 +224,8 @@ function markdownExtension({
   frontmatterDetailsLabel,
 }: MarkdownExtensionOptions) {
   const mdc = extendedSyntax?.mdc ?? false;
+  // CowMark writes conflict markers when edits overlap; stock Markra leaves them as text.
+  const conflicts = catercowPreviewSite() !== null;
   // Commands are fixed per configuration, so the surface reconfigures when the schema changes.
   const mdcInsertable = mdc ? mdcComponents() ?? [] : [];
   const linkOptions = openExternalUrl() || openLocalAttachment()
@@ -255,6 +273,7 @@ function markdownExtension({
 
   return liveMarkdown({
     highlight: extendedSyntax?.highlight ?? true,
+    conflicts,
     mdc,
     resolveLinkTarget: linkOptions?.resolveTarget,
     hideHeadingMarkersOnFocus,
@@ -287,6 +306,7 @@ function markdownExtension({
       calloutPreviewPlugin({
         enabled: extendedSyntax?.githubAlerts ?? true,
       }),
+      conflictMarkersPlugin({ enabled: conflicts, labels: conflictLabels(language) }),
       mdcPreviewPlugin({ components: mdcComponents, enabled: mdc }),
       mdcLintPlugin({ components: mdcComponents, enabled: mdc, messages: mdcLintMessages(language) }),
       ...(mdcInsertable.length > 0
