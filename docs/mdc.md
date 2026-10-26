@@ -36,6 +36,14 @@ Builds made with `VITE_CATERCOW_PREVIEW_SITE` set (the CaterCow release workflow
 - **Tokens** are requested only to download, save or get latest. They are short-lived GitHub tokens from the preview site, held in memory, and reach git only through `GIT_CONFIG_COUNT` environment variables as an `http.https://github.com/.extraheader` (with `credential.helper` emptied). They never appear in command arguments, URLs, `.git/config` or logs. This needs git 2.31 or later.
 - **Code:** `apps/desktop/src-tauri/src/content_access.rs` (sign-in, session, tokens) and `content_git.rs` (clone, status, save, update); `packages/app/src/components/CowMarkGate.tsx` and `ContentSaveBar.tsx`. The server side is in the CaterCow monorepo.
 
+## CowMark: images and page details
+
+- **Images live next to the page.** For `content/blog/my-post.md`, pasted, dropped or chosen images are saved in `content/blog/my-post/` and referenced as `my-post/photo.jpg`. The site serves them at `/blog/my-post/photo.jpg`, the same URL space as `public/`, and rewrites relative references in Markdown, component props and image front matter fields at build time (`js/nuxt4/modules/content-media` in the monorepo). Older `/blog/…` references to `public/` keep working.
+- **On import** the name becomes lowercase and hyphenated (a generic name like `image.png` becomes `<page>-image`), a clash gets `-2`, `-3`… Photos larger than 2400 px on the longest side are scaled down and re-encoded as JPEG or WebP; images with transparency stay PNG; SVG and GIF are copied as they are. The editor then asks for alt text; **Skip** inserts the image with empty alt text. Code: `packages/app/src/lib/cowmark-images.ts`.
+- **Site preview** sends new images under `content/` as media, like those under `public/`.
+- **Page details.** In a folder listed in `schema/collections.json`, the front matter header has a **Page details** button. The form is generated from the collection's fields in schema order: text with character counts for titles and descriptions, a list of values other pages in the folder already use, switches, numbers, a date picker that writes `YYYY-MM-DD`, and an image picker that stores the image next to the page. Fields the schema doesn't describe, and lists or objects, are edited as YAML under **Advanced**. Each change rewrites only that key and leaves the rest of the file byte for byte (`packages/editor/src/mdc/frontmatter-fields.ts`, `packages/app/src/components/PageDetailsPanel.tsx`).
+- **New post** (the + button in the preview panel header) asks for a title and creates `content/blog/<slug>.md` with the title, today's date and the collection's other required fields, then opens it.
+
 ## Differences from plain Markdown while MDC is on
 
 - **Indented code blocks are off.** Nested components are often indented four spaces or more, and MDC renderers dedent them, so such lines are content, not code. Fenced code blocks still work, including indented ones.
