@@ -18,7 +18,7 @@ const WATCHED_DIRS: [&str; 2] = ["content", "public"];
 const MEDIA_DIRS: [&str; 2] = ["public", "content"];
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "camelCase", tag = "kind")]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "kind")]
 pub enum PreviewEvent {
     /// A content file to render, relative to `content/`.
     Draft { fs_path: String, content: String },
@@ -44,7 +44,7 @@ type Stamp = (u64, Option<SystemTime>);
 #[derive(Clone, Default)]
 pub struct Snapshot(BTreeMap<String, Stamp>);
 
-fn media_type(extension: &str) -> Option<&'static str> {
+pub(crate) fn media_type(extension: &str) -> Option<&'static str> {
     Some(match extension {
         "jpg" | "jpeg" => "image/jpeg",
         "png" => "image/png",
@@ -345,6 +345,17 @@ mod tests {
         assert_eq!(event_for(&root, "public/data.csv", false), None);
         assert_eq!(event_for(&root, "README.md", false), None);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn events_serialize_with_the_frontend_field_names() {
+        let draft = PreviewEvent::Draft { fs_path: "blog/a.md".into(), content: "a".into() };
+        assert_eq!(
+            serde_json::to_value(&draft).unwrap(),
+            serde_json::json!({ "kind": "draft", "fsPath": "blog/a.md", "content": "a" })
+        );
+        let remove = PreviewEvent::Remove { fs_path: "blog/b.md".into() };
+        assert_eq!(serde_json::to_value(&remove).unwrap(), serde_json::json!({ "kind": "remove", "fsPath": "blog/b.md" }));
     }
 
     #[test]
