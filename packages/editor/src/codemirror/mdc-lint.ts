@@ -1,6 +1,7 @@
 import { ensureSyntaxTree } from "@codemirror/language";
 import { linter, type Diagnostic } from "@codemirror/lint";
-import type { EditorState } from "@codemirror/state";
+import type { EditorState, Text } from "@codemirror/state";
+import type { EditorView } from "@codemirror/view";
 import { isMap, isScalar, isSeq, parseDocument, type Node as YamlNode, type Pair } from "yaml";
 import { parseMdcAttributes } from "../mdc/attributes.ts";
 import type { MdcCatalogComponent } from "../mdc/components.ts";
@@ -319,19 +320,91 @@ export function lintMdcDocument(
   return diagnostics.sort((left, right) => left.from - right.from || left.to - right.to);
 }
 
+/**
+ * A problem found outside the editor, such as by CowMark's shared Rust linter. Offsets are UTF-16
+ * code units, like CodeMirror positions.
+ */
+export interface ExternalLintDiagnostic {
+  fromUtf16: number;
+  toUtf16: number;
+  severity: "error" | "warning";
+  /** The rule id, e.g. `unknown-component`; shown as the diagnostic's source. */
+  rule: string;
+  /** Text between backticks is shown as code. */
+  message: string;
+}
+
+/**
+ * Lints the whole document text elsewhere. Returns null when it doesn't apply to the current
+ * document, and the built-in MDC lint runs instead.
+ */
+export type ExternalMdcLint = (text: string) => Promise<readonly ExternalLintDiagnostic[]> | null;
+
+/** CodeMirror diagnostics for `found`, clamped to `doc`. */
+export function externalLintDiagnostics(doc: Text, found: readonly ExternalLintDiagnostic[]): Diagnostic[] {
+  const clamp = (offset: number) => Math.min(Math.max(Number.isFinite(offset) ? Math.trunc(offset) : 0, 0), doc.length);
+  return found.map((item) => {
+    const from = clamp(item.fromUtf16);
+    return {
+      from,
+      message: item.message,
+      renderMessage: (view: EditorView) => renderMessage(view.dom.ownerDocument, item.message),
+      severity: item.severity === "warning" ? "warning" : "error",
+      source: item.rule,
+      to: Math.max(from, clamp(item.toUtf16)),
+    };
+  });
+}
+
+/**
+ * The lint source: `external` when it applies to the document, else the built-in MDC lint (also
+ * used when the external lint fails). Results for text that changed while waiting are dropped.
+ */
+export async function lintMdcView(
+  view: EditorView,
+  {
+    components,
+    external,
+    messages,
+  }: Pick<MdcLintPluginOptions, "components" | "external" | "messages">,
+): Promise<Diagnostic[]> {
+  const { state } = view;
+  const builtIn = () => lintMdcDocument(state, components?.(), messages);
+  const pending = external?.(state.doc.toString());
+  if (!pending) return builtIn();
+
+  let found: readonly ExternalLintDiagnostic[];
+  try {
+    found = await pending;
+  } catch {
+    return view.state.doc === state.doc ? builtIn() : [];
+  }
+  // CodeMirror also ignores results for an older document; never map them onto newer text.
+  if (view.state.doc !== state.doc) return [];
+  return externalLintDiagnostics(state.doc, found);
+}
+
 export interface MdcLintPluginOptions {
   enabled?: boolean;
   /** The workspace's components, read on each lint pass. */
   components?: () => readonly MdcCatalogComponent[] | null | undefined;
   messages?: Partial<MdcLintMessages>;
+  /** Replaces the built-in lint for documents it applies to (CowMark's shared linter). */
+  external?: ExternalMdcLint;
 }
 
 /** Underlines MDC problems and explains them on hover. Never changes the text. */
-export function mdcLintPlugin({ components, enabled = true, messages }: MdcLintPluginOptions = {}) {
+export function mdcLintPlugin({ components, enabled = true, external, messages }: MdcLintPluginOptions = {}) {
   return defineMarkraPlugin({
     id: "markra.mdc-lint",
     extension: enabled
-      ? linter((view) => lintMdcDocument(view.state, components?.(), messages), { delay: 500 })
+      ? linter(
+          (view) =>
+            external
+              ? lintMdcView(view, { components, external, messages })
+              : lintMdcDocument(view.state, components?.(), messages),
+          { delay: 500 },
+        )
       : [],
   });
 }
