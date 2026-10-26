@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>CowMark preview</title>
+<style>
+  :root { --bg: #fff; --fg: #1d1d1f; --muted: #6e6e73; --line: #e3e3e6; --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #1c1c1e; --fg: #f2f2f7; --muted: #a1a1a6; --line: #38383a; --ok: #3fb950; --warn: #d29922; --bad: #f85149; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; height: 100vh; display: flex; flex-direction: column; font: 13px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+  header { display: flex; align-items: center; gap: 10px; padding: 0 12px; height: 36px; border-bottom: 1px solid var(--line); flex: none; }
+  header strong { font-weight: 600; white-space: nowrap; }
+  #dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+  #dot.ok { background: var(--ok); } #dot.warn { background: var(--warn); } #dot.bad { background: var(--bad); }
+  #status { color: var(--muted); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  iframe { flex: 1; width: 100%; border: 0; background: #fff; }
+</style>
+</head>
+<body>
+<header><span id="dot"></span><strong>CowMark preview</strong><span id="status">Connecting…</span></header>
+<iframe id="frame" title="Site preview"></iframe>
+<script type="application/json" id="config">{{CONFIG}}</script>
+<script nonce="{{NONCE}}">
+"use strict";
+const config = JSON.parse(document.getElementById("config").textContent);
+const token = new URLSearchParams(location.search).get("token") || "";
+const frame = document.getElementById("frame");
+const api = (name, params) => "/__cowmark/" + name + "?" + new URLSearchParams({ ...(params || {}), token });
+let ready = false;
+const waiting = [];
+
+function setStatus(text, tone) {
+  document.getElementById("status").textContent = text;
+  document.getElementById("dot").className = tone || "";
+}
+
+function post(message, transfer) {
+  frame.contentWindow && frame.contentWindow.postMessage(message, config.origin, transfer || []);
+}
+
+// Media first, so pages that use a new image find it; only the last page navigates.
+async function send(events, navigate) {
+  const ordered = [...events].sort((a, b) => Number(b.kind === "media") - Number(a.kind === "media"));
+  let last = -1;
+  ordered.forEach((event, index) => { if (event.kind === "draft") last = index; });
+  for (const [index, event] of ordered.entries()) {
+    if (event.kind === "draft") {
+      post({ type: "catercow:draft", fsPath: event.fsPath, content: event.content, navigate: navigate && index === last });
+    } else if (event.kind === "remove") {
+      post({ type: "catercow:draft:remove", fsPath: event.fsPath });
+    } else if (event.kind === "media" && !event.mime) {
+      post({ type: "catercow:draft:media", path: event.path, bytes: null, mime: "" });
+    } else if (event.kind === "media") {
+      try {
+        const response = await fetch(api("media", { path: event.path }));
+        if (!response.ok) throw new Error(await response.text());
+        const bytes = await response.arrayBuffer();
+        post({ type: "catercow:draft:media", path: event.path, bytes, mime: event.mime }, [bytes]);
+      } catch (error) {
+        setStatus(event.path + ": " + error.message, "bad");
+      }
+    }
+  }
+}
+
+async function sync(commit) {
+  ready = false;
+  setStatus("Loading your changes…");
+  const response = await fetch(api("pending", { commit: commit || "" }));
+  if (!response.ok) throw new Error(await response.text());
+  const pending = await response.json();
+  await send(pending.events, false);
+  ready = true;
+  const queued = waiting.splice(0);
+  if (queued.length) await send(queued, true);
+  const count = pending.events.filter((event) => event.kind !== "skipped").length;
+  setStatus(
+    pending.warning || (count ? "Showing " + count + " change" + (count === 1 ? "" : "s") : "No changes yet"),
+    pending.warning ? "warn" : "ok"
+  );
+}
+
+addEventListener("message", (event) => {
+  if (event.origin !== config.origin || event.source !== frame.contentWindow) return;
+  const data = event.data || {};
+  if (data.type === "catercow:draft:ready") {
+    sync(data.contentCommit).catch((error) => setStatus("Couldn't load your changes: " + error.message, "bad"));
+  } else if (data.type === "catercow:draft:rendered" && typeof data.path === "string" && data.path.startsWith("/")) {
+    history.replaceState(null, "", data.path + "?" + new URLSearchParams({ token }));
+  } else if (data.type === "catercow:draft:error") {
+    setStatus((data.fsPath || "") + ": " + (data.message || ""), "bad");
+  }
+});
+
+const stream = new EventSource(api("events"));
+stream.onmessage = (message) => {
+  const events = JSON.parse(message.data).events || [];
+  if (!ready) { waiting.push(...events); return; }
+  send(events, true).then(() => {
+    const saved = events.find((event) => event.kind === "draft");
+    if (saved) setStatus("Saved " + saved.fsPath + " at " + new Date().toLocaleTimeString(), "ok");
+  });
+};
+stream.onerror = () => setStatus("Lost the connection to CowMark. Is it still open?", "bad");
+
+frame.src = config.frame;
+setTimeout(() => { if (!ready) setStatus("The site hasn't answered. Is it allowing " + location.origin + "?", "bad"); }, 20000);
+</script>
+</body>
+</html>

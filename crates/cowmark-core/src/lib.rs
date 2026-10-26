@@ -1,12 +1,17 @@
 //! CowMark's content-folder logic, usable without Tauri: Google sign-in through
 //! the content preview and the session it leaves in the app data dir
 //! ([`access`]), git for the managed folder ([`git`]), the preview's diff and
-//! poll ([`preview`]), and finding git ([`git_tool`]).
+//! poll ([`preview`]), and finding git ([`git_tool`]). While the app runs it
+//! also serves the browser preview ([`preview_server`]) and the control
+//! connection the `cowmark` command talks to ([`control`]).
 //!
 //! Errors are user-facing strings. Callers match on their prefixes
 //! (`conflict:`, `signed_out:`, `not_allowed:`, `offline`), so keep those stable.
 
 pub mod access;
+pub mod control;
 pub mod git;
 pub mod git_tool;
 pub mod preview;
+pub mod preview_server;
+pub mod token;
