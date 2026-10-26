@@ -786,6 +786,30 @@
     @apply px-2.5 py-2 text-[12px] leading-5 font-[560] text-(--text-secondary);
   }
 
+  .markra-slash-menu-detailed {
+    @apply w-80;
+  }
+
+  .markra-slash-menu-section {
+    @apply px-2.5 pt-2 pb-0.5 text-[11px] leading-4 font-[650] tracking-normal text-(--text-secondary) uppercase;
+  }
+
+  .markra-slash-menu-group {
+    @apply px-2.5 pt-1.5 pb-0.5 text-[11px] leading-4 font-[560] text-(--text-secondary);
+  }
+
+  .markra-slash-menu-option:has(.markra-slash-menu-option-text) {
+    @apply h-auto py-1;
+  }
+
+  .markra-slash-menu-option-text {
+    @apply flex min-w-0 flex-1 flex-col;
+  }
+
+  .markra-slash-menu-option-description {
+    @apply truncate text-[12px] leading-4 font-[450] text-(--text-secondary);
+  }
+
   .markra-plugin-toolbar {
     @apply fixed top-12 right-4 z-[55] flex items-center gap-1 rounded-lg border border-(--border-default) bg-(--bg-primary) p-1 shadow-(--ai-command-popover-shadow);
   }

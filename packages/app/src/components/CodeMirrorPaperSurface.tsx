@@ -2,8 +2,10 @@ import {
   blocksPlugin,
   codeMirrorBlockDragPlugin,
   calloutPreviewPlugin,
+  mdcComponentsPlugin,
+  mdcLintPlugin,
   mdcPreviewPlugin,
-  type MdcPreviewComponentInfo,
+  type MdcLintMessages,
   codeMirrorClipboardAssetsPlugin,
   codeMirrorAiPreviewPlugin,
   codeMirrorAiSelectionHoldPlugin,
@@ -58,7 +60,7 @@ import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { minimalSetup } from "codemirror";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { t, type AppLanguage, type MdcSchema } from "@markra/shared";
+import { t, type AppLanguage, type MdcComponentSchema, type MdcSchema } from "@markra/shared";
 import type {
   ExtendedSyntaxPreferences,
   TableColumnWidthModePreference,
@@ -160,7 +162,27 @@ interface MarkdownExtensionOptions {
   shortcuts?: MarkdownShortcutMap;
   tableColumnWidthMode: TableColumnWidthModePreference;
   workspaceFiles: () => MarkdownDocumentLinkFile[];
-  mdcComponents: () => readonly MdcPreviewComponentInfo[] | null | undefined;
+  mdcComponents: () => readonly MdcComponentSchema[] | null | undefined;
+}
+
+function mdcLintMessages(language: AppLanguage): MdcLintMessages {
+  const message = (key: keyof MdcLintMessages) => t(language, `editor.mdcLint.${key}`);
+  return {
+    expectBoolean: message("expectBoolean"),
+    expectItem: message("expectItem"),
+    expectList: message("expectList"),
+    expectNumber: message("expectNumber"),
+    expectOption: message("expectOption"),
+    expectText: message("expectText"),
+    invalidYaml: message("invalidYaml"),
+    missingItemField: message("missingItemField"),
+    missingProp: message("missingProp"),
+    unclosed: message("unclosed"),
+    unclosedProps: message("unclosedProps"),
+    unknownComponent: message("unknownComponent"),
+    unknownItemField: message("unknownItemField"),
+    unknownProp: message("unknownProp"),
+  };
 }
 
 function markdownExtension({
@@ -182,6 +204,8 @@ function markdownExtension({
   mdcComponents,
 }: MarkdownExtensionOptions) {
   const mdc = extendedSyntax?.mdc ?? false;
+  // Commands are fixed per configuration, so the surface reconfigures when the schema changes.
+  const mdcInsertable = mdc ? mdcComponents() ?? [] : [];
   const linkOptions = openExternalUrl() || openLocalAttachment()
     ? {
         open: ({ source, target }: { source: string; target: string }) => {
@@ -260,6 +284,10 @@ function markdownExtension({
         enabled: extendedSyntax?.githubAlerts ?? true,
       }),
       mdcPreviewPlugin({ components: mdcComponents, enabled: mdc }),
+      mdcLintPlugin({ components: mdcComponents, enabled: mdc, messages: mdcLintMessages(language) }),
+      ...(mdcInsertable.length > 0
+        ? [mdcComponentsPlugin({ components: mdcInsertable, sectionLabel: t(language, "editor.mdcComponents") })]
+        : []),
       codeBlockPreviewPlugin({ showLineNumbers: showCodeBlockLineNumbers }),
       documentLinksPlugin({
         items: ({ query }) =>
@@ -744,6 +772,7 @@ export function CodeMirrorPaperSurface({
     extendedSyntax,
     language,
     markdownShortcuts,
+    mdcSchema,
     Boolean(openExternalUrl),
     Boolean(openLocalAttachment),
     openSpellcheckSuggestionMenu,
@@ -822,6 +851,7 @@ export function CodeMirrorPaperSurface({
       <div className="h-full min-h-0" ref={containerRef} />
       <CodeMirrorEditorFloatingMenus
         documentLinksLabel={t(language, "app.markdownDocument")}
+        slashMenuBlocksLabel={t(language, "editor.slashMenuBlocks")}
         slashMenuEmptyLabel={t(language, "editor.slashCommandsNoResults")}
         slashMenuLabel={t(language, "editor.slashCommands")}
       />
