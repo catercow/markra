@@ -19,6 +19,7 @@ arboard = { version = "3.6.1", default-features = false }
 cap-fs-ext = "4.0.2"
 cap-std = "4.0.2"
 cowmark-core = { path = "../../../crates/cowmark-core" }
+cowmark-lint = { path = "../../../crates/cowmark-lint" }
 notify = "8.2.0"
 dirs = "6.0.0"
 fontdb = "0.23.0"

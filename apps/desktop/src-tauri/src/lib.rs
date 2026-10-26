@@ -6,6 +6,7 @@ mod app_logs;
 mod backup;
 mod clipboard;
 mod content_access;
+mod content_lint;
 mod content_merge;
 mod content_preview;
 mod cowmark_companion;
@@ -243,7 +244,8 @@ pub fn run() {
         .manage(PortableUpdateState::default())
         .manage(ContentPreviewState::default())
         .manage(ContentAccessState::default())
-        .manage(cowmark_companion::CowMarkCompanionState::default());
+        .manage(cowmark_companion::CowMarkCompanionState::default())
+        .manage(content_lint::ContentLintState::default());
 
     #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
@@ -397,6 +399,7 @@ pub fn run() {
             content_access_save,
             content_access_update,
             content_merge_text,
+            content_lint::cowmark_lint,
             cowmark_companion::cowmark_companion_start,
             list_markdown_file_history,
             read_markdown_file_history,
