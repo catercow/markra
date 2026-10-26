@@ -22,7 +22,8 @@ export type ContentSyncResult = { committed: boolean; head: string };
 export type ContentAccessRuntime = {
   clone: (dest: string) => Promise<unknown>;
   isCheckout: (path: string) => Promise<boolean>;
-  save: (root: string, message: string) => Promise<ContentSyncResult>;
+  /** Commits only `paths`; other changes stay local as drafts. */
+  save: (root: string, message: string, paths: string[]) => Promise<ContentSyncResult>;
   setFolder: (path: string | null) => Promise<unknown>;
   signIn: (site: string) => Promise<{ email: string; expiresAt: string }>;
   signOut: () => Promise<unknown>;

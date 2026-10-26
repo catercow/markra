@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { t, type AppLanguage, type I18nKey } from "@markra/shared";
 import { Button, Textarea } from "@markra/ui";
 import { getAppRuntime } from "../runtime";
 import { contentAccessError, type ContentGitStatus, type ManagedContent } from "../lib/content-access";
+import { pruneSelection, toggleSelection } from "../lib/content-selection";
 
 const statusPollMs = 4000;
 
@@ -24,6 +25,13 @@ export function ContentSaveBar({ beforeSave, language, managed }: ContentSaveBar
   const [busy, setBusy] = useState<"save" | "update" | "sign-in" | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
   const [sessionLost, setSessionLost] = useState(false);
+  // Nothing is ticked by default: publishing is a deliberate choice per file.
+  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
+  const changedPaths = useMemo(() => status?.changes.map((change) => change.path) ?? [], [status]);
+
+  useEffect(() => {
+    setSelected((current) => pruneSelection(current, changedPaths));
+  }, [changedPaths]);
 
   const refresh = useCallback(async () => {
     if (!access) return;
@@ -62,8 +70,9 @@ export function ContentSaveBar({ beforeSave, language, managed }: ContentSaveBar
     setNotice(null);
     try {
       await beforeSave?.();
-      await access.save(managed.root, message);
+      await access.save(managed.root, message, [...selected]);
       setMessage("");
+      setSelected(new Set());
       setNotice({ tone: "info", text: label("app.cowmark.saved") });
     } catch (error) {
       handleFailure(error, "app.cowmark.saveFailed");
@@ -118,7 +127,10 @@ export function ContentSaveBar({ beforeSave, language, managed }: ContentSaveBar
   };
 
   const changeCount = status?.changes.length ?? 0;
-  const pending = changeCount > 0 || (status?.ahead ?? 0) > 0;
+  const selectedCount = selected.size;
+  const canSave = selectedCount > 0 || (status?.ahead ?? 0) > 0;
+  const allSelected = changeCount > 0 && selectedCount === changeCount;
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(changedPaths));
   const summary = changeCount === 0
     ? (status?.ahead ? label("app.cowmark.waitingToSend") : label("app.cowmark.noChanges"))
     : changeCount === 1
@@ -142,11 +154,42 @@ export function ContentSaveBar({ beforeSave, language, managed }: ContentSaveBar
       </div>
 
       {status && changeCount > 0 ? (
-        <ul className="m-0 max-h-24 list-none overflow-auto p-0 text-[11px] text-(--text-secondary)" aria-label={summary}>
-          {status.changes.map((change) => (
-            <li className="truncate" key={change.path}>{change.path}</li>
-          ))}
-        </ul>
+        <div className="flex flex-col gap-1">
+          <label className="flex cursor-pointer items-center gap-2 text-[11px] text-(--text-secondary)">
+            <input
+              checked={allSelected}
+              className="size-3.5 shrink-0 accent-(--accent)"
+              ref={(input) => {
+                if (input) input.indeterminate = selectedCount > 0 && !allSelected;
+              }}
+              type="checkbox"
+              onChange={toggleAll}
+            />
+            {label("app.cowmark.selectAll")}
+          </label>
+          <ul className="m-0 max-h-40 list-none overflow-auto p-0 text-[11px] text-(--text-secondary)" aria-label={summary}>
+            {status.changes.map((change) => (
+              <li key={change.path}>
+                <label className="flex min-w-0 cursor-pointer items-center gap-2 rounded-sm px-0.5 hover:bg-(--bg-hover)">
+                  <input
+                    aria-label={change.path}
+                    checked={selected.has(change.path)}
+                    className="size-3.5 shrink-0 accent-(--accent)"
+                    type="checkbox"
+                    onChange={() => setSelected((current) => toggleSelection(current, change.path, changedPaths))}
+                  />
+                  <span className="min-w-0 flex-1 truncate" title={change.path}>{change.path}</span>
+                  {change.status === "added" || change.status === "deleted" ? (
+                    <span className="shrink-0 text-[10px] uppercase tracking-wide">
+                      {label(change.status === "added" ? "app.cowmark.statusAdded" : "app.cowmark.statusDeleted")}
+                    </span>
+                  ) : null}
+                </label>
+              </li>
+            ))}
+          </ul>
+          <p className="m-0 text-[11px] leading-4 text-(--text-secondary)">{label("app.cowmark.draftHint")}</p>
+        </div>
       ) : null}
 
       {managed.email ? (
@@ -163,8 +206,12 @@ export function ContentSaveBar({ beforeSave, language, managed }: ContentSaveBar
             <Button disabled={busy !== null} size="sm" onClick={() => { update().catch(() => {}); }}>
               {busy === "update" ? label("app.cowmark.updating") : label("app.cowmark.getLatest")}
             </Button>
-            <Button disabled={busy !== null || !pending} size="sm" variant="primary" onClick={() => { save().catch(() => {}); }}>
-              {busy === "save" ? label("app.cowmark.saving") : label("app.cowmark.save")}
+            <Button disabled={busy !== null || !canSave} size="sm" variant="primary" onClick={() => { save().catch(() => {}); }}>
+              {busy === "save"
+                ? label("app.cowmark.saving")
+                : selectedCount > 0
+                  ? label("app.cowmark.saveSelected").replace("{count}", String(selectedCount))
+                  : label("app.cowmark.save")}
             </Button>
           </div>
         </>

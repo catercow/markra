@@ -47,12 +47,72 @@ describe("ContentSaveBar", () => {
     expect(await screen.findByText("1 changed file")).toBeInTheDocument();
     expect(screen.getByText("Signed in as editor@catercow.com")).toBeInTheDocument();
     fireEvent.change(screen.getByRole("textbox", { name: "What changed" }), { target: { value: "Fix typo" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save to studio" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "content/blog/a.md" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save 1 to studio" }));
 
     expect(await screen.findByText("Saved to studio.")).toBeInTheDocument();
     expect(beforeSave).toHaveBeenCalled();
-    expect(access.save).toHaveBeenCalledWith("/work/c", "Fix typo");
+    expect(access.save).toHaveBeenCalledWith("/work/c", "Fix typo", ["content/blog/a.md"]);
     expect(screen.getByRole("textbox", { name: "What changed" })).toHaveValue("");
+  });
+
+  it("saves only the ticked files; a page brings its image folder along", async () => {
+    const access = mockAccess({
+      status: vi.fn(async () => ({
+        ahead: 0,
+        branch: "studio",
+        changes: [
+          { path: "content/blog/ready.md", status: "added" },
+          { path: "content/blog/ready/photo.jpg", status: "added" },
+          { path: "content/blog/draft.md", status: "modified" }
+        ]
+      }))
+    });
+    render(<ContentSaveBar language="en" managed={managed("editor@catercow.com")} />);
+
+    expect(await screen.findByText("3 changed files")).toBeInTheDocument();
+    expect(screen.getByText("Unticked changes stay on this computer as drafts.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save to studio" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "content/blog/ready.md" }));
+    expect(screen.getByRole("checkbox", { name: "content/blog/ready/photo.jpg" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "content/blog/draft.md" })).not.toBeChecked();
+    expect((screen.getByRole("checkbox", { name: "Select all" }) as HTMLInputElement).indeterminate).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save 2 to studio" }));
+    await waitFor(() =>
+      expect(access.save).toHaveBeenCalledWith("/work/c", "", ["content/blog/ready.md", "content/blog/ready/photo.jpg"])
+    );
+  });
+
+  it("selects and clears every change", async () => {
+    mockAccess({
+      status: vi.fn(async () => ({
+        ahead: 0,
+        branch: "studio",
+        changes: [
+          { path: "content/blog/a.md", status: "modified" },
+          { path: "content/blog/b.md", status: "deleted" }
+        ]
+      }))
+    });
+    render(<ContentSaveBar language="en" managed={managed("editor@catercow.com")} />);
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select all" }));
+    expect(screen.getByRole("button", { name: "Save 2 to studio" })).toBeEnabled();
+    expect(screen.getByText("Deleted")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select all" }));
+    expect(screen.getByRole("button", { name: "Save to studio" })).toBeDisabled();
+  });
+
+  it("can send commits waiting from an earlier save with nothing ticked", async () => {
+    const access = mockAccess({ status: vi.fn(async () => ({ ahead: 1, branch: "studio", changes: [] })) });
+    render(<ContentSaveBar language="en" managed={managed("editor@catercow.com")} />);
+
+    const button = await screen.findByRole("button", { name: "Save to studio" });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    await waitFor(() => expect(access.save).toHaveBeenCalledWith("/work/c", "", []));
   });
 
   it("shows a conflict in plain words", async () => {
@@ -63,7 +123,8 @@ describe("ContentSaveBar", () => {
     });
     render(<ContentSaveBar language="en" managed={managed("editor@catercow.com")} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Save to studio" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "content/blog/a.md" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save 1 to studio" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Someone else changed the same part of content/blog/a.md.");
   });
 
@@ -73,7 +134,8 @@ describe("ContentSaveBar", () => {
     const { rerender } = render(<ContentSaveBar language="en" managed={state} />);
 
     fireEvent.change(await screen.findByRole("textbox", { name: "What changed" }), { target: { value: "My edit" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save to studio" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "content/blog/a.md" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save 1 to studio" }));
     await waitFor(() => expect(state.onSignedOut).toHaveBeenCalled());
 
     const signedOut = { ...state, email: null };

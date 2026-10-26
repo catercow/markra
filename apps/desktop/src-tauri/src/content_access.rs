@@ -436,11 +436,12 @@ pub(crate) async fn content_access_save(
     state: tauri::State<'_, ContentAccessState>,
     root: String,
     message: String,
+    paths: Vec<String>,
 ) -> Result<content_git::SyncResult, String> {
     let git = git_binary()?;
     let author = signed_in_author(&app)?;
     let remote = token(&app, &state).await?;
-    blocking(move || content_git::save(&git, Path::new(&root), &remote, &author, &message)).await
+    blocking(move || content_git::save(&git, Path::new(&root), &remote, &author, &message, &paths)).await
 }
 
 #[tauri::command]

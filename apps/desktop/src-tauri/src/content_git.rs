@@ -240,9 +240,27 @@ fn require_studio(git: &Path, root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn save(git: &Path, root: &Path, remote: &Remote, author: &Author, message: &str) -> Result<SyncResult, String> {
+/// Commits only `paths` (the files the editor ticked) and pushes. Every other
+/// change stays in the working tree as a local draft. Paths that no longer have
+/// changes are ignored, so a stale selection can't stage anything else.
+pub(crate) fn save(
+    git: &Path,
+    root: &Path,
+    remote: &Remote,
+    author: &Author,
+    message: &str,
+    paths: &[String],
+) -> Result<SyncResult, String> {
     require_studio(git, root)?;
-    run(git, root, &["add", "-A"], &[]).map_err(|failure| plain(failure, "stage your changes"))?;
+    run(git, root, &["reset", "--quiet"], &[]).map_err(|failure| plain(failure, "stage your changes"))?;
+    let changed: std::collections::HashSet<String> =
+        status(git, root)?.changes.into_iter().map(|change| change.path).collect();
+    let selected: Vec<&str> = paths.iter().map(String::as_str).filter(|path| changed.contains(*path)).collect();
+    if !selected.is_empty() {
+        let mut args = vec!["--literal-pathspecs", "add", "-A", "--"];
+        args.extend(selected);
+        run(git, root, &args, &[]).map_err(|failure| plain(failure, "stage your changes"))?;
+    }
     let committed = run(git, root, &["diff", "--cached", "--quiet"], &[]).is_err();
     if committed {
         let message = if message.trim().is_empty() { "Update content" } else { message.trim() };
@@ -257,7 +275,8 @@ pub(crate) fn save(git: &Path, root: &Path, remote: &Remote, author: &Author, me
     loop {
         attempts += 1;
         fetch(git, root, remote)?;
-        rebase(git, root, author, false)?;
+        // Unticked drafts are still in the working tree; carry them across.
+        rebase(git, root, author, true)?;
         match run(git, root, &["push", "--quiet", &remote.url, &refspec], &remote.env) {
             Ok(_) => break,
             Err(failure) if attempts < 2 && (failure.output.contains("rejected") || failure.output.contains("fetch first")) => {
@@ -375,7 +394,7 @@ mod tests {
         assert_eq!(before.branch, "studio");
         assert_eq!(before.changes, vec![ContentChange { path: "content/blog/new.md".into(), status: "added".into() }]);
 
-        let saved = save(&git, &mine, &remote, &me, "Add a post").unwrap();
+        let saved = save(&git, &mine, &remote, &me, "Add a post", &["content/blog/new.md".to_string()]).unwrap();
         assert!(saved.committed);
         let after = status(&git, &mine).unwrap();
         assert!(after.changes.is_empty());
@@ -413,10 +432,10 @@ mod tests {
         clone_into(&git, &remote, &theirs).unwrap();
 
         fs::write(theirs.join("content/blog/a.md"), "line one\ntheir line\n").unwrap();
-        save(&git, &theirs, &remote, &Author::from_email("other@catercow.com"), "Theirs").unwrap();
+        save(&git, &theirs, &remote, &Author::from_email("other@catercow.com"), "Theirs", &["content/blog/a.md".to_string()]).unwrap();
 
         fs::write(mine.join("content/blog/a.md"), "line one\nmy line\n").unwrap();
-        let error = save(&git, &mine, &remote, &Author::from_email("editor@catercow.com"), "Mine").unwrap_err();
+        let error = save(&git, &mine, &remote, &Author::from_email("editor@catercow.com"), "Mine", &["content/blog/a.md".to_string()]).unwrap_err();
         assert!(error.starts_with("conflict:"), "{error}");
         assert!(error.contains("content/blog/a.md"), "{error}");
 
@@ -430,6 +449,52 @@ mod tests {
     }
 
     #[test]
+    fn saves_only_the_selected_files_and_keeps_the_rest_as_drafts() {
+        let Some(git) = find_git() else { return };
+        let base = temp("select");
+        let remote = remote_with_studio(&git, &base);
+        let mine = base.join("mine");
+        let check = base.join("check");
+        clone_into(&git, &remote, &mine).unwrap();
+        let me = Author::from_email("editor@catercow.com");
+
+        fs::create_dir_all(mine.join("content/blog/ready")).unwrap();
+        fs::write(mine.join("content/blog/ready.md"), "# Ready\n").unwrap();
+        fs::write(mine.join("content/blog/ready/photo.jpg"), "jpg").unwrap();
+        fs::write(mine.join("content/blog/draft.md"), "# Draft\n").unwrap();
+        fs::write(mine.join("content/blog/a.md"), "line one\nedited\n").unwrap();
+
+        let selected = vec![
+            "content/blog/ready.md".to_string(),
+            "content/blog/ready/photo.jpg".to_string(),
+            // No longer changed: ignored rather than an error.
+            "content/blog/gone.md".to_string(),
+        ];
+        assert!(save(&git, &mine, &remote, &me, "Publish ready", &selected).unwrap().committed);
+
+        let mut left: Vec<String> = status(&git, &mine).unwrap().changes.into_iter().map(|c| c.path).collect();
+        left.sort();
+        assert_eq!(left, vec!["content/blog/a.md".to_string(), "content/blog/draft.md".to_string()]);
+        assert_eq!(fs::read_to_string(mine.join("content/blog/a.md")).unwrap(), "line one\nedited\n");
+
+        clone_into(&git, &remote, &check).unwrap();
+        assert!(check.join("content/blog/ready.md").exists());
+        assert!(check.join("content/blog/ready/photo.jpg").exists());
+        assert!(!check.join("content/blog/draft.md").exists());
+        assert_eq!(fs::read_to_string(check.join("content/blog/a.md")).unwrap(), "line one\nline two\n");
+
+        // A selected deletion is published; drafts survive a save after someone else's push.
+        fs::remove_file(check.join("content/blog/ready/photo.jpg")).unwrap();
+        save(&git, &check, &remote, &Author::from_email("other@catercow.com"), "Remove photo", &["content/blog/ready/photo.jpg".to_string()]).unwrap();
+        fs::write(mine.join("content/blog/ready.md"), "# Ready v2\n").unwrap();
+        save(&git, &mine, &remote, &me, "Edit ready", &["content/blog/ready.md".to_string()]).unwrap();
+        assert!(!mine.join("content/blog/ready/photo.jpg").exists());
+        assert!(mine.join("content/blog/draft.md").exists());
+        assert_eq!(fs::read_to_string(mine.join("content/blog/a.md")).unwrap(), "line one\nedited\n");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
     fn saving_requires_the_studio_branch() {
         let Some(git) = find_git() else { return };
         let base = temp("branch");
@@ -437,7 +502,7 @@ mod tests {
         let mine = base.join("mine");
         clone_into(&git, &remote, &mine).unwrap();
         git_ok(&git, &mine, &["switch", "--quiet", "-c", "other"]);
-        let error = save(&git, &mine, &remote, &Author::from_email("e@catercow.com"), "x").unwrap_err();
+        let error = save(&git, &mine, &remote, &Author::from_email("e@catercow.com"), "x", &[]).unwrap_err();
         assert!(error.contains("`other` branch"), "{error}");
         let _ = fs::remove_dir_all(&base);
     }
