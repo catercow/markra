@@ -171,4 +171,43 @@ describe("ContentSaveBar", () => {
     expect(access.signOut).toHaveBeenCalled();
     expect(state.onSignedOut).toHaveBeenCalled();
   });
+
+  it("ticks exactly the proposed files and fills in the message, without saving", async () => {
+    const access = mockAccess({
+      status: vi.fn(async () => ({
+        ahead: 0,
+        branch: "studio",
+        changes: [
+          { path: "content/blog/ready.md", status: "added" },
+          { path: "content/blog/ready/photo.jpg", status: "added" },
+          { path: "content/blog/draft.md", status: "modified" }
+        ]
+      }))
+    });
+    const props = { language: "en" as const, managed: managed("editor@catercow.com") };
+    const { container, rerender } = render(
+      <ContentSaveBar {...props} proposal={{ message: "Publish the ready post", nonce: 1, paths: ["content/blog/ready.md"] }} />
+    );
+
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "content/blog/ready.md" })).toBeChecked());
+    expect(screen.getByRole("checkbox", { name: "content/blog/ready/photo.jpg" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "content/blog/draft.md" })).not.toBeChecked();
+    expect(screen.getByRole("textbox", { name: "What changed" })).toHaveValue("Publish the ready post");
+    expect(screen.getByRole("status")).toHaveTextContent("Suggested for saving");
+    expect(container.querySelector("[data-proposal-flash]")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Save 1 to studio" })).toBeEnabled();
+    expect(access.save).not.toHaveBeenCalled();
+
+    rerender(
+      <ContentSaveBar
+        {...props}
+        proposal={{ message: "Both", nonce: 2, paths: ["content/blog/draft.md", "content/blog/ready/photo.jpg"] }}
+      />
+    );
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "content/blog/draft.md" })).toBeChecked());
+    expect(screen.getByRole("checkbox", { name: "content/blog/ready.md" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "content/blog/ready/photo.jpg" })).toBeChecked();
+    expect(screen.getByRole("textbox", { name: "What changed" })).toHaveValue("Both");
+    expect(access.save).not.toHaveBeenCalled();
+  });
 });

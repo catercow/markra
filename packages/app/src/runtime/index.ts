@@ -1,6 +1,7 @@
 import type { AppLanguage } from "@markra/shared";
 import type { ContentAccessRuntime } from "../lib/content-access";
 import type { ContentPreviewRuntime } from "../lib/content-preview";
+import type { CowMarkCompanionRuntime } from "../lib/cowmark-companion";
 import type { MarkdownShortcutMap } from "@markra/editor";
 import type { DesktopPlatform } from "../lib/platform";
 import type { ContextMenuEntry } from "../components/ContextMenu";
@@ -213,6 +214,8 @@ export type AppFileRuntime = {
   contentAccess?: ContentAccessRuntime;
   /** Git-backed change listing for the CaterCow content preview; desktop only. */
   contentPreview?: ContentPreviewRuntime;
+  /** CowMark's browser preview and `cowmark` command connection; desktop only. */
+  cowmarkCompanion?: CowMarkCompanionRuntime;
   /** Reads any text file by runtime path; resolves null when it is missing or unreadable. */
   readWorkspaceTextFile?: (path: string) => Promise<string | null>;
   renameMarkdownTreeFile: (

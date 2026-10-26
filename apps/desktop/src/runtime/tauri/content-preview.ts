@@ -1,9 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { AppRuntime } from "@markra/app/runtime";
+import { safeNativeEventCleanup } from "./events";
 import { invokeNative } from "./invoke";
 
 type ContentPreviewRuntime = NonNullable<AppRuntime["files"]["contentPreview"]>;
 type ContentAccessRuntime = NonNullable<AppRuntime["files"]["contentAccess"]>;
+type CowMarkCompanionRuntime = NonNullable<AppRuntime["files"]["cowmarkCompanion"]>;
 
 export const nativeContentPreview: ContentPreviewRuntime = {
   pending: (root, previewCommit) => invokeNative("content_preview_pending", { previewCommit, root }),
@@ -24,4 +27,12 @@ export const nativeContentAccess: ContentAccessRuntime = {
   // Polled while the preview panel is open, so it skips invokeNative's logging.
   status: (root) => invoke("content_access_status", { root }),
   update: (root) => invokeNative("content_access_update", { root })
+};
+
+export const nativeCowMarkCompanion: CowMarkCompanionRuntime = {
+  start: (root, site) => invokeNative("cowmark_companion_start", { root, site }),
+  // The backend sends requests to the window that started the companion only.
+  listen: async (handler) => safeNativeEventCleanup(
+    await getCurrentWindow().listen<Parameters<typeof handler>[0]>("cowmark://control", (event) => handler(event.payload))
+  )
 };
