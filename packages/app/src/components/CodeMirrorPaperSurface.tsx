@@ -84,6 +84,7 @@ import { codeMirrorVimLabels } from "../lib/vim-labels";
 import { CodeMirrorEditorFloatingMenus } from "./CodeMirrorEditorFloatingMenus";
 import { CodeMirrorPluginUi } from "./CodeMirrorPluginUi";
 import { MdcPropsPanel } from "./MdcPropsPanel";
+import { PageDetailsPanel, usePageDetailsAvailable } from "./PageDetailsPanel";
 import {
   SpellcheckSuggestionMenu,
   type SpellcheckSuggestionMenuState,
@@ -161,6 +162,8 @@ interface MarkdownExtensionOptions {
   tableColumnWidthMode: TableColumnWidthModePreference;
   workspaceFiles: () => MarkdownDocumentLinkFile[];
   mdcComponents: () => readonly MdcPreviewComponentInfo[] | null | undefined;
+  /** CowMark: label for the front matter card's page details button, when the form applies. */
+  frontmatterDetailsLabel?: () => string | null;
 }
 
 function markdownExtension({
@@ -180,6 +183,7 @@ function markdownExtension({
   tableColumnWidthMode,
   workspaceFiles,
   mdcComponents,
+  frontmatterDetailsLabel,
 }: MarkdownExtensionOptions) {
   const mdc = extendedSyntax?.mdc ?? false;
   const linkOptions = openExternalUrl() || openLocalAttachment()
@@ -295,7 +299,7 @@ function markdownExtension({
           "format.strikethrough": t(language, "menu.strikethrough"),
         },
       }),
-      frontmatterPreviewPlugin(),
+      frontmatterPreviewPlugin({ detailsLabel: frontmatterDetailsLabel }),
       horizontalRulePlugin(),
       imagePreviewPlugin(imageOptions),
       insertionsPlugin({
@@ -429,6 +433,8 @@ export function CodeMirrorPaperSurface({
   const spellcheckIgnoredWordsRef = useRef(spellcheckIgnoredWords);
   const workspaceFilesRef = useRef(workspaceFiles);
   const mdcSchemaRef = useRef(mdcSchema);
+  const pageDetailsLabelRef = useRef<string | null>(null);
+  pageDetailsLabelRef.current = usePageDetailsAvailable(documentPath) ? t(language, "app.cowmark.pageDetails") : null;
 
   useEffect(() => {
     documentPathRef.current = documentPath;
@@ -587,6 +593,7 @@ export function CodeMirrorPaperSurface({
               tableColumnWidthMode,
               workspaceFiles: () => workspaceFilesRef.current,
               mdcComponents: () => mdcSchemaRef.current?.components,
+              frontmatterDetailsLabel: () => pageDetailsLabelRef.current,
             }),
           ),
           markraPlugins([
@@ -737,6 +744,7 @@ export function CodeMirrorPaperSurface({
           tableColumnWidthMode,
           workspaceFiles: () => workspaceFilesRef.current,
           mdcComponents: () => mdcSchemaRef.current?.components,
+          frontmatterDetailsLabel: () => pageDetailsLabelRef.current,
         }),
       ),
     });
@@ -827,6 +835,7 @@ export function CodeMirrorPaperSurface({
       />
       <CodeMirrorPluginUi pluginIds={plugins.map((plugin) => plugin.id)} />
       {extendedSyntax?.mdc ? <MdcPropsPanel language={language} schema={mdcSchema} /> : null}
+      <PageDetailsPanel documentPath={documentPath} language={language} />
       {spellcheckMenu ? (
         <SpellcheckSuggestionMenu
           language={language}

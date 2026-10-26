@@ -96,7 +96,12 @@ import { useMdcSchema } from "./hooks/useMdcSchema";
 import { useContentPreviewConfig } from "./hooks/useContentPreviewConfig";
 import { CowMarkGate } from "./components/CowMarkGate";
 import { catercowPreviewSite, type ManagedContent } from "./lib/content-access";
-import { parseContentPreviewConfig } from "./lib/content-preview";
+import { contentFsPathFor, parseContentPreviewConfig } from "./lib/content-preview";
+import { CowMarkPagesContext, resolveContentImageSrc, useCowMarkPages } from "./hooks/useCowMarkPages";
+import { saveContentImage } from "./lib/cowmark-images";
+import { newPageText, slugify } from "./lib/cowmark-pages";
+import { promptImageAltText, promptNewPostTitle } from "./components/CowMarkDialogs";
+import { saveNativeClipboardImage as saveCowMarkImageFile } from "./lib/tauri";
 import {
   useApplicationShortcuts,
   useNativeMarkdownDrop,
@@ -813,6 +818,16 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
     [fileTreeSourcePath]
   );
   const mdcSchema = useMdcSchema(defaultMarkdownSaveDirectory);
+  const cowmarkPages = useCowMarkPages({
+    onImageError: (error) => {
+      showAppToast({
+        message: translate("app.cowmark.imageSaveFailed").replace("{message}", String((error as Error)?.message ?? error)),
+        status: "error"
+      });
+    },
+    refreshTree: refreshMarkdownFileTree,
+    rootPath: managedRoot
+  });
   const folderContentPreviewConfig = useContentPreviewConfig(defaultMarkdownSaveDirectory);
   const contentPreviewConfig = useMemo(
     () => folderContentPreviewConfig ?? (managedContent ? parseContentPreviewConfig(JSON.stringify({ site: managedContent.site })) : null),
@@ -2207,8 +2222,26 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
     if (!result || result.type === "error") return;
     navigator.clipboard?.writeText(result.replacement);
   }, [aiResults]);
+  // CowMark: images for a content page go in the page's own folder; see lib/cowmark-images.
+  const contentImageDocumentPath = managedRoot && contentFsPathFor(managedRoot, document.path) ? document.path : null;
+  const saveContentPageImage = useCallback(async (image: File, documentPath: string) => {
+    let src: string;
+    try {
+      ({ src } = await saveContentImage({ documentPath, image, saveLocalImage: saveCowMarkImageFile }));
+    } catch (error) {
+      showAppToast({
+        message: translate("app.cowmark.imageSaveFailed").replace("{message}", String((error as Error)?.message ?? error)),
+        status: "error"
+      });
+      return null;
+    }
+    await refreshMarkdownFileTree(documentPath).catch(() => {});
+    const alt = await promptImageAltText(appLanguage.language, image);
+    return { alt: alt ?? "", src };
+  }, [appLanguage.language, refreshMarkdownFileTree, translate]);
   const handleSaveClipboardImage = useCallback(async (image: File) => {
     if (readOnlyMode) return null;
+    if (contentImageDocumentPath) return saveContentPageImage(image, contentImageDocumentPath);
 
     let result: Awaited<ReturnType<typeof saveEditorImage>>;
     try {
@@ -2258,11 +2291,13 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
 
     return result.image;
   }, [
+    contentImageDocumentPath,
     document.path,
     editorPreferences.preferences,
     readOnlyMode,
     refreshMarkdownFileTree,
     s3ImageUploadFeatureEnabled,
+    saveContentPageImage,
     translate
   ]);
 
@@ -2636,6 +2671,13 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
       });
     }
   }, [captureActiveDocumentViewState, createBlankDocument, createMarkdownTreeFile, fileTree.sourcePath, openTreeMarkdownFile, translate]);
+  const handleNewContentPost = useCallback(async () => {
+    const blog = cowmarkPages?.collections.find((collection) => collection.name === "blog");
+    if (!blog) return;
+    const title = await promptNewPostTitle(appLanguage.language, blog.folder);
+    if (!title) return;
+    await handleCreateMarkdownTreeFile(`${slugify(title)}.md`, blog.folder, newPageText(blog, { title }));
+  }, [appLanguage.language, cowmarkPages, handleCreateMarkdownTreeFile]);
   const handleQuickCreateMarkdownTreeFile = useCallback(() => {
     captureActiveDocumentViewState();
     setActiveImageFile(null);
@@ -3300,6 +3342,14 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
     });
   }, [document.content, document.revision, getEditorCurrentMarkdown, handleMarkdownChange, readOnlyMode, splitMode]);
   const saveLocalEditorImageFiles = useCallback(async (images: File[]) => {
+    if (contentImageDocumentPath) {
+      const saved: Array<{ alt: string; src: string }> = [];
+      for (const image of images) {
+        const result = await saveContentPageImage(image, contentImageDocumentPath);
+        if (result) saved.push(result);
+      }
+      return saved;
+    }
     const copyToStorage = editorPreferences.preferences.copyExternalFilesToStorage;
     if (copyToStorage && !document.path) {
       showAppToast({
@@ -3356,9 +3406,11 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
 
     return savedImages;
   }, [
+    contentImageDocumentPath,
     document.path,
     editorPreferences.preferences,
     refreshMarkdownFileTree,
+    saveContentPageImage,
     translate
   ]);
   const saveLocalEditorAttachmentFiles = useCallback(async (attachments: NativeLocalFile[]) => {
@@ -4703,7 +4755,11 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
               openExternalUrl={handleOpenEditorLink}
               readOnly={readOnlyMode}
               onTextSelectionChange={tabActive ? handleTextSelectionChange : undefined}
-              resolveImageSrc={createMarkdownImageSrcResolver(tab.path)}
+              resolveImageSrc={
+                managedRoot
+                  ? (src: string) => resolveContentImageSrc(managedRoot, tab.path, src)
+                  : createMarkdownImageSrcResolver(tab.path)
+              }
               revision={tab.revision}
               onScroll={tabActive ? handleVisualPaneScroll : undefined}
               scrollRef={tabActive ? visualScrollRef : undefined}
@@ -4813,6 +4869,7 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
         onResizeStart={() => setContentPreviewResizing(true)}
         managed={managedContent}
         beforeSave={saveDirtyMarkdownFiles}
+        onNewPost={cowmarkPages?.collections.some((collection) => collection.name === "blog") ? handleNewContentPost : undefined}
       />
     </Suspense>
   ) : null;
@@ -4842,7 +4899,7 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
   ) : null;
 
   return (
-    <>
+    <CowMarkPagesContext.Provider value={cowmarkPages}>
       <AppToaster language={appLanguage.language} />
       <main className="app-shell group/app relative grid h-full w-full grid-rows-[minmax(0,1fr)] overflow-hidden overscroll-none bg-(--bg-primary) text-(--text-primary)">
         <NativeTitleBar
@@ -5356,6 +5413,6 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
           onRendered={handleRenderedExport}
         />
       ) : null}
-    </>
+    </CowMarkPagesContext.Provider>
   );
 }

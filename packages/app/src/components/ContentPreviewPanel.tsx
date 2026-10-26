@@ -8,7 +8,7 @@ import {
 } from "react";
 import { clampNumber, t, type AppLanguage, type I18nKey } from "@markra/shared";
 import { IconButton } from "@markra/ui";
-import { ExternalLink, RotateCw, TriangleAlert, X } from "lucide-react";
+import { ExternalLink, FilePlus, RotateCw, TriangleAlert, X } from "lucide-react";
 import { getAppRuntime } from "../runtime";
 import type { ManagedContent } from "../lib/content-access";
 import { ContentSaveBar } from "./ContentSaveBar";
@@ -42,6 +42,8 @@ type ContentPreviewPanelProps = {
   rootPath: string;
   width: number;
   onClose: () => unknown;
+  /** CowMark: asks for a title and creates a blog post. */
+  onNewPost?: () => unknown;
   onResize: (width: number) => unknown;
   onResizeEnd?: () => unknown;
   onResizeStart?: () => unknown;
@@ -58,6 +60,7 @@ export function ContentPreviewPanel({
   rootPath,
   width,
   onClose,
+  onNewPost,
   onResize,
   onResizeEnd,
   onResizeStart
@@ -291,6 +294,11 @@ export function ContentPreviewPanel({
             {summary}
           </p>
         </div>
+        {onNewPost ? (
+          <IconButton label={label("app.cowmark.newPost")} size="icon-md" onClick={onNewPost}>
+            <FilePlus aria-hidden="true" size={14} />
+          </IconButton>
+        ) : null}
         <IconButton label={label("app.contentPreviewReload")} size="icon-md" onClick={reload}>
           <RotateCw aria-hidden="true" size={14} />
         </IconButton>
