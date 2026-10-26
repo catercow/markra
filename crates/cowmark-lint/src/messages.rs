@@ -86,7 +86,7 @@ impl Default for Messages {
             empty_field: s("`{field}` is empty. Fill it in, or remove the line."),
             unknown_field: s("Pages here don't use `{field}`, so the site ignores it."),
             field_item: s("Each item in `{field}` needs its own fields, like `{item}: …`."),
-            missing_item_field_here: s("Each item in `{field}` needs a `{item}`."),
+            missing_item_field_here: s("Each item in `{field}` is missing `{item}`."),
             unknown_field_item: s("Items in `{field}` don't use `{item}`, so the site ignores it."),
             field_object: s("`{field}` should be a group of `name: value` lines."),
             date_format: s("`{field}` should be a date written as YYYY-MM-DD, like 2026-10-06."),
