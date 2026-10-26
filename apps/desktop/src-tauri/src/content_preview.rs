@@ -12,6 +12,9 @@ use std::time::SystemTime;
 
 const MAX_MEDIA_BYTES: u64 = 15 * 1024 * 1024;
 const WATCHED_DIRS: [&str; 2] = ["content", "public"];
+/// Where a media site path is looked up: public/, then images stored next to
+/// their page in content/ (the site serves both at the same path).
+const MEDIA_DIRS: [&str; 2] = ["public", "content"];
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
@@ -20,8 +23,9 @@ pub(crate) enum PreviewEvent {
     Draft { fs_path: String, content: String },
     /// A content file that no longer exists, relative to `content/`.
     Remove { fs_path: String },
-    /// An image under `public/`, as a site path. Without `mime` the image was
-    /// deleted; otherwise read its bytes with `content_preview_read_media`.
+    /// An image under `public/` or `content/`, as a site path. Without `mime`
+    /// the image was deleted; otherwise read its bytes with
+    /// `content_preview_read_media`.
     Media { path: String, mime: Option<String> },
     Skipped { path: String, reason: String },
 }
@@ -86,7 +90,7 @@ fn event_for(root: &Path, rel: &str, removed: bool) -> Option<PreviewEvent> {
             let content = fs::read_to_string(&full).ok()?;
             Some(PreviewEvent::Draft { fs_path: inner.to_string(), content })
         }
-        "public" => {
+        "public" | "content" => {
             let mime = media_type(&extension)?;
             let path = format!("/{inner}");
             if gone {
@@ -318,14 +322,14 @@ pub(crate) async fn content_preview_poll(
         .collect())
 }
 
-/// The bytes of an image under `<root>/public`, given its site path.
+/// The bytes of an image under `<root>/public` or `<root>/content`, given its site path.
 #[tauri::command]
 pub(crate) fn content_preview_read_media(root: String, path: String) -> Result<tauri::ipc::Response, String> {
     let relative = path.trim_start_matches('/');
     if relative.split(['/', '\\']).any(|segment| segment == ".." || segment.is_empty()) {
         return Err("invalid media path".into());
     }
-    let full = Path::new(&root).join("public").join(relative);
+    let full = media_file(Path::new(&root), relative);
     let extension = full.extension().and_then(|value| value.to_str()).unwrap_or_default().to_ascii_lowercase();
     if media_type(&extension).is_none() {
         return Err("not an image".into());
@@ -334,6 +338,14 @@ pub(crate) fn content_preview_read_media(root: String, path: String) -> Result<t
         return Err("larger than 15 MB".into());
     }
     fs::read(full).map(tauri::ipc::Response::new).map_err(|error| error.to_string())
+}
+
+fn media_file(root: &Path, relative: &str) -> PathBuf {
+    MEDIA_DIRS
+        .iter()
+        .map(|dir| root.join(dir).join(relative))
+        .find(|candidate| candidate.is_file())
+        .unwrap_or_else(|| root.join(MEDIA_DIRS[0]).join(relative))
 }
 
 #[tauri::command]
@@ -376,6 +388,19 @@ mod tests {
             event_for(&root, "public/blog/a.png", false),
             Some(PreviewEvent::Media { path: "/blog/a.png".into(), mime: Some("image/png".into()) })
         );
+        fs::create_dir_all(root.join("content/blog/a")).unwrap();
+        fs::write(root.join("content/blog/a/photo.jpg"), [4u8, 5]).unwrap();
+        assert_eq!(
+            event_for(&root, "content/blog/a/photo.jpg", false),
+            Some(PreviewEvent::Media { path: "/blog/a/photo.jpg".into(), mime: Some("image/jpeg".into()) })
+        );
+        assert_eq!(
+            event_for(&root, "content/blog/a/gone.png", true),
+            Some(PreviewEvent::Media { path: "/blog/a/gone.png".into(), mime: None })
+        );
+        assert_eq!(event_for(&root, "content/explore.csv", false), None);
+        assert_eq!(media_file(&root, "blog/a.png"), root.join("public/blog/a.png"));
+        assert_eq!(media_file(&root, "blog/a/photo.jpg"), root.join("content/blog/a/photo.jpg"));
         assert_eq!(event_for(&root, "content/blog/.a.md.swp", false), None);
         assert_eq!(event_for(&root, "content/blog/a.md~", false), None);
         assert_eq!(event_for(&root, "public/data.csv", false), None);
