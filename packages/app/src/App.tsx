@@ -4896,6 +4896,8 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
         width={contentPreviewWidth}
         fill={companionMode}
         proposal={cowmarkCompanion.proposal}
+        getLatestRequest={cowmarkCompanion.getLatestRequest}
+        onGetLatestStarted={cowmarkCompanion.getLatestStarted}
         revealRequest={cowmarkCompanion.revealRequest}
         onOpenInBrowser={cowmarkCompanion.openInBrowser}
         onClose={() => setContentPreviewOpen(false)}

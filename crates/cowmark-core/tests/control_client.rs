@@ -28,6 +28,10 @@ impl ControlUi for RecordingUi {
         self.0.lock().unwrap().push(json!({ "propose": paths, "message": message }));
         Ok(())
     }
+    fn get_latest(&self) -> Result<(), String> {
+        self.0.lock().unwrap().push(json!({ "getLatest": true }));
+        Ok(())
+    }
     fn preview_url(&self) -> Option<String> {
         Some("http://localhost:4100/?token=t".into())
     }
@@ -160,6 +164,17 @@ fn every_method_end_to_end() {
     assert_eq!(client.ok("focus", json!({})), json!({}));
     assert_eq!(ui.take(), vec![json!({ "focus": true })]);
 
+    // get_latest
+    assert_eq!(client.ok("get_latest", json!({})), json!({ "started": true }));
+    assert_eq!(ui.take(), vec![json!({ "getLatest": true })]);
+
+    // The library client sees the same results and errors.
+    let mut library = control::Client::connect(server.paths()).unwrap();
+    assert_eq!(library.call("ping", json!({})).unwrap()["app"], "CowMark");
+    let error = library.call("open", json!({ "path": "../x.md" })).unwrap_err();
+    assert_eq!(error.code, control::OUTSIDE_FOLDER);
+    drop(library);
+
     // open
     assert_eq!(client.ok("open", json!({ "path": "content/blog/a.md" })), json!({ "path": "content/blog/a.md" }));
     let absolute = folder.join("content/blog/same.md");
@@ -200,6 +215,7 @@ fn every_method_end_to_end() {
     // Without a content folder, folder-bound methods say so.
     access::set_folder(&data_dir, None).unwrap();
     assert_eq!(client.error_code("status", json!({})), control::NO_FOLDER);
+    assert_eq!(client.error_code("get_latest", json!({})), control::NO_FOLDER);
     assert_eq!(client.ok("ping", json!({}))["folder"], Value::Null);
 
     drop(client);

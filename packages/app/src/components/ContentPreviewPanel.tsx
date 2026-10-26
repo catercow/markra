@@ -37,6 +37,9 @@ type ContentPreviewPanelProps = {
   onOpenInBrowser?: (pagePath: string | null) => Promise<unknown>;
   /** Passed to the save bar; see ContentSaveBar. */
   proposal?: ContentSaveProposal | null;
+  /** Passed to the save bar; see ContentSaveBar. */
+  getLatestRequest?: number;
+  onGetLatestStarted?: () => unknown;
   /** Bumped to show the open document again, e.g. after the `cowmark` command opened it. */
   revealRequest?: number;
   /** Writes open documents to disk before Save to studio. */
@@ -64,6 +67,8 @@ export function ContentPreviewPanel({
   fill = false,
   onOpenInBrowser,
   proposal,
+  getLatestRequest = 0,
+  onGetLatestStarted,
   revealRequest = 0,
   beforeSave,
   managed,
@@ -356,6 +361,8 @@ export function ContentPreviewPanel({
           managed={managed}
           onConflictFiles={onConflictFiles}
           proposal={proposal}
+          getLatestRequest={getLatestRequest}
+          onGetLatestStarted={onGetLatestStarted}
         />
       ) : null}
     </aside>

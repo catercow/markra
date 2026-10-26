@@ -15,7 +15,8 @@ export type CowMarkCompanionStatus = {
 
 export type CowMarkControlRequest =
   | { action: "open"; path: string }
-  | { action: "proposePublish"; paths: string[]; message: string };
+  | { action: "proposePublish"; paths: string[]; message: string }
+  | { action: "getLatest" };
 
 export type CowMarkCompanionRuntime = {
   /** Starts the browser preview and the control socket; safe to call again. */
