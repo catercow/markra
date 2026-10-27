@@ -5,8 +5,11 @@ import { getAppRuntime } from "../runtime";
 import { contentAccessError, type ContentGitStatus, type ManagedContent } from "../lib/content-access";
 import { pruneSelection, toggleSelection } from "../lib/content-selection";
 import type { ContentSaveProposal } from "../lib/cowmark-companion";
+import type { PageCollection } from "../lib/cowmark-pages";
+import { useCowMarkPagesContext } from "../hooks/useCowMarkPages";
 
 const statusPollMs = 4000;
+const noCollections: PageCollection[] = [];
 
 type Notice = { tone: "error" | "info"; text: string } | null;
 
@@ -44,6 +47,7 @@ export function ContentSaveBar({
   // Nothing is ticked by default: publishing is a deliberate choice per file.
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
   const changedPaths = useMemo(() => status?.changes.map((change) => change.path) ?? [], [status]);
+  const pageCollections = useCowMarkPagesContext()?.collections ?? noCollections;
 
   useEffect(() => {
     setSelected((current) => pruneSelection(current, changedPaths));
@@ -238,7 +242,7 @@ export function ContentSaveBar({
                     checked={selected.has(change.path)}
                     className="size-3.5 shrink-0 accent-(--accent)"
                     type="checkbox"
-                    onChange={() => setSelected((current) => toggleSelection(current, change.path, changedPaths))}
+                    onChange={() => setSelected((current) => toggleSelection(current, change.path, changedPaths, pageCollections))}
                   />
                   <span className="min-w-0 flex-1 truncate" title={change.path}>{change.path}</span>
                   {change.status === "added" || change.status === "deleted" ? (

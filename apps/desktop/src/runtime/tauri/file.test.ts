@@ -44,6 +44,7 @@ import {
   trashNativeMarkdownAssets,
   saveNativeClipboardAttachment,
   saveNativeClipboardImage,
+  saveNativeContentSiteImage,
   saveNativeHtmlFile,
   saveNativeMarkdownBundleFile,
   saveNativePandocFile,
@@ -1283,6 +1284,22 @@ describe("native file access", () => {
       "export_pandoc_file",
       expect.any(Object)
     );
+  });
+
+  it("saves a CowMark page image into public/ and returns its site path", async () => {
+    const image = new File([new Uint8Array([1, 2, 3])], "team-lunch.png", { type: "image/png" });
+    mockedInvoke.mockResolvedValue({ relativePath: "blog/my-post/team-lunch.png" });
+
+    await expect(
+      saveNativeContentSiteImage({ fileName: "team-lunch.png", folder: "blog/my-post", image, root: "/mock/content" })
+    ).resolves.toEqual({ alt: "team-lunch", src: "/blog/my-post/team-lunch.png" });
+    expect(mockedInvoke).toHaveBeenCalledWith("save_content_site_image", {
+      bytes: [1, 2, 3],
+      fileName: "team-lunch.png",
+      folder: "blog/my-post",
+      mimeType: "image/png",
+      root: "/mock/content"
+    });
   });
 
   it("saves a clipboard image next to the current markdown file through Tauri", async () => {

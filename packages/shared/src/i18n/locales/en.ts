@@ -950,7 +950,7 @@ const messages: BaseLocaleMessages = {
   "editor.contentLint.fieldObject": "`{field}` should be a group of `name: value` lines.",
   "editor.contentLint.dateFormat": "`{field}` should be a date written as YYYY-MM-DD, like 2026-10-06.",
   "editor.contentLint.missingImage": "The image `{src}` can't be found. Check the file name, or add the image again.",
-  "editor.contentLint.imageOutsideContent": "The image `{src}` points outside the content folder. Put the image next to the page and pick it again.",
+  "editor.contentLint.imageRelative": "The site can't show `{src}`: images go in the `public/` folder and start with `/`. Move the file to `public{path}` and write `{path}`, or add the image again.",
   "editor.contentLint.imageAlt": "This image has no description. Add one between the square brackets: it is shown as the caption and read aloud to people who can't see the image.",
   "editor.contentLint.brokenLink": "There is no page at `{path}`. Check the link: the page may have been renamed or removed.",
   "editor.contentLint.unresolvedConflict": "This part still has two versions from a merge. Choose one (or keep both) before saving.",

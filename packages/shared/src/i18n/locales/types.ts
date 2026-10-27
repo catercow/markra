@@ -961,7 +961,7 @@ export type I18nKey =
   | "editor.contentLint.fieldObject"
   | "editor.contentLint.dateFormat"
   | "editor.contentLint.missingImage"
-  | "editor.contentLint.imageOutsideContent"
+  | "editor.contentLint.imageRelative"
   | "editor.contentLint.imageAlt"
   | "editor.contentLint.brokenLink"
   | "editor.contentLint.unresolvedConflict"

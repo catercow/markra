@@ -284,23 +284,96 @@ fn save_clipboard_image_file(
         .strip_prefix(&root)
         .map_err(|_| "Clipboard image folder is outside the current Markdown folder".to_string())?;
 
+    let target_path = write_unique_image(&target_folder, extension, file_name.as_deref(), &bytes)?;
+    Ok(ClipboardImageFile {
+        relative_path: markdown_tree_relative_path(&root, &target_path)?,
+    })
+}
+
+/// Writes `bytes` to a new file in `folder`, adding `-2`, `-3`… to the name on a clash.
+fn write_unique_image(
+    folder: &Path,
+    extension: &str,
+    file_name: Option<&str>,
+    bytes: &[u8],
+) -> Result<PathBuf, String> {
     for attempt in 0..1000 {
-        let target_path = target_folder.join(clipboard_image_file_name(
-            extension,
-            attempt,
-            file_name.as_deref(),
-        )?);
+        let target_path = folder.join(clipboard_image_file_name(extension, attempt, file_name)?);
         if target_path.exists() {
             continue;
         }
 
-        fs::write(&target_path, &bytes).map_err(|error| error.to_string())?;
-        return Ok(ClipboardImageFile {
-            relative_path: markdown_tree_relative_path(&root, &target_path)?,
-        });
+        fs::write(&target_path, bytes).map_err(|error| error.to_string())?;
+        return Ok(target_path);
     }
 
     Err("Could not create a unique clipboard image file".to_string())
+}
+
+/// CowMark: saves an image for a content page into `<root>/public/<folder>` and returns its path
+/// below `public/`, which is the site path. `root` must be the managed content folder.
+fn save_site_image_file(
+    root: String,
+    managed_root: Option<String>,
+    folder: String,
+    mime_type: String,
+    bytes: Vec<u8>,
+    file_name: Option<String>,
+    allow_public_assets: impl FnOnce(&Path) -> Result<(), String>,
+) -> Result<ClipboardImageFile, String> {
+    if bytes.is_empty() {
+        return Err("Clipboard image is empty".to_string());
+    }
+    let extension = clipboard_image_extension(&mime_type)?;
+    let root = PathBuf::from(root)
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    let managed = managed_root.and_then(|managed| PathBuf::from(managed).canonicalize().ok());
+    if managed.as_deref() != Some(root.as_path()) {
+        return Err("Images can only be saved this way in the CowMark content folder".to_string());
+    }
+
+    let public = root.join("public");
+    fs::create_dir_all(&public).map_err(|error| error.to_string())?;
+    let public = public.canonicalize().map_err(|error| error.to_string())?;
+    if public.strip_prefix(&root).is_err() {
+        return Err("The public folder is outside the content folder".to_string());
+    }
+    allow_public_assets(&public)?;
+    let target_folder = public.join(normalize_clipboard_image_folder(&folder)?);
+    fs::create_dir_all(&target_folder).map_err(|error| error.to_string())?;
+    target_folder
+        .canonicalize()
+        .map_err(|error| error.to_string())?
+        .strip_prefix(&public)
+        .map_err(|_| "Image folder is outside the public folder".to_string())?;
+
+    let target_path = write_unique_image(&target_folder, extension, file_name.as_deref(), &bytes)?;
+    Ok(ClipboardImageFile {
+        relative_path: markdown_tree_relative_path(&public, &target_path)?,
+    })
+}
+
+#[tauri::command]
+pub(crate) fn save_content_site_image(
+    app: tauri::AppHandle,
+    root: String,
+    folder: String,
+    mime_type: String,
+    bytes: Vec<u8>,
+    file_name: Option<String>,
+) -> Result<ClipboardImageFile, String> {
+    let data_dir = crate::user_data::app_data_dir(&app)?;
+    let managed = cowmark_core::access::access_state(&data_dir, None).folder;
+    save_site_image_file(
+        root,
+        managed,
+        folder,
+        mime_type,
+        bytes,
+        file_name,
+        |public| allow_asset_directory(&app, public),
+    )
 }
 
 #[tauri::command]
@@ -333,6 +406,43 @@ pub(crate) fn read_local_image_file(path: String) -> Result<MarkdownImageFile, S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saves_site_images_into_public_of_the_managed_folder_only() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = root.path().to_string_lossy().to_string();
+        fs::create_dir_all(root.path().join("content/blog")).unwrap();
+        let save = |managed: Option<String>, folder: &str| {
+            save_site_image_file(
+                root_path.clone(),
+                managed,
+                folder.to_string(),
+                "image/png".to_string(),
+                vec![1, 2, 3],
+                Some("photo.png".to_string()),
+                |_| Ok(()),
+            )
+        };
+
+        let saved = save(Some(root_path.clone()), "blog/my-post").unwrap();
+        assert_eq!(saved.relative_path, "blog/my-post/photo.png");
+        assert_eq!(
+            fs::read(root.path().join("public/blog/my-post/photo.png")).unwrap(),
+            vec![1, 2, 3]
+        );
+        let again = save(Some(root_path.clone()), "blog/my-post").unwrap();
+        assert_eq!(again.relative_path, "blog/my-post/photo-2.png");
+
+        assert!(save(None, "blog/my-post").is_err());
+        let other = tempfile::tempdir().unwrap();
+        assert!(save(
+            Some(other.path().to_string_lossy().to_string()),
+            "blog/my-post"
+        )
+        .is_err());
+        assert!(save(Some(root_path.clone()), "../content/blog").is_err());
+        assert!(save(Some(root_path.clone()), "/blog/my-post").is_err());
+    }
 
     #[test]
     fn expands_document_folder_templates_when_saving_images() {

@@ -2,21 +2,41 @@ import { companionPaths, pruneSelection, toggleSelection } from "./content-selec
 
 const changed = [
   "content/blog/ready.md",
-  "content/blog/ready/photo.jpg",
+  "public/blog/ready/photo.jpg",
+  "public/blog/ready-two/photo.jpg",
+  "public/blog/shared/banner.png",
+  "content/blog/ready/old.jpg",
   "content/blog/ready-two.md",
-  "content/blog/draft.md"
+  "content/blog/shared.md",
+  "content/blog/draft.md",
+  "content/cuisines/thai.md",
+  "public/cuisines/thai/curry.jpg"
 ];
 
 describe("content selection", () => {
-  it("finds a page's own folder, not pages that share a prefix", () => {
-    expect(companionPaths("content/blog/ready.md", changed)).toEqual(["content/blog/ready/photo.jpg"]);
-    expect(companionPaths("content/blog/ready/photo.jpg", changed)).toEqual([]);
+  it("finds a page's image folder under public/, not pages that share a prefix", () => {
+    expect(companionPaths("content/blog/ready.md", changed)).toEqual(["public/blog/ready/photo.jpg"]);
+    expect(companionPaths("public/blog/ready/photo.jpg", changed)).toEqual([]);
+    expect(companionPaths("content/blog/draft.md", changed)).toEqual([]);
   });
 
-  it("ticks and unticks a page together with its folder", () => {
+  it("leaves the shared image folder alone", () => {
+    expect(companionPaths("content/blog/shared.md", changed)).toEqual([]);
+  });
+
+  it("follows the collection's URL prefix", () => {
+    const collections = [
+      { fields: [], folder: "content/cuisines", name: "cuisines", url: "/cuisines/<file name without .md>-catering" }
+    ];
+    expect(companionPaths("content/cuisines/thai.md", changed, collections)).toEqual(["public/cuisines/thai/curry.jpg"]);
+    const renamed = [{ fields: [], folder: "content/cuisines", name: "cuisines", url: "/food/<file name without .md>" }];
+    expect(companionPaths("content/cuisines/thai.md", ["public/food/thai/a.jpg"], renamed)).toEqual(["public/food/thai/a.jpg"]);
+  });
+
+  it("ticks and unticks a page together with its images", () => {
     const on = toggleSelection(new Set(), "content/blog/ready.md", changed);
-    expect([...on].sort()).toEqual(["content/blog/ready.md", "content/blog/ready/photo.jpg"]);
-    const photoOff = toggleSelection(on, "content/blog/ready/photo.jpg", changed);
+    expect([...on].sort()).toEqual(["content/blog/ready.md", "public/blog/ready/photo.jpg"]);
+    const photoOff = toggleSelection(on, "public/blog/ready/photo.jpg", changed);
     expect([...photoOff]).toEqual(["content/blog/ready.md"]);
     expect([...toggleSelection(on, "content/blog/ready.md", changed)]).toEqual([]);
   });

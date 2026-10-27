@@ -35,10 +35,12 @@ function renderSurface(doc: string, documentPath = "/repo/content/blog/lunch.md"
   let view: EditorView | null = null;
   const pages: CowMarkPages = {
     collections,
+    imageFolder: () => "/blog/lunch",
     loadFieldValues: vi.fn(async () => ({ category: ["tips", "news"] })),
-    pickImage: vi.fn(async () => "lunch/tacos.jpg"),
+    pickImage: vi.fn(async () => "/blog/lunch/tacos.jpg"),
     resolveImage: (_path, src) => `asset://${src}`,
     rootPath: "/repo",
+    saveImage: vi.fn(async () => "/blog/lunch/tacos.jpg"),
   };
   render(
     <CowMarkPagesContext.Provider value={pages}>
@@ -97,8 +99,8 @@ describe("PageDetailsPanel", () => {
       fireEvent.click(within(panel).getByRole("button", { name: /Choose image/u }));
     });
     expect(pages.pickImage).toHaveBeenCalledWith("/repo/content/blog/lunch.md");
-    expect(doc()).toContain("\nfeature_image: lunch/tacos.jpg\n");
-    expect(panel.querySelector("img")?.getAttribute("src")).toBe("asset://lunch/tacos.jpg");
+    expect(doc()).toContain("\nfeature_image: /blog/lunch/tacos.jpg\n");
+    expect(panel.querySelector("img")?.getAttribute("src")).toBe("asset:///blog/lunch/tacos.jpg");
   });
 
   it("has no button outside a known collection", () => {

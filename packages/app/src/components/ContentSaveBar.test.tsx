@@ -63,7 +63,7 @@ describe("ContentSaveBar", () => {
         branch: "studio",
         changes: [
           { path: "content/blog/ready.md", status: "added" },
-          { path: "content/blog/ready/photo.jpg", status: "added" },
+          { path: "public/blog/ready/photo.jpg", status: "added" },
           { path: "content/blog/draft.md", status: "modified" }
         ]
       }))
@@ -75,13 +75,13 @@ describe("ContentSaveBar", () => {
     expect(screen.getByRole("button", { name: "Save to studio" })).toBeDisabled();
 
     fireEvent.click(screen.getByRole("checkbox", { name: "content/blog/ready.md" }));
-    expect(screen.getByRole("checkbox", { name: "content/blog/ready/photo.jpg" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "public/blog/ready/photo.jpg" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "content/blog/draft.md" })).not.toBeChecked();
     expect((screen.getByRole("checkbox", { name: "Select all" }) as HTMLInputElement).indeterminate).toBe(true);
 
     fireEvent.click(screen.getByRole("button", { name: "Save 2 to studio" }));
     await waitFor(() =>
-      expect(access.save).toHaveBeenCalledWith("/work/c", "", ["content/blog/ready.md", "content/blog/ready/photo.jpg"])
+      expect(access.save).toHaveBeenCalledWith("/work/c", "", ["content/blog/ready.md", "public/blog/ready/photo.jpg"])
     );
   });
 
@@ -213,7 +213,7 @@ describe("ContentSaveBar", () => {
         branch: "studio",
         changes: [
           { path: "content/blog/ready.md", status: "added" },
-          { path: "content/blog/ready/photo.jpg", status: "added" },
+          { path: "public/blog/ready/photo.jpg", status: "added" },
           { path: "content/blog/draft.md", status: "modified" }
         ]
       }))
@@ -224,7 +224,7 @@ describe("ContentSaveBar", () => {
     );
 
     await waitFor(() => expect(screen.getByRole("checkbox", { name: "content/blog/ready.md" })).toBeChecked());
-    expect(screen.getByRole("checkbox", { name: "content/blog/ready/photo.jpg" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "public/blog/ready/photo.jpg" })).not.toBeChecked();
     expect(screen.getByRole("checkbox", { name: "content/blog/draft.md" })).not.toBeChecked();
     expect(screen.getByRole("textbox", { name: "What changed" })).toHaveValue("Publish the ready post");
     expect(screen.getByRole("status")).toHaveTextContent("Suggested for saving");
@@ -235,12 +235,12 @@ describe("ContentSaveBar", () => {
     rerender(
       <ContentSaveBar
         {...props}
-        proposal={{ message: "Both", nonce: 2, paths: ["content/blog/draft.md", "content/blog/ready/photo.jpg"] }}
+        proposal={{ message: "Both", nonce: 2, paths: ["content/blog/draft.md", "public/blog/ready/photo.jpg"] }}
       />
     );
     await waitFor(() => expect(screen.getByRole("checkbox", { name: "content/blog/draft.md" })).toBeChecked());
     expect(screen.getByRole("checkbox", { name: "content/blog/ready.md" })).not.toBeChecked();
-    expect(screen.getByRole("checkbox", { name: "content/blog/ready/photo.jpg" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "public/blog/ready/photo.jpg" })).toBeChecked();
     expect(screen.getByRole("textbox", { name: "What changed" })).toHaveValue("Both");
     expect(access.save).not.toHaveBeenCalled();
   });

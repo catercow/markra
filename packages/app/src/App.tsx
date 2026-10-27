@@ -98,12 +98,10 @@ import { useContentPreviewConfig } from "./hooks/useContentPreviewConfig";
 import { useCompanionMode, useCowMarkCompanion } from "./hooks/useCowMarkCompanion";
 import { CowMarkGate } from "./components/CowMarkGate";
 import { catercowPreviewSite, type ManagedContent } from "./lib/content-access";
-import { contentFsPathFor, parseContentPreviewConfig } from "./lib/content-preview";
+import { parseContentPreviewConfig } from "./lib/content-preview";
 import { CowMarkPagesContext, resolveContentImageSrc, useCowMarkPages } from "./hooks/useCowMarkPages";
-import { saveContentImage } from "./lib/cowmark-images";
 import { newPageText, slugify } from "./lib/cowmark-pages";
 import { promptImageAltText, promptNewPostTitle } from "./components/CowMarkDialogs";
-import { saveNativeClipboardImage as saveCowMarkImageFile } from "./lib/tauri";
 import {
   useApplicationShortcuts,
   useNativeMarkdownDrop,
@@ -2231,12 +2229,15 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
     if (!result || result.type === "error") return;
     navigator.clipboard?.writeText(result.replacement);
   }, [aiResults]);
-  // CowMark: images for a content page go in the page's own folder; see lib/cowmark-images.
-  const contentImageDocumentPath = managedRoot && contentFsPathFor(managedRoot, document.path) ? document.path : null;
+  // CowMark: images for a content page go in its image folder under public/, instead of the
+  // clipboard image folder setting; see lib/cowmark-images.
+  const contentImageDocumentPath =
+    cowmarkPages && cowmarkPages.imageFolder(document.path) ? document.path : null;
   const saveContentPageImage = useCallback(async (image: File, documentPath: string) => {
+    if (!cowmarkPages) return null;
     let src: string;
     try {
-      ({ src } = await saveContentImage({ documentPath, image, saveLocalImage: saveCowMarkImageFile }));
+      src = await cowmarkPages.saveImage(documentPath, image);
     } catch (error) {
       showAppToast({
         message: translate("app.cowmark.imageSaveFailed").replace("{message}", String((error as Error)?.message ?? error)),
@@ -2244,10 +2245,9 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
       });
       return null;
     }
-    await refreshMarkdownFileTree(documentPath).catch(() => {});
     const alt = await promptImageAltText(appLanguage.language, image);
     return { alt: alt ?? "", src };
-  }, [appLanguage.language, refreshMarkdownFileTree, translate]);
+  }, [appLanguage.language, cowmarkPages, translate]);
   const handleSaveClipboardImage = useCallback(async (image: File) => {
     if (readOnlyMode) return null;
     if (contentImageDocumentPath) return saveContentPageImage(image, contentImageDocumentPath);
@@ -3180,8 +3180,10 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
   const handleSaveDocument = useCallback(() => saveDocument(false), [saveDocument]);
   const saveDocumentAs = useCallback(() => saveDocument(true), [saveDocument]);
   const resolveSideDocumentImageSrc = useMemo(
-    () => createMarkdownImageSrcResolver(sideDocumentTab?.path ?? null),
-    [sideDocumentTab?.path]
+    () => managedRoot
+      ? (src: string) => resolveContentImageSrc(managedRoot, sideDocumentTab?.path ?? null, src)
+      : createMarkdownImageSrcResolver(sideDocumentTab?.path ?? null),
+    [managedRoot, sideDocumentTab?.path]
   );
   const sideDocumentWordCount = useMemo(
     () => sideDocumentTab ? getWordCount(sideDocumentTab.content) : 0,
