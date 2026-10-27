@@ -1,5 +1,6 @@
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { setDiagnostics } from "@codemirror/lint";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   imagePreviewPlugin,
@@ -342,6 +343,34 @@ describe("imagePreviewPlugin", () => {
 
     expect(view.state.doc.toString()).toBe("\n\nEdit");
     expect(view.dom.querySelector(".cm-markra-image")).toBeNull();
+  });
+
+  it("keeps the Markdown source open while a lint underline over the image changes", async () => {
+    const doc = "Text\n\n![](https://example.test/a.png)\n\nMore";
+    const view = createView(doc);
+    const from = doc.indexOf("![");
+    const to = doc.indexOf(")") + 1;
+    view.dispatch(setDiagnostics(view.state, [{ from, to, message: "Add alt text", severity: "warning" }]));
+    view.dom.querySelector(".cm-markra-image")?.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+    );
+    const source = view.dom.querySelector<HTMLInputElement>(".markra-image-node-source");
+    expect(source).not.toBeNull();
+    if (!source) return;
+
+    source.focus();
+    source.value = "![Lunch](https://example.test/a.png)";
+    source.setSelectionRange(7, 7);
+    source.dispatchEvent(new Event("input", { bubbles: true }));
+    // The alt text fixes the warning, so the underline goes away and the image is redrawn.
+    view.dispatch(setDiagnostics(view.state, []));
+    await Promise.resolve();
+
+    const reopened = view.dom.querySelector<HTMLInputElement>(".markra-image-node-source");
+    expect(reopened?.value).toBe("![Lunch](https://example.test/a.png)");
+    expect(document.activeElement).toBe(reopened);
+    expect(reopened?.selectionStart).toBe(7);
+    expect(view.state.doc.toString()).toBe("Text\n\n![Lunch](https://example.test/a.png)\n\nMore");
   });
 
   it("moves into the blank line after an edited image on Enter", () => {

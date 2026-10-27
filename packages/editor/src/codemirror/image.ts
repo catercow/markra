@@ -278,6 +278,81 @@ function showImageSource(
   return true;
 }
 
+// CodeMirror sometimes redraws an image with a fresh DOM, for example when a
+// lint underline over it appears or goes away, and removes the old copy first.
+// While its Markdown source has focus, the source remembers its text and caret
+// here, so the new copy reopens it as it was.
+interface FocusedImageSource {
+  from: number;
+  selectionDirection: "forward" | "backward" | "none" | null;
+  selectionEnd: number | null;
+  selectionStart: number | null;
+  value: string;
+}
+const focusedImageSources = new WeakMap<CodeMirrorView, FocusedImageSource>();
+
+function rememberFocusedSource(root: HTMLElement, state: ImageWidgetDomState) {
+  const { selectionDirection, selectionEnd, selectionStart, value } = state.sourceInput;
+  focusedImageSources.set(state.widget.view, {
+    from: state.widget.from,
+    selectionDirection,
+    selectionEnd,
+    selectionStart,
+    value,
+  });
+}
+
+function restoreSourceFocus(root: HTMLElement, state: ImageWidgetDomState, remembered: FocusedImageSource) {
+  state.sourceInput.focus();
+  state.sourceInput.setSelectionRange(
+    remembered.selectionStart,
+    remembered.selectionEnd,
+    remembered.selectionDirection ?? undefined,
+  );
+}
+
+// Moving the image into or out of a lint underline re-inserts the same DOM,
+// which drops focus to the page body; after each update, give it back.
+// Clicking elsewhere focuses something else (or hides the source first).
+const restoreDroppedSourceFocus = EditorView.updateListener.of((update) => {
+  const remembered = focusedImageSources.get(update.view);
+  if (!remembered) return;
+  const document = update.view.dom.ownerDocument;
+  const active = document.activeElement;
+  if (active && active !== document.body) return;
+  for (const root of update.view.dom.querySelectorAll<HTMLElement>(".markra-image-node")) {
+    const state = imageWidgetDomState.get(root);
+    if (state?.sourceRow.isConnected && state.widget.from === remembered.from) {
+      restoreSourceFocus(root, state, remembered);
+      return;
+    }
+  }
+});
+
+function handleSourceBlur(root: HTMLElement, state: ImageWidgetDomState) {
+  const { view } = state.widget;
+  queueMicrotask(() => {
+    const active = root.ownerDocument.activeElement;
+    if (!active || active === root.ownerDocument.body || active === state.sourceInput) return;
+    if (active.classList.contains("markra-image-node-source")) return;
+    focusedImageSources.delete(view);
+  });
+}
+
+function carryOverFocusedSource(root: HTMLElement, state: ImageWidgetDomState) {
+  const { view } = state.widget;
+  const remembered = focusedImageSources.get(view);
+  if (!remembered || remembered.from !== state.widget.from) return;
+  const active = root.ownerDocument.activeElement;
+  if (active instanceof HTMLElement && active !== root.ownerDocument.body && !view.dom.contains(active)) return;
+  if (active instanceof HTMLInputElement && active.classList.contains("markra-image-node-source") && active.isConnected) return;
+  state.sourceInput.value = remembered.value;
+  if (!showImageSource(root, state, true)) return;
+  queueMicrotask(() => {
+    if (root.isConnected) restoreSourceFocus(root, state, remembered);
+  });
+}
+
 function syncImageSource(root: HTMLElement, state: ImageWidgetDomState) {
   const { view } = state.widget;
   const markdown = state.sourceInput.value.trim();
@@ -520,10 +595,18 @@ class ImageWidget extends WidgetType {
     viewerButton.addEventListener("click", openImageViewer);
     sourceRow.addEventListener("mousedown", keepSourceFocused);
     sourceRow.addEventListener("click", keepSourceFocused);
-    sourceInput.addEventListener("input", () => syncImageSource(root, state));
+    sourceInput.addEventListener("input", () => {
+      rememberFocusedSource(root, state);
+      syncImageSource(root, state);
+    });
+    for (const type of ["focus", "keyup", "mouseup", "select"]) {
+      sourceInput.addEventListener(type, () => rememberFocusedSource(root, state));
+    }
+    sourceInput.addEventListener("blur", () => handleSourceBlur(root, state));
     sourceInput.addEventListener("keydown", handleSourceKeyDown);
     view.dom.addEventListener("keydown", state.onViewKeyDown, true);
     if (this.selected) showImageSource(root, state);
+    carryOverFocusedSource(root, state);
     return root;
   }
 
@@ -658,6 +741,7 @@ export function imagePreviewPlugin(options: ImagePreviewPluginOptions = {}) {
           return false;
         },
       }),
+      restoreDroppedSourceFocus,
       imageTheme,
     ],
   });
