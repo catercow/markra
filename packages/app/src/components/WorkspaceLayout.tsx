@@ -96,7 +96,8 @@ export function WorkspaceLayout({
 
         <div
           className={`content-preview-panel-slot relative z-20 min-h-0 overflow-hidden ${
-            contentPreviewFill && !windowsSelfDrawnChrome ? "pt-10" : ""
+            // The slot is layered above the title bar; its padding strip must let clicks through.
+            contentPreviewFill && !windowsSelfDrawnChrome ? "pointer-events-none pt-10 *:pointer-events-auto" : ""
           }`}
         >
           {contentPreviewPanel}
