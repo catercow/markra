@@ -55,10 +55,12 @@ type Options = {
   onImageError: (error: unknown) => unknown;
   refreshTree: (documentPath: string) => Promise<unknown>;
   rootPath: string | null;
+  /** The collections schema the site serves (see useContentSchema); else `schema/collections.json` is read. */
+  collectionsText?: string | null;
 };
 
 /** CowMark's page tools for the managed content folder; null outside CowMark. */
-export function useCowMarkPages({ onImageError, refreshTree, rootPath }: Options): CowMarkPages | null {
+export function useCowMarkPages({ collectionsText, onImageError, refreshTree, rootPath }: Options): CowMarkPages | null {
   const [collections, setCollections] = useState<PageCollection[]>([]);
   const valuesRef = useRef(new Map<string, Promise<FieldValues>>());
   const callbacksRef = useRef({ onImageError, refreshTree });
@@ -68,6 +70,10 @@ export function useCowMarkPages({ onImageError, refreshTree, rootPath }: Options
     setCollections([]);
     valuesRef.current.clear();
     if (!rootPath) return;
+    if (collectionsText !== undefined) {
+      setCollections(parseCollectionsSchema(collectionsText));
+      return;
+    }
 
     let active = true;
     let lastText: string | null | undefined;
@@ -89,7 +95,7 @@ export function useCowMarkPages({ onImageError, refreshTree, rootPath }: Options
       active = false;
       window.removeEventListener("focus", load);
     };
-  }, [rootPath]);
+  }, [collectionsText, rootPath]);
 
   const loadFieldValues = useCallback((collection: PageCollection) => {
     if (!rootPath) return Promise.resolve({});

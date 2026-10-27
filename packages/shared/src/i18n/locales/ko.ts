@@ -345,6 +345,8 @@ const messages: LocaleMessages = {
   "app.cowmark.imageAltInsert": "이미지 삽입",
   "app.cowmark.imageAltSkip": "건너뛰기",
   "app.cowmark.imageSaveFailed": "이미지를 추가할 수 없습니다: {message}",
+  "app.cowmark.schemaOutOfDate": "구성 요소 목록이 오래되었을 수 있습니다 — {site}에 연결할 수 없습니다.",
+  "app.cowmark.schemaMissing": "구성 요소 목록이 없습니다 — {site}에 연결할 수 없습니다.",
   "app.cowmark.newPost": "새 게시물",
   "app.cowmark.newPostTitle": "게시물 제목",
   "app.cowmark.newPostCreate": "게시물 만들기",

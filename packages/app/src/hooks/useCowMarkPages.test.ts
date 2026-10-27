@@ -113,4 +113,19 @@ describe("useCowMarkPages images", () => {
     const { result } = renderHook(() => useCowMarkPages({ onImageError: vi.fn(), refreshTree: vi.fn(), rootPath: null }));
     expect(result.current).toBeNull();
   });
+
+  it("uses the served collections instead of the folder's file", async () => {
+    const served = JSON.stringify({
+      collections: [{ name: "guides", folder: "content/guides", url: "/guides/<file name without .md>", fields: [] }],
+    });
+    const { result, rerender } = renderHook(
+      ({ collectionsText }) => useCowMarkPages({ collectionsText, onImageError: vi.fn(), refreshTree: vi.fn(), rootPath: "/repo" }),
+      { initialProps: { collectionsText: served as string | null | undefined } }
+    );
+    await waitFor(() => expect(result.current?.collections.map((collection) => collection.name)).toEqual(["guides"]));
+    expect(result.current?.imageFolder("/repo/content/guides/a.md")).toBe("/guides/a");
+
+    rerender({ collectionsText: undefined });
+    await waitFor(() => expect(result.current?.collections.map((collection) => collection.name)).toEqual(["blog", "cuisines"]));
+  });
 });

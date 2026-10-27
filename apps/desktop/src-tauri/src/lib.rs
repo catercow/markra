@@ -402,6 +402,7 @@ pub fn run() {
             content_lint::cowmark_lint,
             content_lint::cowmark_format,
             content_lint::cowmark_csv_table,
+            content_lint::cowmark_schema,
             cowmark_companion::cowmark_companion_start,
             list_markdown_file_history,
             read_markdown_file_history,

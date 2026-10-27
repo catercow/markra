@@ -72,4 +72,22 @@ describe("useMdcSchema", () => {
     rerender({ root: null });
     expect(result.current).toBeNull();
   });
+
+  it("uses the served schema instead of the file, and follows it", async () => {
+    const { result, rerender } = renderHook(({ served }) => useMdcSchema("/vault", served), {
+      initialProps: { served: schemaText(["banner"]) as string | null | undefined }
+    });
+    expect(result.current?.components.map((component) => component.name)).toEqual(["banner"]);
+    expect(mockedReadNativeWorkspaceTextFile).not.toHaveBeenCalled();
+
+    rerender({ served: schemaText(["banner", "hero"]) });
+    expect(result.current?.components).toHaveLength(2);
+    rerender({ served: null });
+    expect(result.current).toBeNull();
+
+    // Back to the workspace file when nothing is served.
+    mockedReadNativeWorkspaceTextFile.mockResolvedValueOnce(schemaText(["callout"]));
+    rerender({ served: undefined });
+    await waitFor(() => expect(result.current?.components.map((component) => component.name)).toEqual(["callout"]));
+  });
 });

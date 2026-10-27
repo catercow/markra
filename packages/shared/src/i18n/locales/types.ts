@@ -713,6 +713,8 @@ export type I18nKey =
   | "app.cowmark.imageAltInsert"
   | "app.cowmark.imageAltSkip"
   | "app.cowmark.imageSaveFailed"
+  | "app.cowmark.schemaOutOfDate"
+  | "app.cowmark.schemaMissing"
   | "app.cowmark.newPost"
   | "app.cowmark.newPostTitle"
   | "app.cowmark.newPostCreate"

@@ -345,6 +345,8 @@ const messages: LocaleMessages = {
   "app.cowmark.imageAltInsert": "Bild einfügen",
   "app.cowmark.imageAltSkip": "Überspringen",
   "app.cowmark.imageSaveFailed": "Bild konnte nicht hinzugefügt werden: {message}",
+  "app.cowmark.schemaOutOfDate": "Die Komponentenliste ist möglicherweise veraltet – {site} ist nicht erreichbar.",
+  "app.cowmark.schemaMissing": "Keine Komponentenliste – {site} ist nicht erreichbar.",
   "app.cowmark.newPost": "Neuer Beitrag",
   "app.cowmark.newPostTitle": "Titel des Beitrags",
   "app.cowmark.newPostCreate": "Beitrag erstellen",

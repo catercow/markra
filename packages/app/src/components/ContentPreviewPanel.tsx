@@ -23,6 +23,7 @@ import {
   type ContentPreviewMessage
 } from "../lib/content-preview";
 import { navigationFlags, type ContentSaveProposal } from "../lib/cowmark-companion";
+import type { ContentSchemaNotice } from "../lib/content-schema";
 
 const pollIntervalMs = 1000;
 const typingDelayMs = 300;
@@ -46,6 +47,8 @@ type ContentPreviewPanelProps = {
   beforeSave?: () => Promise<unknown>;
   /** CowMark's managed folder: shows the sign-in and Save to studio footer. */
   managed?: ManagedContent;
+  /** CowMark: the component list couldn't be loaded from the site (see useContentSchema). */
+  schemaNotice?: ContentSchemaNotice | null;
   onConflictFiles?: (paths: string[]) => unknown;
   activeDocument: { content: string; path: string | null } | null;
   config: ContentPreviewConfig;
@@ -72,6 +75,7 @@ export function ContentPreviewPanel({
   revealRequest = 0,
   beforeSave,
   managed,
+  schemaNotice = null,
   onConflictFiles,
   config,
   language,
@@ -354,6 +358,20 @@ export function ContentPreviewPanel({
         src={config.site}
         title={label("app.contentPreview")}
       />
+      {schemaNotice ? (
+        <div
+          className="flex shrink-0 items-start gap-1.5 border-t border-(--border-default) px-3 py-1.5 text-[11px] leading-4 text-(--text-secondary)"
+          role="status"
+        >
+          <TriangleAlert aria-hidden="true" className="mt-px shrink-0" size={12} />
+          <span className="min-w-0 break-words">
+            {label(schemaNotice.kind === "missing" ? "app.cowmark.schemaMissing" : "app.cowmark.schemaOutOfDate").replace(
+              "{site}",
+              schemaNotice.site
+            )}
+          </span>
+        </div>
+      ) : null}
       {managed ? (
         <ContentSaveBar
           beforeSave={beforeSave}
