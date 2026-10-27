@@ -727,6 +727,8 @@ export type I18nKey =
   | "app.cowmark.conflictNext"
   | "app.cowmark.externalMerged"
   | "app.cowmark.externalConflicts"
+  | "app.cowmark.fixProblems"
+  | "app.cowmark.problemLine"
   | "app.cowmark.resolveConflicts"
   | "app.cowmark.companionView"
   | "app.cowmark.browserPreviewPortBusy"

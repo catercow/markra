@@ -716,6 +716,8 @@ const messages: BaseLocaleMessages = {
   "app.cowmark.conflictNext": "Next conflict",
   "app.cowmark.externalMerged": "Merged changes made outside CowMark",
   "app.cowmark.externalConflicts": "Changes made outside CowMark overlap with yours. Choose a version for each highlighted conflict.",
+  "app.cowmark.fixProblems": "Some pages have problems the site can't publish. Fix them, then save again:",
+  "app.cowmark.problemLine": "{file}, line {line}: {message}",
   "app.cowmark.resolveConflicts": "Someone else changed the same lines. Resolve the highlighted conflicts in {files}, then save again.",
   "app.cowmark.companionView": "Companion view",
   "app.cowmark.browserPreviewPortBusy": "Port 4100 is in use by another program, so the browser preview can't start. Quit that program, then try again.",

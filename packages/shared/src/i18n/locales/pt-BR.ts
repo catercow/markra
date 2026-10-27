@@ -359,6 +359,8 @@ const messages: LocaleMessages = {
   "app.cowmark.conflictNext": "Próximo conflito",
   "app.cowmark.externalMerged": "Alterações feitas fora do CowMark foram combinadas",
   "app.cowmark.externalConflicts": "Alterações feitas fora do CowMark se sobrepõem às suas. Escolha uma versão para cada conflito destacado.",
+  "app.cowmark.fixProblems": "Algumas páginas têm problemas que o site não consegue publicar. Corrija-os e salve novamente:",
+  "app.cowmark.problemLine": "{file}, linha {line}: {message}",
   "app.cowmark.resolveConflicts": "Outra pessoa alterou as mesmas linhas. Resolva os conflitos destacados em {files} e salve novamente.",
   "app.cowmark.companionView": "Visão de acompanhamento",
   "app.cowmark.browserPreviewPortBusy": "Outro programa está usando a porta 4100, então a prévia no navegador não pode iniciar. Feche esse programa e tente de novo.",

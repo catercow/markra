@@ -478,7 +478,8 @@ fn unresolved(root: &Path, paths: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// Commits only `paths` (the files the editor ticked) and pushes. Every other
+/// Commits only `paths` (the files the editor ticked) and pushes. Ticked files with
+/// conflict markers or lint errors are refused first (`conflict:`, `lint:`). Every other
 /// change stays in the working tree as a local draft. Paths that no longer have
 /// changes are ignored, so a stale selection can't stage anything else.
 pub fn save(
@@ -500,6 +501,10 @@ pub fn save(
             ),
             &marked,
         ));
+    }
+    let problems = crate::content_check::first_errors(root, paths);
+    if !problems.is_empty() {
+        return Err(crate::content_check::lint_error(&problems));
     }
     let mut committed = commit_selected(git, root, author, message, paths)?;
 
@@ -752,6 +757,32 @@ mod tests {
         let mut left: Vec<String> = status(&git, &mine).unwrap().changes.into_iter().map(|c| c.path).collect();
         left.sort();
         assert_eq!(left, vec!["content/blog/b.md".to_string(), "content/blog/draft.md".to_string()]);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn refuses_ticked_pages_with_lint_errors_until_they_are_fixed() {
+        let Some(git) = find_git() else { return };
+        let base = temp("lint");
+        let remote = remote_with_studio(&git, &base);
+        let mine = base.join("mine");
+        let me = Author::from_email("editor@catercow.com");
+        clone_into(&git, &remote, &mine).unwrap();
+        let before = remote_head(&git, &base);
+
+        fs::write(mine.join("content/blog/a.md"), "line one\n<script>alert(1)</script>\n").unwrap();
+        fs::write(mine.join("content/blog/b.md"), "b one\n\n[x](javascript:alert(1))\n").unwrap();
+        let error = save(&git, &mine, &remote, &me, "Mine", &ticked(&["content/blog/a.md", "content/blog/b.md"])).unwrap_err();
+        assert!(error.starts_with("lint: Fix these problems, then save again.\ncontent/blog/a.md, line 2: HTML isn't allowed"), "{error}");
+        assert!(error.contains("\ncontent/blog/b.md, line 3: This link can't be used"), "{error}");
+        assert!(error.contains(crate::content_check::LINT_PROBLEMS_PREFIX), "{error}");
+        assert_eq!(remote_head(&git, &base), before);
+        assert_eq!(status(&git, &mine).unwrap().ahead, 0);
+
+        // An unticked file's errors don't block; a fixed file saves.
+        fs::write(mine.join("content/blog/a.md"), "line one\n**bold**\n").unwrap();
+        assert!(save(&git, &mine, &remote, &me, "Mine", &ticked(&["content/blog/a.md"])).unwrap().committed);
+        assert_ne!(remote_head(&git, &base), before);
         let _ = fs::remove_dir_all(&base);
     }
 

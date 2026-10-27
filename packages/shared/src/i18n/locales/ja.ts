@@ -368,6 +368,8 @@ const messages: LocaleMessages = {
   "app.cowmark.conflictNext": "次の競合",
   "app.cowmark.externalMerged": "CowMark の外で行われた変更を統合しました",
   "app.cowmark.externalConflicts": "CowMark の外で行われた変更があなたの変更と重なっています。強調表示された競合ごとに版を選んでください。",
+  "app.cowmark.fixProblems": "サイトで公開できない問題があるページがあります。修正してから、もう一度保存してください：",
+  "app.cowmark.problemLine": "{file}、{line} 行目：{message}",
   "app.cowmark.resolveConflicts": "ほかの人が同じ行を変更しました。{files} の強調表示された競合を解決してから、もう一度保存してください。",
   "app.cowmark.companionView": "コンパニオン表示",
   "app.cowmark.browserPreviewPortBusy": "ポート 4100 が別のプログラムで使われているため、ブラウザプレビューを開始できません。そのプログラムを終了してから、もう一度お試しください。",

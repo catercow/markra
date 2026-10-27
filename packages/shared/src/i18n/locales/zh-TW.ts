@@ -368,6 +368,8 @@ const messages: LocaleMessages = {
   "app.cowmark.conflictNext": "下一處衝突",
   "app.cowmark.externalMerged": "已合併在 CowMark 之外所做的變更",
   "app.cowmark.externalConflicts": "在 CowMark 之外所做的變更與你的變更重疊。請為每處醒目標示的衝突選擇一個版本。",
+  "app.cowmark.fixProblems": "有些頁面有網站無法發布的問題。請修正後再次儲存：",
+  "app.cowmark.problemLine": "{file}，第 {line} 行：{message}",
   "app.cowmark.resolveConflicts": "其他人變更了相同的行。請解決 {files} 中醒目標示的衝突，然後再次儲存。",
   "app.cowmark.companionView": "伴隨檢視",
   "app.cowmark.browserPreviewPortBusy": "連接埠 4100 正被其他程式使用，瀏覽器預覽無法啟動。請結束該程式後再試一次。",

@@ -18,7 +18,7 @@ type ContentSaveBarProps = {
   managed: ManagedContent;
   /** Writes open documents to disk first, so git sees unsaved edits. */
   beforeSave?: () => Promise<unknown>;
-  /** Folder-relative files left with conflict markers; shown so the conflicts can be resolved. */
+  /** Folder-relative files to open: left with conflict markers, or refused for lint errors. */
   onConflictFiles?: (paths: string[]) => unknown;
   /** From the `cowmark` command: tick exactly these files and fill in the message. Never saves. */
   proposal?: ContentSaveProposal | null;
@@ -97,8 +97,17 @@ export function ContentSaveBar({
   }, [label, proposalNonce, refresh]);
 
   const handleFailure = (error: unknown, failedKey: I18nKey) => {
-    const { code, files, message: text } = contentAccessError(error);
-    if (code === "conflict" && files.length > 0) {
+    const { code, files, message: text, problems } = contentAccessError(error);
+    if (code === "lint" && problems.length > 0) {
+      const lines = problems.map((problem) =>
+        label("app.cowmark.problemLine")
+          .replace("{file}", problem.file)
+          .replace("{line}", String(problem.line))
+          .replace("{message}", problem.message)
+      );
+      setNotice({ tone: "error", text: [label("app.cowmark.fixProblems"), ...lines].join("\n") });
+      onConflictFiles?.(files);
+    } else if (code === "conflict" && files.length > 0) {
       setNotice({ tone: "error", text: label("app.cowmark.resolveConflicts").replace("{files}", files.join(", ")) });
       onConflictFiles?.(files);
     } else if (code === "signed_out") {
@@ -108,7 +117,7 @@ export function ContentSaveBar({
     } else if (code === "not_allowed") {
       managed.onSignedOut();
       setNotice({ tone: "error", text: label("app.cowmark.notAllowed") });
-    } else if (code === "conflict" || code === "offline") {
+    } else if (code === "conflict" || code === "lint" || code === "offline") {
       setNotice({ tone: "error", text });
     } else {
       setNotice({ tone: "error", text: label(failedKey).replace("{message}", text) });
@@ -294,7 +303,7 @@ export function ContentSaveBar({
 
       {notice && !(notice.tone === "error" && notice.text === label("app.cowmark.signInAgain") && !managed.email) ? (
         <p
-          className={`m-0 leading-4 ${notice.tone === "error" ? "text-(--danger,#c2410c)" : "text-(--text-secondary)"}`}
+          className={`m-0 whitespace-pre-line leading-4 ${notice.tone === "error" ? "text-(--danger,#c2410c)" : "text-(--text-secondary)"}`}
           role={notice.tone === "error" ? "alert" : "status"}
         >
           {notice.text}

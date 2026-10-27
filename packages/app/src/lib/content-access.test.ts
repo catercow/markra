@@ -5,15 +5,27 @@ describe("contentAccessError", () => {
     expect(contentAccessError(new Error('conflict: Resolve them.\nconflict-files: ["content/a.md","content/b.md"]'))).toEqual({
       code: "conflict",
       files: ["content/a.md", "content/b.md"],
-      message: "Resolve them."
+      message: "Resolve them.",
+      problems: []
     });
-    expect(contentAccessError("offline: No internet.")).toEqual({ code: "offline", files: [], message: "No internet." });
+    expect(contentAccessError("offline: No internet.")).toEqual({ code: "offline", files: [], message: "No internet.", problems: [] });
     expect(contentAccessError("conflict: Broken list.\nconflict-files: [oops")).toEqual({
       code: "conflict",
       files: [],
-      message: "Broken list."
+      message: "Broken list.",
+      problems: []
     });
-    expect(contentAccessError(new Error("Something else"))).toEqual({ code: "other", files: [], message: "Something else" });
+    expect(contentAccessError(new Error("Something else"))).toEqual({ code: "other", files: [], message: "Something else", problems: [] });
+  });
+
+  it("reads a lint refusal's problems and their files", () => {
+    const problem = { file: "content/a.md", line: 3, message: "HTML isn't allowed in pages." };
+    expect(contentAccessError(`lint: Fix these problems.\ncontent/a.md, line 3: HTML isn't allowed in pages.\nlint-problems: ${JSON.stringify([problem, { file: 1 }])}`)).toEqual({
+      code: "lint",
+      files: ["content/a.md"],
+      message: "Fix these problems.\ncontent/a.md, line 3: HTML isn't allowed in pages.",
+      problems: [problem]
+    });
   });
 });
 

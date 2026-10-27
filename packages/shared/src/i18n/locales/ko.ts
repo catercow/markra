@@ -359,6 +359,8 @@ const messages: LocaleMessages = {
   "app.cowmark.conflictNext": "다음 충돌",
   "app.cowmark.externalMerged": "CowMark 밖에서 한 변경 사항을 병합했습니다",
   "app.cowmark.externalConflicts": "CowMark 밖에서 한 변경 사항이 내 변경 사항과 겹칩니다. 강조 표시된 충돌마다 버전을 선택하세요.",
+  "app.cowmark.fixProblems": "사이트에 게시할 수 없는 문제가 있는 페이지가 있습니다. 수정한 다음 다시 저장하세요:",
+  "app.cowmark.problemLine": "{file}, {line}번째 줄: {message}",
   "app.cowmark.resolveConflicts": "다른 사람이 같은 줄을 변경했습니다. {files}에서 강조 표시된 충돌을 해결한 다음 다시 저장하세요.",
   "app.cowmark.companionView": "동반 보기",
   "app.cowmark.browserPreviewPortBusy": "다른 프로그램이 포트 4100을 사용 중이어서 브라우저 미리보기를 시작할 수 없습니다. 그 프로그램을 종료한 뒤 다시 시도하세요.",

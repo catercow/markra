@@ -359,6 +359,8 @@ const messages: LocaleMessages = {
   "app.cowmark.conflictNext": "Следующий конфликт",
   "app.cowmark.externalMerged": "Изменения, сделанные вне CowMark, объединены",
   "app.cowmark.externalConflicts": "Изменения, сделанные вне CowMark, пересекаются с вашими. Выберите версию для каждого выделенного конфликта.",
+  "app.cowmark.fixProblems": "На некоторых страницах есть проблемы, из-за которых сайт не может их опубликовать. Исправьте их и сохраните снова:",
+  "app.cowmark.problemLine": "{file}, строка {line}: {message}",
   "app.cowmark.resolveConflicts": "Кто-то другой изменил те же строки. Решите выделенные конфликты в {files}, затем сохраните снова.",
   "app.cowmark.companionView": "Режим компаньона",
   "app.cowmark.browserPreviewPortBusy": "Порт 4100 занят другой программой, поэтому предпросмотр в браузере не запускается. Закройте эту программу и попробуйте снова.",

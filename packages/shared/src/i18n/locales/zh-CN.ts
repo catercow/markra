@@ -716,6 +716,8 @@ const messages: LocaleMessages = {
   "app.cowmark.conflictNext": "下一处冲突",
   "app.cowmark.externalMerged": "已合并在 CowMark 之外所做的更改",
   "app.cowmark.externalConflicts": "在 CowMark 之外所做的更改与你的更改重叠。请为每处高亮的冲突选择一个版本。",
+  "app.cowmark.fixProblems": "有些页面存在网站无法发布的问题。请修正后再次保存：",
+  "app.cowmark.problemLine": "{file}，第 {line} 行：{message}",
   "app.cowmark.resolveConflicts": "其他人更改了相同的行。请解决 {files} 中高亮的冲突，然后再次保存。",
   "app.cowmark.companionView": "伴随视图",
   "app.cowmark.browserPreviewPortBusy": "端口 4100 正被其他程序占用，浏览器预览无法启动。请退出该程序后重试。",
