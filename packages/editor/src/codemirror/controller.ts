@@ -122,6 +122,26 @@ export function replaceCodeMirrorMarkdown(
   return true;
 }
 
+/**
+ * Rewrites the document to `markdown` as one undoable change that covers only the part that
+ * differs, so the caret and scroll position stay where they are. False when nothing changes.
+ */
+export function applyCodeMirrorMarkdownEdit(view: EditorView, markdown: string, userEvent = "input.format") {
+  const current = view.state.doc.toString();
+  if (current === markdown) return false;
+  let start = 0;
+  const shortest = Math.min(current.length, markdown.length);
+  while (start < shortest && current.charCodeAt(start) === markdown.charCodeAt(start)) start++;
+  let currentEnd = current.length;
+  let nextEnd = markdown.length;
+  while (currentEnd > start && nextEnd > start && current.charCodeAt(currentEnd - 1) === markdown.charCodeAt(nextEnd - 1)) {
+    currentEnd--;
+    nextEnd--;
+  }
+  view.dispatch({ changes: { from: start, insert: markdown.slice(start, nextEnd), to: currentEnd }, userEvent });
+  return true;
+}
+
 function aiBlockRange(state: EditorState, position: number) {
   const tree = syntaxTree(state);
   let node = tree.resolveInner(position, position === 0 ? 1 : -1);

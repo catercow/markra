@@ -97,3 +97,51 @@ describe("parseMdcSchema", () => {
     });
   });
 });
+
+describe("parseMdcSchema component input", () => {
+  it("reads table and image inputs, link formats and search filters, and ignores what it doesn't know", () => {
+    const schema = parseMdcSchema(JSON.stringify({
+      components: [
+        {
+          name: "pricing-grid",
+          props: [],
+          input: {
+            kind: "table",
+            columns: [
+              { name: "Item", aliases: ["Name", 3], required: true, format: "text", markdown: true },
+              { name: "" },
+              { name: "Price", format: "price" }
+            ]
+          }
+        },
+        { name: "gallery", props: [], input: { kind: "images" } },
+        {
+          name: "packages",
+          props: [{
+            name: "link",
+            type: "string",
+            format: "search-link",
+            searchParams: { package_type: { values: ["breakfast", 2] }, package_category: { values: null }, x: 5 }
+          }]
+        },
+        { name: "chart", props: [], input: { kind: "chart" } },
+        { name: "empty-table", props: [], input: { kind: "table", columns: [] } }
+      ]
+    }));
+
+    expect(schema?.components[0]?.input).toEqual({
+      columns: [
+        { aliases: ["Name"], format: "text", markdown: true, name: "Item", required: true },
+        { format: "price", name: "Price" }
+      ],
+      kind: "table"
+    });
+    expect(schema?.components[1]?.input).toEqual({ kind: "images" });
+    expect(schema?.components[2]?.props[0]).toMatchObject({
+      format: "search-link",
+      searchParams: { package_category: { values: null }, package_type: { values: ["breakfast"] }, x: { values: null } }
+    });
+    expect(schema?.components[3]?.input).toBeUndefined();
+    expect(schema?.components[4]?.input).toBeUndefined();
+  });
+});

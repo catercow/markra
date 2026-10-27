@@ -101,6 +101,7 @@ import { catercowPreviewSite, type ManagedContent } from "./lib/content-access";
 import { parseContentPreviewConfig } from "./lib/content-preview";
 import { CowMarkPagesContext, resolveContentImageSrc, useCowMarkPages } from "./hooks/useCowMarkPages";
 import { newPageText, slugify } from "./lib/cowmark-pages";
+import { contentCsvSource, formatContentPage, managedContentPage } from "./lib/content-lint";
 import { promptImageAltText, promptNewPostTitle } from "./components/CowMarkDialogs";
 import {
   useApplicationShortcuts,
@@ -701,6 +702,8 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
   const isEditorCurrentMarkdownEquivalent = editor.isCurrentMarkdownEquivalent;
   const replaceAllEditorSearchMatches = editor.replaceAllSearchMatches;
   const replaceEditorMarkdown = editor.replaceMarkdown;
+  const applyEditorMarkdownEdit = editor.applyMarkdownEdit;
+  const insertEditorCsvAtPoint = editor.insertCsvAtPoint;
   const replaceEditorSearchMatch = editor.replaceSearchMatch;
   const revealEditorSearchMatch = editor.revealSearchMatch;
   const runEditorShortcut = editor.runEditorShortcut;
@@ -3150,6 +3153,32 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
       : rawFileTreeRootName === "Files"
         ? translate("app.files")
         : rawFileTreeRootName;
+  // CowMark stores component input canonically: before a content page is written, its tables,
+  // prices, codes and links are formatted in the editor as one undoable change. Text that
+  // can't be read is left as typed (the lint and the save guard report it).
+  const formatManagedPageBeforeSave = useCallback(async () => {
+    if (readOnlyMode || sourceSurfaceActive || largeMarkdownVisualBlockedRef.current) return;
+    const text = getEditorCurrentMarkdown(document.content);
+    const formatted = await formatContentPage({
+      documentPath: document.path,
+      format: getAppRuntime().files.contentFormat,
+      language: appLanguage.language,
+      root: managedRoot,
+      text
+    });
+    // Typing while it formatted wins; the next save formats again.
+    if (formatted === null || getEditorCurrentMarkdown(document.content) !== text) return;
+    applyEditorMarkdownEdit(formatted);
+  }, [
+    appLanguage.language,
+    applyEditorMarkdownEdit,
+    document.content,
+    document.path,
+    getEditorCurrentMarkdown,
+    managedRoot,
+    readOnlyMode,
+    sourceSurfaceActive
+  ]);
   const saveDocument = useCallback(async (saveAs = false) => {
     if (focusedSideDocumentTabId) {
       const savedFile = await saveMarkdownTab(focusedSideDocumentTabId, saveAs);
@@ -3160,6 +3189,7 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
       return savedFile;
     }
 
+    await formatManagedPageBeforeSave();
     const savedFile = await saveCurrentDocument(saveAs);
     if (savedFile && activeTabId) persistSideDocumentGroupSavedTabPath(activeTabId, savedFile.path);
     if (savedFile) refreshOpenDocumentHistory(savedFile.path);
@@ -3170,6 +3200,7 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
   }, [
     activeTabId,
     focusedSideDocumentTabId,
+    formatManagedPageBeforeSave,
     persistSideDocumentGroupSavedTabPath,
     refreshOpenDocumentHistory,
     runWorkspaceSync,
@@ -3565,6 +3596,23 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
     syncVisualMarkdownAfterEditorCommand,
     translate
   ]);
+  // A `.csv` dropped on a CowMark content page becomes a Markdown table (inside the table
+  // component it was dropped in); anywhere else it is ignored, as before.
+  const handleDroppedCsv = useCallback(async (target: Extract<NativeMarkdownDroppedTarget, { kind: "csv" }>) => {
+    const runtime = getAppRuntime().files;
+    if (readOnlyMode || activeImageFile || !managedContentPage(managedRoot, document.path)) return;
+    const convert = contentCsvSource({
+      contentRoot: () => managedRoot,
+      csvTable: runtime.contentCsvTable,
+      documentPath: () => document.path
+    });
+    const text = convert ? await runtime.readWorkspaceTextFile?.(target.path) : null;
+    if (!convert || !text) return;
+    await insertEditorCsvAtPoint(text, target.point, {
+      components: () => mdcSchema?.components,
+      convert
+    });
+  }, [activeImageFile, document.path, insertEditorCsvAtPoint, managedRoot, mdcSchema, readOnlyMode]);
   const handleDroppedLocalImage = useCallback(async (target: Extract<NativeMarkdownDroppedTarget, { kind: "image" }>) => {
     if (readOnlyMode || activeImageFile || !document.path) return;
 
@@ -3621,10 +3669,14 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
       await handleDroppedLocalImage(target);
       return;
     }
+    if (target.kind === "csv") {
+      await handleDroppedCsv(target);
+      return;
+    }
     if (managedRoot) return;
 
     await handleDroppedMarkdownPath(target);
-  }, [handleDroppedLocalImage, handleDroppedMarkdownPath, managedRoot]);
+  }, [handleDroppedCsv, handleDroppedLocalImage, handleDroppedMarkdownPath, managedRoot]);
   const handleInsertMarkdownSnippet = useCallback((...args: Parameters<typeof insertEditorMarkdownSnippet>) => {
     if (readOnlyMode) return;
 

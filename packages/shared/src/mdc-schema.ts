@@ -12,7 +12,26 @@ export type MdcPropSchema = {
   options?: string[];
   /** Fields of each element when the prop is an array of objects. */
   items?: MdcPropSchema[];
+  /** How the value is written: `search-link` (a CaterCow search URL) or `review-link`. */
+  format?: string;
+  /** For a `search-link`: the search filters the site knows, with their allowed values. */
+  searchParams?: Record<string, { values: string[] | null }>;
 };
+
+/** A column of a table component's slot. */
+export type MdcInputColumn = {
+  /** The canonical header text. */
+  name: string;
+  aliases?: string[];
+  required?: boolean;
+  /** `text`, `price`, `code` or `link`. */
+  format?: string;
+  /** Inline Markdown is allowed in the cells. */
+  markdown?: boolean;
+};
+
+/** What goes in a component's slot: one Markdown table, or Markdown images. */
+export type MdcComponentInput = { kind: "table"; columns: MdcInputColumn[] } | { kind: "images" };
 
 export type MdcComponentExample = {
   from?: string;
@@ -30,6 +49,7 @@ export type MdcComponentSchema = {
   /** Whether the component renders a default slot body. */
   content?: boolean;
   example?: MdcComponentExample;
+  input?: MdcComponentInput;
 };
 
 export type MdcSchema = {
@@ -65,8 +85,46 @@ function parseProp(value: unknown): MdcPropSchema | null {
   if (Array.isArray(value.items)) {
     prop.items = parseProps(value.items);
   }
+  const format = optionalString(value.format);
+  if (format !== undefined) prop.format = format;
+  const searchParams = parseSearchParams(value.searchParams);
+  if (searchParams) prop.searchParams = searchParams;
 
   return prop;
+}
+
+function stringList(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : undefined;
+}
+
+function parseSearchParams(value: unknown): MdcPropSchema["searchParams"] {
+  if (!isRecord(value) || Array.isArray(value)) return undefined;
+  const params: NonNullable<MdcPropSchema["searchParams"]> = {};
+  for (const [name, param] of Object.entries(value)) {
+    params[name] = { values: isRecord(param) ? stringList(param.values) ?? null : null };
+  }
+  return params;
+}
+
+function parseInput(value: unknown): MdcComponentInput | undefined {
+  if (!isRecord(value)) return undefined;
+  if (value.kind === "images") return { kind: "images" };
+  if (value.kind !== "table" || !Array.isArray(value.columns)) return undefined;
+  const columns: MdcInputColumn[] = [];
+  for (const entry of value.columns) {
+    if (!isRecord(entry)) continue;
+    const name = nonEmptyString(entry.name);
+    if (!name) continue;
+    const column: MdcInputColumn = { name };
+    const aliases = stringList(entry.aliases);
+    if (aliases) column.aliases = aliases;
+    if (typeof entry.required === "boolean") column.required = entry.required;
+    const format = optionalString(entry.format);
+    if (format !== undefined) column.format = format;
+    if (typeof entry.markdown === "boolean") column.markdown = entry.markdown;
+    columns.push(column);
+  }
+  return columns.length > 0 ? { columns, kind: "table" } : undefined;
 }
 
 function parseProps(values: unknown[]) {
@@ -95,6 +153,8 @@ function parseComponent(value: unknown): MdcComponentSchema | null {
       ? { markdown: value.example.markdown }
       : { from, markdown: value.example.markdown };
   }
+  const input = parseInput(value.input);
+  if (input) component.input = input;
 
   return component;
 }

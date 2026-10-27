@@ -139,9 +139,19 @@ function caretFor(state: EditorState, block: MdcBlock) {
   return emptyLine ?? block.close?.to ?? block.open.to;
 }
 
+/** The first cell of a table skeleton's empty last row, for a table component. */
+function tableCaret(state: EditorState, block: MdcBlock) {
+  if (!block.close) return null;
+  const line = state.doc.lineAt(block.close.from).number - 1;
+  if (line <= state.doc.lineAt(block.open.to).number) return null;
+  const row = state.doc.line(line);
+  const pipe = row.text.indexOf("|");
+  return pipe < 0 ? null : Math.min(row.from + pipe + 2, row.to);
+}
+
 /**
- * Inserts a component's snippet at the selection, puts the caret in its body and opens its
- * props form.
+ * Inserts a component's snippet at the selection, puts the caret in its body (in the first
+ * empty cell for a table component) and opens its props form.
  */
 export function insertMdcComponent(view: EditorView, component: MdcCatalogComponent) {
   if (view.state.facet(EditorState.readOnly)) return false;
@@ -156,9 +166,10 @@ export function insertMdcComponent(view: EditorView, component: MdcCatalogCompon
   const snippetEnd = insertion.snippetFrom + insertion.insert.length;
   const block = parseBlocks(view.state, snippetEnd).find((candidate) => candidate.open.from >= insertion.snippetFrom);
   if (!block) return true;
+  const caret = component.input?.kind === "table" ? tableCaret(view.state, block) : null;
   view.dispatch({
     effects: openMdcPropsEditor.of(block.open.from),
-    selection: EditorSelection.cursor(caretFor(view.state, block)),
+    selection: EditorSelection.cursor(caret ?? caretFor(view.state, block)),
   });
   return true;
 }

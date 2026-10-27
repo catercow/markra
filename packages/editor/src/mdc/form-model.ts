@@ -17,6 +17,8 @@ export interface MdcPropSchema {
   options?: Array<string | number> | null;
   /** Field definitions for an array of objects. */
   items?: MdcPropSchema[] | null;
+  /** How the value is written, e.g. `search-link` (a CaterCow search URL) or `review-link`. */
+  format?: string | null;
 }
 
 /** Structurally compatible with `MdcComponentSchema` from `@markra/shared`. */

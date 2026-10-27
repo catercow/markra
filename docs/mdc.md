@@ -12,11 +12,44 @@ This fork edits [MDC](https://content.nuxt.com/docs/files/markdown) (Nuxt Conten
 - **Parsing** (`packages/editor/src/codemirror/mdc-syntax.ts`): `::name{attrs}` blocks, a `---` YAML props block directly after the opener, `#slot` lines, `::` closers, `:name[label]{attrs}` inline components, and `{attrs}` after spans, emphasis, code and links. Openers and closers are separate nodes and the content between them is parsed as ordinary Markdown. `readMdcBlocks` pairs them by colon count.
 - **Cards** (`mdc-preview.ts`): each block is drawn as a card, with nested cards indented. The opener shows as a chip with the component's name and an Edit button; the props are YAML-highlighted. Moving the caret onto the opener or the closer shows its source.
 - **Props form** (`mdc-edit.ts`, `packages/editor/src/mdc/`): Edit opens a form generated from `schema/components.json`. Each change rewrites only that prop, in the braces or in the YAML block, and leaves the rest of the text byte for byte.
-- **Insert** (`mdc-insert.ts`, `packages/editor/src/mdc/components.ts`): with a schema, the slash menu has a Components section, grouped by `group` and searchable by name, component id and purpose. The block "+" button opens the same menu with the components first. Choosing one inserts the schema `example` (or a bare block) as its own block, adds colons when it goes inside another component, and opens the props form.
+- **Insert** (`mdc-insert.ts`, `packages/editor/src/mdc/components.ts`): with a schema, the slash menu has a Components section, grouped by `group` and searchable by name, component id and purpose. The block "+" button opens the same menu with the components first. Choosing one inserts the schema `example` (or a bare block) as its own block, adds colons when it goes inside another component, and opens the props form. A component with a table `input` gets an empty table with its columns instead, with the caret in the first cell; a gallery (`"kind": "images"`) gets a row of two placeholder images. Props whose `format` is `search-link` or `review-link` show "Paste a CaterCow search URL" (or review URL) as their placeholder.
 - **Lint** (`mdc-lint.ts`): diagnostics for unknown components, missing, unknown and mistyped props (list item fields included), and unclosed blocks and props blocks. A card hides its opener line, so problems found there underline the card's label instead.
 - **Content lint in CowMark.** For Markdown files inside the managed content folder, CowMark lints with the shared Rust crate `crates/cowmark-lint` instead of `mdc-lint.ts`, so the editor reports exactly what `cowmark check` and CI do: the component rules above plus front matter against `schema/collections.json`, missing images, image descriptions, links to missing pages and leftover conflict markers. Three error rules cover what the site refuses to render (`crates/cowmark-lint/src/safety.rs`): `raw-html` flags every HTML block and inline tag, comment, processing instruction, declaration and CDATA section, found by a CommonMark parser (pulldown-cmark) over the prose only, so autolinks, code, escaped `\<`, a `<` that isn't a tag, component lines, props blocks, front matter and `{…}` attributes are left alone; `unsafe-link` flags Markdown links and images, and URL props and attributes (`href`, `src`, `srcset`, `to`, `url`, `link`, `action`, `poster` and names ending in them), whose scheme isn't `http`, `https`, `mailto` or `tel` (relative URLs are fine; the scheme is read as a browser reads it, ignoring case, tabs and line breaks); `unsafe-attribute` flags `on*`, `@*`, `v-on`, `v-bind`, `v-model`, `v-html`, `srcdoc` and `formaction` in component braces, YAML props and inline `{…}` attributes. The `cowmark_lint` command (`apps/desktop/src-tauri/src/content_lint.rs`) keeps one linter per folder and rebuilds it when either schema file changes. The app passes the folder-relative path and the message templates (`editor.mdcLint.*` and `editor.contentLint.*`); the diagnostic's source is the rule id. Other files, stock Markra and builds without the runtime command (`files.contentLint`) use `mdc-lint.ts`, as does a failed native call.
 
-The file is saved exactly as typed. Cards and forms never change text by themselves.
+Cards and forms never change text by themselves. Outside CowMark content pages the file is saved exactly as typed.
+
+### Component input: lenient when typed, canonical when stored
+
+Some components take their content as a Markdown table or as images, and some props take a CaterCow URL. The schema says which, and cowmark-lint (`crates/cowmark-lint/src/formats.rs`, `input.rs`) reads what people type leniently and writes it back in one canonical form, so the site can be strict. The schema shape is a contract with the site, which generates it:
+
+```json
+"input": { "kind": "table", "columns": [
+  { "name": "Item", "aliases": ["Name", "Dish"], "required": true, "format": "text", "markdown": true },
+  { "name": "Price", "aliases": ["Cost"], "required": true, "format": "price" } ] }
+"input": { "kind": "images" }
+"props": [{ "name": "link", "type": "string", "format": "search-link", "searchParams": { "diet": { "values": ["vegan", "…"] }, "q": { "values": null } } }]
+```
+
+Unknown keys and odd types are ignored rather than rejected, so an older or newer schema never stops the linter.
+
+| Format | Read leniently | Stored as | Error when |
+| --- | --- | --- | --- |
+| table headers | Any alias, any case, any order; extra spaces; no outer pipes | Canonical names in schema order, columns padded and aligned | Unknown, duplicate or unnamed column; a required column missing; a row with more cells than headers; no rows |
+| `price` | `7.5`, `7.5 USD`, `US$ 9`, `1200.5`, `$1,200` | `$7.50`, `$9.00`, `$1,200.50` | Ranges (`7-9`), approximations (`~$13`, `13+`), decimal commas (`7,25`), more than two decimals, other currencies, words (`TBD`) |
+| `code` | Lower case, spaces, backticks | `SAVE10` (A–Z, 0–9, `-`, `_`) | Other characters |
+| `link` | `https://www.catercow.com/x`, `<…>` | `/x` for CaterCow addresses, else the http(s) address | Other schemes or text that isn't an address |
+| `search-link` | Full CaterCow URLs, any parameter order, `name[]=` or repeated names, any value case | `/search?…` with parameters in schema order, values matched to the schema's case, percent-encoded | A path other than `/search`; a parameter the schema doesn't list; a value not in its list (with a did-you-mean suggestion) |
+| `review-link` | Full URLs, query strings, fragments, trailing slashes | `/catering/<id>-slug` or `/packages/<id>-slug` | Anything else |
+| gallery | Images on separate lines or one line | Each row on one line, separated by a blank line | Text or anything but images in the slot; no images |
+
+Something that can't be read is an error (`component-table`, `cell-format`, `link-format`, `gallery-images`). Something understood but not canonical is also an error, and its diagnostic carries a fix (`fix: { from, to, fromUtf16, toUtf16, insert }`). `cowmark_lint::format(path, text, &schemas)` applies every fix, repeatedly until nothing changes, and returns the problems left. A table with a structural error (unknown, duplicate or unnamed column, extra cells) is never rewritten, so formatting never drops text.
+
+Where formatting runs:
+
+- **CowMark saves.** Saving a managed content page (`content/**/*.md`) formats it first, through the `cowmark_format` command, as one undoable change (`applyCodeMirrorMarkdownEdit`). A failed or unavailable format saves the text as typed; Save to studio still refuses pages with errors. Pages saved from the source view or side documents aren't formatted.
+- **The editor.** Each fixable diagnostic has a **Fix** button (`editor.lintFix`) that applies just that fix.
+- **CSV.** Pasting CSV or spreadsheet cells (`mdc-csv.ts`), or dropping a `.csv` file, on a content page converts it to a table with `cowmark_csv_table` (`crates/cowmark-core/src/csv_table.rs`, the `csv` crate). Inside a table component the table takes that component's canonical headers and values, and replaces the empty skeleton table. Text that only looks like CSV is pasted as before.
+- **The CLI and MCP**, below.
 
 ## Site preview (desktop only)
 
@@ -96,6 +129,9 @@ Paths are relative to the content folder (or absolute inside it). Anything outsi
 | Command | Needs the app | What it does |
 | --- | --- | --- |
 | `cowmark check [paths…] [--json] [--strict] [--github]` | no | Lints Markdown files (default: all of `content/`) with cowmark-lint, as the editor does. Prints `file:line:col: severity [rule] message`. Exit 0 when clean or only warnings, 1 on errors (or warnings with `--strict`), 2 when it couldn't run. `--github` adds GitHub Actions annotations for errors |
+| `cowmark check --fix [paths…]` | no | Formats the files first (as `fmt`), then checks them |
+| `cowmark fmt [paths…] [--check]` | no | Writes component input in its canonical form and lists the files it changed. With `--check` it changes nothing and exits 1 when a file would change |
+| `cowmark table [file] [--component <name>]` | no | Prints a CSV file (or stdin; tab-separated when the first line has a tab) as a Markdown table. With `--component` the table is wrapped in that table component and formatted, and problems are printed to stderr |
 | `cowmark status [--json]` | no | Changed files, branch and commits waiting to be sent: from the app when it runs on this folder, else from git |
 | `cowmark open <path>` | yes | Opens a page in the editor and preview |
 | `cowmark propose <paths…> -m <message>` | yes | `propose_publish`: ticks the files and fills in the message. Doesn't publish |
@@ -113,10 +149,12 @@ Paths on the command line are relative to the working directory when they exist 
 | Tool | Hints | |
 | --- | --- | --- |
 | `list_files`, `read_file` | read-only | Any file in the folder but `.git`; text up to 2 MB |
-| `write_file`, `rename_file`, `delete_file` | destructive | Markdown under `content/` only; rename and delete also take images under `content/` and `public/`. `write_file` writes through a temporary file and returns the check result. Writing a file open with unsaved edits in CowMark is fine: the tab merges it |
+| `write_file`, `rename_file`, `delete_file` | destructive | Markdown under `content/` only; rename and delete also take images under `content/` and `public/`. `write_file` formats component input (as `cowmark fmt`), writes through a temporary file and returns the check result, saying when it reformatted. Writing a file open with unsaved edits in CowMark is fine: the tab merges it |
 | `list_components`, `get_component_schema`, `get_collection_schema` | read-only | From `schema/components.json` and `schema/collections.json`, with notes on dates, lengths and images |
 | `new_page` | creates only | `<collection folder>/<slug>.md` with the title, the required fields (dates today, the rest empty unless given) and an optional body; lists the fields left to fill |
 | `add_image` | creates only | Copies a local file or base64 data (PNG, JPEG, GIF, WebP, AVIF, SVG, up to 25 MB, checked by content) to the page's image folder `public/<collection>/<slug>/<name>`, named like the editor names imports, and returns the site path (`/<collection>/<slug>/<name>`) and a Markdown snippet. Not resized, unlike the editor's import |
+| `format_file` | not destructive | Formats one Markdown file under `content/` in place, as `cowmark fmt`, and returns what's left to fix |
+| `csv_to_table` | read-only | CSV text to a Markdown table, optionally for a table component, as `cowmark table` |
 | `check`, `status`, `preview_link` | read-only | As the commands |
 | `get_latest`, `open_in_cowmark` | not destructive | As the commands |
 | `propose_publish` | not destructive | Ticks files and fills in the message; says nothing was published and a person must click Save to studio |

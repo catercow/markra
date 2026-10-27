@@ -3,6 +3,22 @@
 
 import type { MdcComponentSchema } from "./form-model.ts";
 
+/** A column of a table component's slot (`input.columns` in the schema). */
+export interface MdcInputColumn {
+  /** The canonical header text. */
+  name: string;
+  aliases?: readonly string[] | null;
+  required?: boolean | null;
+  /** `text`, `price`, `code` or `link`. */
+  format?: string | null;
+  markdown?: boolean | null;
+}
+
+/** What goes in a component's slot: one Markdown table, or Markdown images. */
+export type MdcComponentInput =
+  | { kind: "table"; columns: readonly MdcInputColumn[] }
+  | { kind: "images" };
+
 /** Structurally compatible with `MdcComponentSchema` from `@markra/shared`. */
 export interface MdcCatalogComponent extends MdcComponentSchema {
   /** Vue component name, e.g. `AddressCta`. */
@@ -12,6 +28,7 @@ export interface MdcCatalogComponent extends MdcComponentSchema {
   /** Whether the component renders a default slot body. */
   content?: boolean | null;
   example?: { markdown: string } | null;
+  input?: MdcComponentInput | null;
 }
 
 export interface MdcComponentGroup {
@@ -42,10 +59,33 @@ export function groupMdcComponents(components: readonly MdcCatalogComponent[]): 
 const blockOpener = /^[ \t]*:{2,}[A-Za-z]/u;
 
 /**
- * The Markdown inserted for a component: its schema example when that is a block, otherwise a
- * bare block, with an empty body line when the component renders content.
+ * `| Item | Price |` with a `| --- |` row and one empty row, padded the way CowMark writes tables
+ * (`render_table` in cowmark-lint), so filling it in doesn't reflow the other rows.
+ */
+export function mdcTableSkeleton(columns: readonly MdcInputColumn[]): string {
+  const widths = columns.map((column) => Math.max(3, [...column.name].length));
+  const row = (cells: string[]) => `| ${cells.map((cell, index) => cell.padEnd(widths[index]!)).join(" | ")} |`;
+  return [
+    row(columns.map((column) => column.name)),
+    row(widths.map((width) => "-".repeat(width))),
+    row(columns.map(() => "")),
+  ].join("\n");
+}
+
+/** A gallery row to replace: images on one line form a row, a blank line starts the next. */
+export const MDC_GALLERY_SKELETON = "![Photo description](/blog/photo-1.jpg) ![Photo description](/blog/photo-2.jpg)";
+
+/**
+ * The Markdown inserted for a component: a ready-to-fill body for table and image components,
+ * else its schema example when that is a block, otherwise a bare block, with an empty body line
+ * when the component renders content.
  */
 export function mdcComponentSnippet(component: MdcCatalogComponent): string {
+  const input = component.input;
+  if (input?.kind === "table" && input.columns.length > 0) {
+    return `::${component.name}\n${mdcTableSkeleton(input.columns)}\n::`;
+  }
+  if (input?.kind === "images") return `::${component.name}\n${MDC_GALLERY_SKELETON}\n::`;
   const example = component.example?.markdown.replace(/^\s*\n/u, "").trimEnd();
   if (example && blockOpener.test(example)) return example;
   return component.content === false ? `::${component.name}\n::` : `::${component.name}\n\n::`;

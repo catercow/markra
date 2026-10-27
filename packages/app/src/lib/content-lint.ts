@@ -2,7 +2,7 @@
 // `cowmark check` and CI) checks documents in the managed content folder, so the editor
 // reports exactly what those do. Stock Markra and other files keep the editor's MDC lint.
 
-import type { ExternalLintDiagnostic, ExternalMdcLint } from "@markra/editor/codemirror";
+import type { ExternalLintDiagnostic, ExternalMdcLint, MdcCsvConvert } from "@markra/editor/codemirror";
 import { t, type AppLanguage } from "@markra/shared";
 import { catercowPreviewSite } from "./content-access";
 import { rootRelativePath } from "./cowmark-pages";
@@ -17,6 +17,29 @@ export type ContentLint = (
   text: string,
   messages: ContentLintMessages
 ) => Promise<ExternalLintDiagnostic[]>;
+
+/** A page with component input in canonical form (`cowmark_format`), and the problems left. */
+export interface ContentFormatResult {
+  text: string;
+  changed: boolean;
+  diagnostics: ExternalLintDiagnostic[];
+}
+
+export type ContentFormat = (
+  root: string,
+  path: string,
+  text: string,
+  messages: ContentLintMessages
+) => Promise<ContentFormatResult>;
+
+/** CSV as a Markdown table (`cowmark_csv_table`); null when the text isn't a table. */
+export type ContentCsvTable = (
+  root: string,
+  text: string,
+  csvType: boolean,
+  component: string | null,
+  wrap: boolean
+) => Promise<{ markdown: string; problems: string[] } | null>;
 
 // Shared with the editor's MDC lint: `editor.mdcLint.*`.
 const mdcLintKeys = [
@@ -118,5 +141,63 @@ export function contentLintSource({ contentRoot, documentPath, language, lint }:
     const path = root ? rootRelativePath(root, documentPath()) : null;
     if (!root || !path || !/\.md$/iu.test(path)) return null;
     return lint(root, path, text, messages);
+  };
+}
+
+/** The folder-relative path of a content page (`content/…/*.md`) in the managed folder, else null. */
+export function managedContentPage(root: string | null | undefined, documentPath: string | null | undefined) {
+  if (!root || catercowPreviewSite() === null) return null;
+  const path = rootRelativePath(root, documentPath);
+  return path && /^content\/.+\.md$/iu.test(path) ? path : null;
+}
+
+/**
+ * The text a content page is saved as: tables, prices, codes and links in canonical form.
+ * Null when nothing changes, the page isn't a managed content page, or formatting isn't
+ * available or fails (the page is then saved as typed and the save guard still applies).
+ */
+export async function formatContentPage({
+  documentPath,
+  format,
+  language,
+  root,
+  text,
+}: {
+  documentPath: string | null | undefined;
+  format: ContentFormat | undefined;
+  language: AppLanguage;
+  root: string | null | undefined;
+  text: string;
+}) {
+  const path = managedContentPage(root, documentPath);
+  if (!format || !root || !path) return null;
+  try {
+    const result = await format(root, path, text, contentLintMessages(language));
+    return result.changed && result.text !== text ? result.text : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The editor's CSV paste for CowMark content pages: converted by the shared Rust code, with a
+ * table component's columns when the caret is in one. Undefined in stock Markra or without the
+ * runtime command, so pasting stays as before.
+ */
+export function contentCsvSource({
+  contentRoot,
+  csvTable,
+  documentPath,
+}: {
+  contentRoot: () => string | null | undefined;
+  csvTable: ContentCsvTable | undefined;
+  documentPath: () => string | null | undefined;
+}): MdcCsvConvert | undefined {
+  if (!csvTable || catercowPreviewSite() === null) return undefined;
+  return async ({ component, csvType, text }) => {
+    const root = contentRoot();
+    if (!root || !managedContentPage(root, documentPath())) return null;
+    const table = await csvTable(root, text, csvType, component, false);
+    return table?.markdown ?? null;
   };
 }

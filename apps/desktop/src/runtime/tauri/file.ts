@@ -178,7 +178,7 @@ export type NativeMarkdownDroppedTarget =
       name: string;
     }
   | {
-      kind: "image";
+      kind: "image" | "csv";
       path: string;
       name: string;
       point?: NativeMarkdownDropPoint;
@@ -1143,6 +1143,17 @@ function imageDropTargetFromPath(path: string, point?: NativeMarkdownDropPoint):
   };
 }
 
+function csvDropTargetFromPath(path: string, point?: NativeMarkdownDropPoint): NativeMarkdownDroppedTarget | null {
+  if (!/\.csv$/iu.test(path)) return null;
+
+  return {
+    kind: "csv",
+    name: fileNameFromPath(path),
+    path,
+    ...(point ? { point } : {})
+  };
+}
+
 function nativeDropPointFromPosition(position: unknown): NativeMarkdownDropPoint | undefined {
   if (!position || typeof position !== "object") return undefined;
   const coordinates = "Physical" in position && typeof position.Physical === "object" && position.Physical !== null
@@ -1168,6 +1179,8 @@ function normalizeNativeDropPaths(paths: unknown) {
 }
 
 async function firstDroppedMarkdownTarget(paths: string[], point?: NativeMarkdownDropPoint) {
+  // A CSV is used only when nothing else in the drop is, so other drops behave as before.
+  let csvTarget: NativeMarkdownDroppedTarget | null = null;
   for (const path of paths) {
     try {
       return droppedTargetFromResponse(await invokeNative<MarkdownOpenPathResponse>("resolve_markdown_path", {
@@ -1176,11 +1189,12 @@ async function firstDroppedMarkdownTarget(paths: string[], point?: NativeMarkdow
     } catch {
       const imageTarget = imageDropTargetFromPath(path, point);
       if (imageTarget) return imageTarget;
+      csvTarget ??= csvDropTargetFromPath(path, point);
       // Keep looking; drag payloads can contain unsupported files.
     }
   }
 
-  return null;
+  return csvTarget;
 }
 
 async function cleanupNativeEventListeners(cleanups: Array<() => unknown>) {
