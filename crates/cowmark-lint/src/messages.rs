@@ -41,6 +41,10 @@ pub struct Messages {
     pub broken_link: String,
     // Merges.
     pub unresolved_conflict: String,
+    // What the site refuses to render.
+    pub raw_html: String,
+    pub unsafe_link: String,
+    pub unsafe_attribute: String,
 }
 
 impl Default for Messages {
@@ -107,6 +111,14 @@ impl Default for Messages {
             unresolved_conflict: s(
                 "This part still has two versions from a merge. Choose one (or keep both) before saving.",
             ),
+
+            raw_html: s(
+                "HTML isn't allowed in pages. Use Markdown or a component from the Components list instead.",
+            ),
+            unsafe_link: s(
+                "This link can't be used on the site. Links must start with https://, mailto:, tel: or /.",
+            ),
+            unsafe_attribute: s("`{attribute}` can't be used on the site. Remove it."),
         }
     }
 }

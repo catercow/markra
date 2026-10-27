@@ -41,38 +41,60 @@ export type ManagedContent = {
   onSignedOut: () => unknown;
 };
 
-export type ContentAccessErrorCode = "conflict" | "not_allowed" | "offline" | "other" | "signed_out";
+export type ContentAccessErrorCode = "conflict" | "lint" | "not_allowed" | "offline" | "other" | "signed_out";
 
 export type ContentAccessError = {
   code: ContentAccessErrorCode;
-  /** Folder-relative files a `conflict` left with markers to resolve. */
+  /** Folder-relative files a `conflict` left with markers to resolve, or that `lint` refused. */
   files: string[];
   message: string;
+  /** For `lint`: the first error in each refused file. */
+  problems: LintProblem[];
 };
 
-const conflictFilesPrefix = "\nconflict-files: ";
+/** A ticked page's first lint error, which made Save to studio refuse it. */
+export type LintProblem = { file: string; line: number; message: string };
 
-function conflictFiles(list: string) {
+const conflictFilesPrefix = "\nconflict-files: ";
+const lintProblemsPrefix = "\nlint-problems: ";
+
+function jsonList(list: string): unknown[] {
   try {
-    const files: unknown = JSON.parse(list);
-    return Array.isArray(files) ? files.filter((file): file is string => typeof file === "string") : [];
+    const parsed: unknown = JSON.parse(list);
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
 }
 
-/** Splits the backend's `code: message` errors, and a conflict's trailing file list. */
+function conflictFiles(list: string) {
+  return jsonList(list).filter((file): file is string => typeof file === "string");
+}
+
+function lintProblems(list: string) {
+  return jsonList(list).filter((problem): problem is LintProblem => {
+    const value = problem as Partial<LintProblem> | null;
+    return typeof value?.file === "string" && typeof value.line === "number" && typeof value.message === "string";
+  });
+}
+
+/** Splits the backend's `code: message` errors, and a conflict's or lint refusal's trailing list. */
 export function contentAccessError(error: unknown): ContentAccessError {
   const text = String((error as Error)?.message ?? error ?? "").trim();
-  const match = /^(conflict|not_allowed|offline|signed_out):\s*/u.exec(text);
-  if (!match) return { code: "other", files: [], message: text };
+  const match = /^(conflict|lint|not_allowed|offline|signed_out):\s*/u.exec(text);
+  if (!match) return { code: "other", files: [], message: text, problems: [] };
 
+  const code = match[1] as ContentAccessErrorCode;
   const rest = text.slice(match[0].length);
-  const split = rest.indexOf(conflictFilesPrefix);
+  const prefix = code === "lint" ? lintProblemsPrefix : conflictFilesPrefix;
+  const split = rest.indexOf(prefix);
+  const list = split < 0 ? "" : rest.slice(split + prefix.length);
+  const problems = code === "lint" ? lintProblems(list) : [];
   return {
-    code: match[1] as ContentAccessErrorCode,
-    files: split < 0 ? [] : conflictFiles(rest.slice(split + conflictFilesPrefix.length)),
-    message: split < 0 ? rest : rest.slice(0, split)
+    code,
+    files: code === "lint" ? problems.map((problem) => problem.file) : split < 0 ? [] : conflictFiles(list),
+    message: split < 0 ? rest : rest.slice(0, split),
+    problems
   };
 }
 

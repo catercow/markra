@@ -9,7 +9,8 @@ use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use cowmark_lint::fs::FsLookup;
-use cowmark_lint::{Diagnostic, Linter, Messages, Schemas};
+use cowmark_core::content_check::read_schemas;
+use cowmark_lint::{Diagnostic, Linter, Messages};
 
 const SCHEMA_FILES: [&str; 2] = ["schema/components.json", "schema/collections.json"];
 
@@ -31,24 +32,6 @@ fn fingerprint(root: &Path) -> Fingerprint {
         let meta = std::fs::metadata(root.join(file)).ok()?;
         Some((meta.modified().ok()?, meta.len()))
     })
-}
-
-/// The folder's schemas. A schema file that can't be read is left out, as if absent, so a
-/// broken `components.json` still leaves front matter, images and links checked.
-fn read_schemas(root: &Path) -> Schemas {
-    let read = |file: &str| std::fs::read_to_string(root.join(file)).ok();
-    let mut components = read(SCHEMA_FILES[0]);
-    let mut collections = read(SCHEMA_FILES[1]);
-    loop {
-        match Schemas::from_json(components.as_deref(), collections.as_deref()) {
-            Ok(schemas) => return schemas,
-            Err(error) if error.file == "components.json" && components.is_some() => {
-                components = None
-            }
-            Err(_) if collections.is_some() => collections = None,
-            Err(_) => return Schemas::default(),
-        }
-    }
 }
 
 impl ContentLintState {
@@ -226,7 +209,7 @@ mod tests {
             let value: String = serde_json::from_str(value.trim_end_matches(',')).unwrap();
             templates.insert(key.to_string(), value.into());
         }
-        assert_eq!(templates.len(), 31);
+        assert_eq!(templates.len(), 34);
         let defaults = format!("{:?}", Messages::default());
         for key in templates.keys() {
             // A key the linter doesn't know would be ignored silently.

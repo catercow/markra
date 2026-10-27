@@ -68,6 +68,7 @@ pub fn check_block(
         }
     }
     read.check_references(context, report);
+    read.check_safety(report);
 }
 
 /// The two places a block's props are written in, parsed.
@@ -103,6 +104,16 @@ impl<'a> PropsText<'a> {
         match &self.parsed {
             Some(Ok(parsed)) => parsed.root.as_ref(),
             _ => None,
+        }
+    }
+
+    /// Event handler attributes and scripting links, in the braces and in the YAML.
+    fn check_safety(&self, report: &mut Report) {
+        if let Some((source, base)) = self.attributes {
+            crate::safety::check_attributes(source, base, report);
+        }
+        if let (Some(root), Some((_, base))) = (self.yaml_root(), self.yaml) {
+            crate::safety::check_yaml(root, None, base, report);
         }
     }
 

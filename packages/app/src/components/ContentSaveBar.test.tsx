@@ -148,6 +148,46 @@ describe("ContentSaveBar", () => {
     expect(screen.getByRole("checkbox", { name: "content/blog/a.md" })).toBeChecked();
   });
 
+  it("lists each refused page's first problem, opens the pages and keeps the ticks", async () => {
+    const problems = [
+      { file: "content/blog/a.md", line: 3, message: "HTML isn't allowed in pages. Use Markdown or a component from the Components list instead." },
+      { file: "content/blog/b.md", line: 7, message: "This link can't be used on the site. Links must start with https://, mailto:, tel: or /." }
+    ];
+    mockAccess({
+      save: vi.fn(async () => {
+        throw new Error(`lint: Fix these problems, then save again.\ncontent/blog/a.md, line 3: HTML isn't allowed.\nlint-problems: ${JSON.stringify(problems)}`);
+      })
+    });
+    const onConflictFiles = vi.fn();
+    render(<ContentSaveBar language="en" managed={managed("editor@catercow.com")} onConflictFiles={onConflictFiles} />);
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "content/blog/a.md" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save 1 to studio" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe(
+      "Some pages have problems the site can't publish. Fix them, then save again:\n" +
+        "content/blog/a.md, line 3: HTML isn't allowed in pages. Use Markdown or a component from the Components list instead.\n" +
+        "content/blog/b.md, line 7: This link can't be used on the site. Links must start with https://, mailto:, tel: or /."
+    );
+    expect(onConflictFiles).toHaveBeenCalledWith(["content/blog/a.md", "content/blog/b.md"]);
+    expect(screen.getByRole("checkbox", { name: "content/blog/a.md" })).toBeChecked();
+  });
+
+  it("shows a lint refusal without a problem list in the backend's words", async () => {
+    mockAccess({
+      save: vi.fn(async () => {
+        throw new Error("lint: Fix these problems, then save again.\ncontent/blog/a.md, line 3: HTML isn't allowed.");
+      })
+    });
+    render(<ContentSaveBar language="en" managed={managed("editor@catercow.com")} />);
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "content/blog/a.md" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save 1 to studio" }));
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Fix these problems, then save again.\ncontent/blog/a.md, line 3: HTML isn't allowed."
+    );
+  });
+
   it("treats a Get latest conflict the same way", async () => {
     mockAccess({
       update: vi.fn(async () => {

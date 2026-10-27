@@ -52,9 +52,12 @@ const contentLintKeys = [
   "missingFieldHere",
   "missingImage",
   "missingItemFieldHere",
+  "rawHtml",
   "unknownField",
   "unknownFieldItem",
-  "unresolvedConflict"
+  "unresolvedConflict",
+  "unsafeAttribute",
+  "unsafeLink"
 ] as const;
 
 export function contentLintMessages(language: AppLanguage): ContentLintMessages {
