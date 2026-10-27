@@ -297,7 +297,10 @@ function renderControl(kind: ReturnType<typeof fieldKind>, props: ControlProps) 
   }
 }
 
-function placeholderFor(prop: EditorMdcPropSchema) {
+function placeholderFor(prop: EditorMdcPropSchema, label: Label) {
+  // Link props take a pasted address; CowMark stores it in canonical form on save.
+  if (prop.format === "search-link") return label("editor.mdcPropsSearchLinkHint");
+  if (prop.format === "review-link") return label("editor.mdcPropsReviewLinkHint");
   const fallback = schemaDefault(prop);
   return fallback === undefined || fallback === "" || typeof fallback === "object" ? undefined : String(fallback);
 }
@@ -317,7 +320,7 @@ function useAutoGrow(value: string) {
   return ref;
 }
 
-function TextControl({ descriptionId, id, multiline, onChange, prop, topLevel, value }: ControlProps & { multiline: boolean }) {
+function TextControl({ descriptionId, id, label, multiline, onChange, prop, topLevel, value }: ControlProps & { multiline: boolean }) {
   const { draft, edit, onBlur } = useDraft(value === undefined ? "" : String(value));
   const textareaRef = useAutoGrow(multiline ? draft : "");
   const commit = (next: string) => {
@@ -328,7 +331,7 @@ function TextControl({ descriptionId, id, multiline, onChange, prop, topLevel, v
   const shared = {
     "aria-describedby": descriptionId,
     id,
-    placeholder: placeholderFor(prop),
+    placeholder: placeholderFor(prop, label),
     value: draft,
     onBlur,
   };
@@ -346,14 +349,14 @@ function TextControl({ descriptionId, id, multiline, onChange, prop, topLevel, v
   );
 }
 
-function NumberControl({ descriptionId, id, onChange, prop, value }: ControlProps) {
+function NumberControl({ descriptionId, id, label, onChange, prop, value }: ControlProps) {
   const { draft, edit, onBlur } = useDraft(value === undefined ? "" : String(value));
   return (
     <TextInput
       aria-describedby={descriptionId}
       id={id}
       inputMode="decimal"
-      placeholder={placeholderFor(prop)}
+      placeholder={placeholderFor(prop, label)}
       type="number"
       value={draft}
       onBlur={onBlur}

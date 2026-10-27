@@ -45,6 +45,36 @@ pub struct Messages {
     pub raw_html: String,
     pub unsafe_link: String,
     pub unsafe_attribute: String,
+    // Component input: tables, cell values, link props, galleries.
+    pub table_missing: String,
+    pub table_extra: String,
+    pub table_header_row: String,
+    pub table_unknown_column: String,
+    pub table_unnamed_column: String,
+    pub table_missing_column: String,
+    pub table_duplicate_column: String,
+    pub table_extra_cells: String,
+    pub table_empty_cell: String,
+    pub table_no_rows: String,
+    pub table_columns: String,
+    pub table_delimiter: String,
+    pub cell_fix: String,
+    pub price_invalid: String,
+    pub price_range: String,
+    pub price_approximate: String,
+    pub price_decimals: String,
+    pub price_comma: String,
+    pub price_currency: String,
+    pub code_invalid: String,
+    pub link_invalid: String,
+    pub prop_fix: String,
+    pub search_link_invalid: String,
+    pub search_link_param: String,
+    pub search_link_value: String,
+    pub search_link_suggest: String,
+    pub review_link_invalid: String,
+    pub gallery_empty: String,
+    pub gallery_text: String,
 }
 
 impl Default for Messages {
@@ -119,6 +149,74 @@ impl Default for Messages {
                 "This link can't be used on the site. Links must start with https://, mailto:, tel: or /.",
             ),
             unsafe_attribute: s("`{attribute}` can't be used on the site. Remove it."),
+
+            table_missing: s(
+                "Add a table inside `{component}`, starting with the header row `{header}`.",
+            ),
+            table_extra: s(
+                "`{component}` takes one table. Move these rows into the first table, or start another `{component}`.",
+            ),
+            table_header_row: s("Start the table with a header row, like `{header}`."),
+            table_unknown_column: s(
+                "`{component}` has no “{column}” column. Its columns are: {columns}.",
+            ),
+            table_unnamed_column: s(
+                "A column has no name. The columns of `{component}` are: {columns}.",
+            ),
+            table_missing_column: s("The table needs a `{column}` column."),
+            table_duplicate_column: s(
+                "“{column}” is a second `{canonical}` column. Keep one of them.",
+            ),
+            table_extra_cells: s("Row {row} has more cells than the header has columns."),
+            table_empty_cell: s("Fill in `{column}` in row {row}."),
+            table_no_rows: s("The table has no rows. Add a row under the header for each item."),
+            table_columns: s(
+                "Column names and order in this table are tidied automatically when you save.",
+            ),
+            table_delimiter: s(
+                "Add a `| --- |` row under the header, one `---` per column, or this isn't read as a table. It's added automatically when you save.",
+            ),
+            cell_fix: s("`{column}` in row {row} will be saved as `{fixed}`."),
+            price_invalid: s("`{column}` in row {row} must be a price like $7.25 (got “{value}”)."),
+            price_range: s(
+                "`{column}` in row {row} must be one price like $7.25, not a range (got “{value}”).",
+            ),
+            price_approximate: s(
+                "`{column}` in row {row} must be an exact price like $7.25 (got “{value}”).",
+            ),
+            price_decimals: s(
+                "`{column}` in row {row} can have at most two decimals, like $7.25 (got “{value}”).",
+            ),
+            price_comma: s(
+                "`{column}` in row {row} uses a comma for cents. Use a dot, like $7.25 (got “{value}”).",
+            ),
+            price_currency: s(
+                "`{column}` in row {row} must be in US dollars, like $7.25 (got “{value}”).",
+            ),
+            code_invalid: s(
+                "`{column}` in row {row} can only use letters, numbers, - and _ (got “{value}”).",
+            ),
+            link_invalid: s(
+                "`{column}` in row {row} must be a web address starting with https:// or a site path starting with / (got “{value}”).",
+            ),
+            prop_fix: s("`{prop}` will be saved as `{fixed}`."),
+            search_link_invalid: s(
+                "`{prop}` must be a CaterCow search address: filter the search page, then copy the address bar (got “{value}”).",
+            ),
+            search_link_param: s(
+                "The search address filters by `{param}`, which this component can't use. It can use: {params}.",
+            ),
+            search_link_value: s("`{param}` can't be “{value}”. Use one of: {values}."),
+            search_link_suggest: s("`{param}` can't be “{value}”. Did you mean `{suggestion}`?"),
+            review_link_invalid: s(
+                "`{prop}` must be a caterer or package page address, like /catering/123-name or /packages/123-name (got “{value}”).",
+            ),
+            gallery_empty: s(
+                "Add images inside `gallery`, like `![Description](/blog/my-post/photo.jpg)`. Images on one line form a row.",
+            ),
+            gallery_text: s(
+                "Only images go here. Put the caption after the last row of images, separated by a blank line.",
+            ),
         }
     }
 }

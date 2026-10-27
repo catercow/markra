@@ -332,6 +332,15 @@ export interface ExternalLintDiagnostic {
   rule: string;
   /** Text between backticks is shown as code. */
   message: string;
+  /** The edit that writes the value in its canonical form; offered as a quick fix. */
+  fix?: ExternalLintFix | null;
+}
+
+/** Replace `fromUtf16..toUtf16` with `insert`, offsets as in the diagnostic. */
+export interface ExternalLintFix {
+  fromUtf16: number;
+  toUtf16: number;
+  insert: string;
 }
 
 /**
@@ -340,18 +349,43 @@ export interface ExternalLintDiagnostic {
  */
 export type ExternalMdcLint = (text: string) => Promise<readonly ExternalLintDiagnostic[]> | null;
 
-/** CodeMirror diagnostics for `found`, clamped to `doc`. */
-export function externalLintDiagnostics(doc: Text, found: readonly ExternalLintDiagnostic[]): Diagnostic[] {
+/**
+ * The quick fix for a diagnostic: the fix's offsets are kept relative to the diagnostic, which
+ * CodeMirror maps through later edits, and it is applied only while the text it was computed for
+ * is still the same length (otherwise the next lint pass offers a fresh one).
+ */
+function fixAction(doc: Text, from: number, to: number, fix: ExternalLintFix, name: string) {
+  const fixFrom = Math.trunc(fix.fromUtf16);
+  const fixTo = Math.trunc(fix.toUtf16);
+  if (!(fixFrom >= 0 && fixTo >= fixFrom && fixTo <= doc.length)) return null;
+  return {
+    apply: (view: EditorView, mappedFrom: number, mappedTo: number) => {
+      if (mappedTo - mappedFrom !== to - from) return;
+      const shift = mappedFrom - from;
+      const start = fixFrom + shift;
+      const end = fixTo + shift;
+      if (start < 0 || end > view.state.doc.length) return;
+      view.dispatch({ changes: { from: start, insert: fix.insert, to: end }, userEvent: "input.lint-fix" });
+    },
+    name,
+  };
+}
+
+/** CodeMirror diagnostics for `found`, clamped to `doc`; `fixLabel` names the quick fix button. */
+export function externalLintDiagnostics(doc: Text, found: readonly ExternalLintDiagnostic[], fixLabel = "Fix"): Diagnostic[] {
   const clamp = (offset: number) => Math.min(Math.max(Number.isFinite(offset) ? Math.trunc(offset) : 0, 0), doc.length);
   return found.map((item) => {
     const from = clamp(item.fromUtf16);
+    const to = Math.max(from, clamp(item.toUtf16));
+    const action = item.fix ? fixAction(doc, from, to, item.fix, fixLabel) : null;
     return {
+      ...(action ? { actions: [action] } : {}),
       from,
       message: item.message,
       renderMessage: (view: EditorView) => renderMessage(view.dom.ownerDocument, item.message),
       severity: item.severity === "warning" ? "warning" : "error",
       source: item.rule,
-      to: Math.max(from, clamp(item.toUtf16)),
+      to,
     };
   });
 }
@@ -365,8 +399,9 @@ export async function lintMdcView(
   {
     components,
     external,
+    fixLabel,
     messages,
-  }: Pick<MdcLintPluginOptions, "components" | "external" | "messages">,
+  }: Pick<MdcLintPluginOptions, "components" | "external" | "fixLabel" | "messages">,
 ): Promise<Diagnostic[]> {
   const { state } = view;
   const builtIn = () => lintMdcDocument(state, components?.(), messages);
@@ -381,7 +416,7 @@ export async function lintMdcView(
   }
   // CodeMirror also ignores results for an older document; never map them onto newer text.
   if (view.state.doc !== state.doc) return [];
-  return externalLintDiagnostics(state.doc, found);
+  return externalLintDiagnostics(state.doc, found, fixLabel);
 }
 
 export interface MdcLintPluginOptions {
@@ -391,17 +426,19 @@ export interface MdcLintPluginOptions {
   messages?: Partial<MdcLintMessages>;
   /** Replaces the built-in lint for documents it applies to (CowMark's shared linter). */
   external?: ExternalMdcLint;
+  /** Label of the quick-fix button on external diagnostics that carry a fix. */
+  fixLabel?: string;
 }
 
 /** Underlines MDC problems and explains them on hover. Never changes the text. */
-export function mdcLintPlugin({ components, enabled = true, external, messages }: MdcLintPluginOptions = {}) {
+export function mdcLintPlugin({ components, enabled = true, external, fixLabel, messages }: MdcLintPluginOptions = {}) {
   return defineMarkraPlugin({
     id: "markra.mdc-lint",
     extension: enabled
       ? linter(
           (view) =>
             external
-              ? lintMdcView(view, { components, external, messages })
+              ? lintMdcView(view, { components, external, fixLabel, messages })
               : lintMdcDocument(view.state, components?.(), messages),
           { delay: 500 },
         )

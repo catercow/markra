@@ -116,6 +116,57 @@ pub fn check(root: &Path, paths: &[String]) -> Result<CheckReport, String> {
     let linter = Linter::new(load_schemas(root)?);
     let lookup = FsLookup::cached(root);
 
+    let mut report = CheckReport::default();
+    for file in resolve_files(root, paths)? {
+        let relative = relative_path(root, &file);
+        let text = std::fs::read_to_string(&file).map_err(|error| format!("{relative}: {error}"))?;
+        for diagnostic in linter.lint(&relative, &text, &lookup) {
+            let excerpt = text
+                .get(diagnostic.from..diagnostic.to)
+                .and_then(|text| text.lines().next())
+                .unwrap_or("");
+            report.excerpts.push(excerpt.chars().take(80).collect());
+            report.diagnostics.push(diagnostic);
+        }
+        report.files.push(relative);
+    }
+    Ok(report)
+}
+
+fn relative_path(root: &Path, file: &Path) -> String {
+    file.strip_prefix(root)
+        .unwrap_or(file)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+/// Writes component input in its canonical form (`cowmark fmt`): the fixes `check` offers, such
+/// as `$7.25` for `7.25 USD` or a tidied table. Returns the root-relative paths that changed (or
+/// would, with `write` false). Only pages under `content/` are rewritten.
+pub fn format_files(root: &Path, paths: &[String], write: bool) -> Result<Vec<String>, String> {
+    let linter = Linter::new(load_schemas(root)?);
+    let mut changed = Vec::new();
+    for file in resolve_files(root, paths)? {
+        let relative = relative_path(root, &file);
+        if !relative.starts_with("content/") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&file).map_err(|error| format!("{relative}: {error}"))?;
+        let formatted = linter.format(&relative, &text, &|_: &str| true);
+        if !formatted.changed {
+            continue;
+        }
+        if write {
+            crate::content::write_atomically(&file, formatted.text.as_bytes())
+                .map_err(|error| format!("{relative}: {error}"))?;
+        }
+        changed.push(relative);
+    }
+    Ok(changed)
+}
+
+/// The Markdown files named by `paths`, or every one under `content/`.
+fn resolve_files(root: &Path, paths: &[String]) -> Result<Vec<PathBuf>, String> {
     let mut files = Vec::new();
     if paths.is_empty() {
         markdown_files(&root.join("content"), &mut files);
@@ -134,26 +185,7 @@ pub fn check(root: &Path, paths: &[String]) -> Result<CheckReport, String> {
     }
     files.sort();
     files.dedup();
-
-    let mut report = CheckReport::default();
-    for file in files {
-        let relative = file
-            .strip_prefix(root)
-            .unwrap_or(&file)
-            .to_string_lossy()
-            .replace('\\', "/");
-        let text = std::fs::read_to_string(&file).map_err(|error| format!("{relative}: {error}"))?;
-        for diagnostic in linter.lint(&relative, &text, &lookup) {
-            let excerpt = text
-                .get(diagnostic.from..diagnostic.to)
-                .and_then(|text| text.lines().next())
-                .unwrap_or("");
-            report.excerpts.push(excerpt.chars().take(80).collect());
-            report.diagnostics.push(diagnostic);
-        }
-        report.files.push(relative);
-    }
-    Ok(report)
+    Ok(files)
 }
 
 /// Markdown files under `dir`, skipping hidden entries and node_modules.

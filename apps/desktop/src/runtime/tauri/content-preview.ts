@@ -8,6 +8,8 @@ type ContentPreviewRuntime = NonNullable<AppRuntime["files"]["contentPreview"]>;
 type ContentAccessRuntime = NonNullable<AppRuntime["files"]["contentAccess"]>;
 type MergeText = NonNullable<AppRuntime["files"]["mergeText"]>;
 type ContentLint = NonNullable<AppRuntime["files"]["contentLint"]>;
+type ContentFormat = NonNullable<AppRuntime["files"]["contentFormat"]>;
+type ContentCsvTable = NonNullable<AppRuntime["files"]["contentCsvTable"]>;
 type CowMarkCompanionRuntime = NonNullable<AppRuntime["files"]["cowmarkCompanion"]>;
 
 export const nativeContentPreview: ContentPreviewRuntime = {
@@ -37,6 +39,14 @@ export const nativeMergeText: MergeText = (base, mine, theirs) => invoke("conten
 // Runs on every pause in typing with the document's text, so it skips invokeNative's logging too.
 export const nativeContentLint: ContentLint = (root, path, text, messages) =>
   invoke("cowmark_lint", { messages, path, root, text });
+
+// Runs on save with the document's text, so it skips invokeNative's logging too.
+export const nativeContentFormat: ContentFormat = (root, path, text, messages) =>
+  invoke("cowmark_format", { messages, path, root, text });
+
+// Pasted text can be private, so it skips invokeNative's logging.
+export const nativeContentCsvTable: ContentCsvTable = (root, text, csvType, component, wrap) =>
+  invoke("cowmark_csv_table", { component, csvType, root, text, wrap });
 
 export const nativeCowMarkCompanion: CowMarkCompanionRuntime = {
   start: (root, site) => invokeNative("cowmark_companion_start", { root, site }),

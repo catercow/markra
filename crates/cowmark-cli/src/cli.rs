@@ -41,6 +41,25 @@ pub enum Command {
         /// Also print errors as GitHub Actions annotations (warnings with --strict).
         #[arg(long)]
         github: bool,
+        /// First write fixable values in their canonical form, as `cowmark fmt` does.
+        #[arg(long)]
+        fix: bool,
+    },
+    /// Write component tables, prices, codes and links in their canonical form. Works without CowMark.
+    Fmt {
+        /// Files or folders (default: everything under content/).
+        paths: Vec<String>,
+        /// Change nothing; exit 1 if any file would change.
+        #[arg(long)]
+        check: bool,
+    },
+    /// Turn CSV (or tab-separated text) into a Markdown table. Works without CowMark.
+    Table {
+        /// The CSV file (default: standard input).
+        file: Option<String>,
+        /// Wrap the table in this table component and format it, e.g. `pricing-grid`.
+        #[arg(long, value_name = "NAME")]
+        component: Option<String>,
     },
     /// List changed files that aren't published yet.
     Status {
@@ -89,9 +108,15 @@ fn execute(command: Command, context: &Context, out: &mut dyn Write, err: &mut d
             json,
             strict,
             github,
+            fix,
         } => {
             let root = context.root()?;
             let paths: Vec<String> = paths.iter().map(|path| cwd_relative(context, path)).collect();
+            if fix {
+                for file in check::format_files(&root.path, &paths, true)? {
+                    writeln!(err, "Fixed {file}").map_err(io)?;
+                }
+            }
             let report = check::check(&root.path, &paths)?;
             if json {
                 writeln!(
@@ -107,6 +132,50 @@ fn execute(command: Command, context: &Context, out: &mut dyn Write, err: &mut d
                 write!(out, "{}", report.to_github(strict)).map_err(io)?;
             }
             Ok(report.exit_code(strict))
+        }
+        Command::Fmt { paths, check: dry_run } => {
+            let root = context.root()?;
+            let paths: Vec<String> = paths.iter().map(|path| cwd_relative(context, path)).collect();
+            let changed = check::format_files(&root.path, &paths, !dry_run)?;
+            let verb = if dry_run { "Would format" } else { "Formatted" };
+            for file in &changed {
+                writeln!(out, "{verb} {file}").map_err(io)?;
+            }
+            if changed.is_empty() {
+                writeln!(out, "Nothing to format.").map_err(io)?;
+            } else if !dry_run {
+                writeln!(
+                    out,
+                    "Run `cowmark check` for anything that couldn't be fixed automatically."
+                )
+                .map_err(io)?;
+            }
+            Ok(i32::from(dry_run && !changed.is_empty()))
+        }
+        Command::Table { file, component } => {
+            let text = match file {
+                Some(file) => {
+                    let path = cwd_relative(context, &file);
+                    std::fs::read_to_string(&path).map_err(|error| format!("{path}: {error}"))?
+                }
+                None => std::io::read_to_string(std::io::stdin()).map_err(io)?,
+            };
+            match component {
+                None => {
+                    writeln!(out, "{}", cowmark_core::csv_table::to_markdown(&text, None)?).map_err(io)?;
+                    Ok(0)
+                }
+                Some(component) => {
+                    let root = context.root()?;
+                    let schemas = check::load_schemas(&root.path)?;
+                    let table = cowmark_core::csv_table::for_component(&text, None, &component, &schemas, true)?;
+                    write!(out, "{}", table.markdown).map_err(io)?;
+                    for problem in &table.problems {
+                        writeln!(err, "{problem}").map_err(io)?;
+                    }
+                    Ok(i32::from(!table.problems.is_empty()))
+                }
+            }
         }
         Command::Status { json } => {
             let status = context.status()?;

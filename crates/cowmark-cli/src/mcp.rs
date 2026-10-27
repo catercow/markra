@@ -28,6 +28,11 @@ with optional YAML props between `---` lines, or `:name{prop=\"value\"}` inline.
 returned Markdown in the page. Images live in public/ and are written as site paths starting with `/`, e.g. \
 `/blog/my-post/photo.jpg` for `public/blog/my-post/photo.jpg`. Only Markdown and images under content/, and images \
 under public/, can be changed.
+Table components (pricing-grid, facts-grid, promo-codes) take a Markdown table in their slot, and gallery takes \
+Markdown images (one paragraph per row); get_component_schema shows the columns under `input`. csv_to_table turns \
+CSV into such a table. `link` props of packages/caterers take a CaterCow search URL, and of reviews a caterer or \
+package page URL. write_file stores values in their canonical form (e.g. `$7.25`), so the saved file can differ from \
+what you sent; format_file does the same for a file already on disk.
 3. Run check on the files you changed and fix every error. Warnings (such as missing alt text) should be fixed too.
 4. Optionally open_in_cowmark or preview_link so the person can see the page in the live preview.
 5. Call propose_publish with the changed files and a short message. This does NOT publish: it ticks the files in \
@@ -170,8 +175,52 @@ pub fn call(context: &Context, name: &str, arguments: &JsonObject) -> Result<Str
         "write_file" => {
             let root = root()?;
             let path = args.required("path")?;
-            let written = content::write_file(&root, path, args.required("content")?, args.bool("create_only", false)?)?;
-            Ok(pretty(json!({ "written": written, "check": check_summary(&root, written["path"].as_str().unwrap_or(path)) })))
+            let text = args.required("content")?;
+            // Stored content is canonical: tables, prices, codes and links are formatted first.
+            let formatted = crate::root::resolve(&root, path)
+                .ok()
+                .filter(|(_, relative)| relative.starts_with("content/") && crate::root::is_markdown(relative))
+                .and_then(|(_, relative)| {
+                    let linter = cowmark_lint::Linter::new(check::load_schemas(&root).ok()?);
+                    Some(linter.format(&relative, text, &|_: &str| true))
+                })
+                .filter(|formatted| formatted.changed);
+            let written = content::write_file(
+                &root,
+                path,
+                formatted.as_ref().map_or(text, |formatted| formatted.text.as_str()),
+                args.bool("create_only", false)?,
+            )?;
+            let mut result = json!({ "written": written, "check": check_summary(&root, written["path"].as_str().unwrap_or(path)) });
+            if formatted.is_some() {
+                result["formatted"] = json!(FORMATTED_NOTE);
+            }
+            Ok(pretty(result))
+        }
+        "format_file" => {
+            let root = root()?;
+            let paths = vec![args.required("path")?.to_string()];
+            let changed = check::format_files(&root, &paths, true)?;
+            Ok(pretty(json!({
+                "path": paths[0],
+                "changed": !changed.is_empty(),
+                "check": check_summary(&root, &paths[0]),
+            })))
+        }
+        "csv_to_table" => {
+            let csv = args.required("csv")?;
+            match args.str("component")? {
+                None => cowmark_core::csv_table::to_markdown(csv, None),
+                Some(component) => {
+                    let schemas = check::load_schemas(&root()?)?;
+                    let table = cowmark_core::csv_table::for_component(csv, None, component, &schemas, true)?;
+                    Ok(if table.problems.is_empty() {
+                        table.markdown
+                    } else {
+                        format!("{}\nProblems to fix in the table:\n{}", table.markdown, table.problems.join("\n"))
+                    })
+                }
+            }
         }
         "rename_file" => content::rename_file(&root()?, args.required("from")?, args.required("to")?).map(pretty),
         "delete_file" => content::delete_file(&root()?, args.required("path")?).map(pretty),
@@ -236,6 +285,9 @@ this message. Ask the person to review the changes in CowMark and click \"Save t
         _ => Err(format!("unknown tool `{name}`")),
     }
 }
+
+const FORMATTED_NOTE: &str = "Some values were rewritten in their canonical form before saving (table columns, prices like $7.25, \
+promo codes, CaterCow links as site paths). read_file shows the saved text.";
 
 /// A short lint result for a file just written, so the agent sees mistakes at once.
 fn check_summary(root: &Path, path: &str) -> Value {
@@ -315,7 +367,7 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "write_file",
             "Write a page",
-            "Writes a whole Markdown file under content/, replacing it if it exists (use create_only to refuse that). Returns the check result for the file. Only .md files under content/ can be written; .git and schema/ never.",
+            "Writes a whole Markdown file under content/, replacing it if it exists (use create_only to refuse that). Component tables, prices, codes and links are written in their canonical form first (`formatted` says when that changed anything). Returns the check result for the file. Only .md files under content/ can be written; .git and schema/ never.",
             object(
                 json!({
                     "path": { "type": "string", "description": PATH },
@@ -330,6 +382,31 @@ pub fn tools() -> Vec<Tool> {
                 idempotent: true,
                 open_world: false,
             },
+        ),
+        tool(
+            "format_file",
+            "Format a page",
+            "Rewrites a Markdown page under content/ in canonical form: the fixes check offers, plus table spacing and gallery line breaks, which check never reports. Component tables get canonical column names and order and one space around each cell, prices like $7.25, promo codes in capitals, CaterCow links as site paths, one line per gallery row. Never removes text. Returns whether it changed and the problems left.",
+            object(json!({ "path": { "type": "string", "description": PATH } }), &["path"]),
+            Hints {
+                read_only: false,
+                destructive: false,
+                idempotent: true,
+                open_world: false,
+            },
+        ),
+        tool(
+            "csv_to_table",
+            "CSV to table",
+            "Turns CSV text (or tab-separated text from a spreadsheet) into a Markdown table; the first row is the header. With `component` (a table component such as `pricing-grid`), wraps the table in it and formats it, and lists any values that can't be read. Writes nothing.",
+            object(
+                json!({
+                    "csv": { "type": "string", "description": "The CSV text." },
+                    "component": { "type": "string", "description": "A table component to wrap the table in, e.g. `pricing-grid`." }
+                }),
+                &["csv"],
+            ),
+            READ,
         ),
         tool(
             "rename_file",

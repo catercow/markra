@@ -6,7 +6,7 @@ description = "Checks CaterCow marketing content files (MDC components, front ma
 publish = false
 
 [dependencies]
-indexmap = "2.14.2"
+indexmap = { version = "2.14.2", features = ["serde"] }
 pulldown-cmark = { version = "0.13", default-features = false }
 regex = "1.13.1"
 saphyr-parser = "0.3.2"

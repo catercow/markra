@@ -2,7 +2,14 @@ import { EditorSelection, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { afterEach, describe, expect, it } from "vitest";
 import { catalog, component } from "../mdc/components.fixtures.ts";
-import { groupMdcComponents, mdcColonShift, mdcComponentSnippet } from "../mdc/components.ts";
+import {
+  groupMdcComponents,
+  MDC_GALLERY_SKELETON,
+  mdcColonShift,
+  mdcComponentSnippet,
+  mdcTableSkeleton,
+  type MdcCatalogComponent,
+} from "../mdc/components.ts";
 import {
   blocksPlugin,
   getMarkraSlashMenuState,
@@ -140,6 +147,38 @@ describe("inserting a component", () => {
     pick(view, "steps");
     expect(view.state.doc.toString()).toBe("Intro\n\n::steps\n\n::");
     expect(view.state.doc.lineAt(view.state.selection.main.head).number).toBe(4);
+  });
+
+  const pricingGrid: MdcCatalogComponent = {
+    example: { markdown: "::pricing-grid\n| Item | Price |\n| - | - |\n| Tacos | $7 |\n::" },
+    input: {
+      columns: [
+        { name: "Item", required: true },
+        { format: "price", name: "Price", required: true },
+        { name: "Description" },
+      ],
+      kind: "table",
+    },
+    name: "pricing-grid",
+    props: [],
+  };
+
+  it("gives a table component an empty table to fill in, caret in its first cell", () => {
+    expect(mdcComponentSnippet(pricingGrid)).toBe(
+      "::pricing-grid\n| Item | Price | Description |\n| --- | --- | --- |\n|  |  |  |\n::",
+    );
+    const view = createView("/", 1, [pricingGrid]);
+    pick(view, "pricing-grid");
+    const head = view.state.selection.main.head;
+    expect(view.state.doc.lineAt(head).number).toBe(4);
+    expect(head - view.state.doc.lineAt(head).from).toBe(2);
+  });
+
+  it("gives a gallery placeholder images", () => {
+    expect(mdcComponentSnippet({ input: { kind: "images" }, name: "photo-grid", props: [] })).toBe(
+      `::photo-grid\n${MDC_GALLERY_SKELETON}\n::`,
+    );
+    expect(mdcTableSkeleton([{ name: "A" }])).toBe("| A |\n| --- |\n|  |");
   });
 
   it("splits a paragraph when chosen on one of its lines", () => {

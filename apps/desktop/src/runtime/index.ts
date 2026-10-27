@@ -10,6 +10,8 @@ import * as aiChatAttachments from "./tauri/ai-chat-attachments";
 import * as dialog from "./tauri/dialog";
 import {
   nativeContentAccess,
+  nativeContentCsvTable,
+  nativeContentFormat,
   nativeContentLint,
   nativeContentPreview,
   nativeCowMarkCompanion,
@@ -131,6 +133,8 @@ export const desktopRuntime = {
     contentAccess: nativeContentAccess,
     mergeText: nativeMergeText,
     contentLint: nativeContentLint,
+    contentFormat: nativeContentFormat,
+    contentCsvTable: nativeContentCsvTable,
     cowmarkCompanion: nativeCowMarkCompanion,
     renameMarkdownTreeFile: files.renameNativeMarkdownTreeFile,
     resolveMarkdownPath: files.resolveNativeMarkdownPath,

@@ -5,6 +5,7 @@ import {
   conflictMarkersPlugin,
   type ConflictLabels,
   mdcComponentsPlugin,
+  mdcCsvPastePlugin,
   mdcLintPlugin,
   mdcPreviewPlugin,
   type MdcLintMessages,
@@ -76,7 +77,7 @@ import {
 } from "../lib/document-links";
 import { isLocalAttachmentHref } from "../lib/markdown-link-target";
 import { catercowPreviewSite } from "../lib/content-access";
-import { contentLintSource } from "../lib/content-lint";
+import { contentCsvSource, contentLintSource } from "../lib/content-lint";
 import { useCowMarkPagesContext } from "../hooks/useCowMarkPages";
 import { getAppRuntime } from "../runtime";
 import {
@@ -234,6 +235,10 @@ function markdownExtension({
   const conflicts = catercowPreviewSite() !== null;
   // Commands are fixed per configuration, so the surface reconfigures when the schema changes.
   const mdcInsertable = mdc ? mdcComponents() ?? [] : [];
+  // CowMark content pages only: stock Markra keeps its own paste handling.
+  const csvConvert = mdc
+    ? contentCsvSource({ contentRoot, csvTable: getAppRuntime().files.contentCsvTable, documentPath })
+    : undefined;
   const linkOptions = openExternalUrl() || openLocalAttachment()
     ? {
         open: ({ source, target }: { source: string; target: string }) => {
@@ -318,8 +323,10 @@ function markdownExtension({
         components: mdcComponents,
         enabled: mdc,
         external: contentLintSource({ contentRoot, documentPath, language, lint: getAppRuntime().files.contentLint }),
+        fixLabel: t(language, "editor.lintFix"),
         messages: mdcLintMessages(language),
       }),
+      ...(csvConvert ? [mdcCsvPastePlugin({ components: mdcComponents, convert: csvConvert })] : []),
       ...(mdcInsertable.length > 0
         ? [mdcComponentsPlugin({ components: mdcInsertable, sectionLabel: t(language, "editor.mdcComponents") })]
         : []),

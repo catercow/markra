@@ -19,6 +19,19 @@ pub struct MdcBlock {
     pub props_content: Option<Range>,
     pub props_closed: bool,
     pub closed: bool,
+    /// Where the opener's line starts.
+    pub line_from: usize,
+    /// Where the slot starts: the line after the opener, or after the props block.
+    pub body_from: usize,
+    /// The closer's line (without its line break); None while unclosed.
+    pub closer: Option<Range>,
+}
+
+impl MdcBlock {
+    /// The slot's text range, from the line after the opener (or props) to the closer's line.
+    pub fn body(&self) -> Option<Range> {
+        self.closer.map(|closer| Range::new(self.body_from, closer.from.max(self.body_from)))
+    }
 }
 
 #[derive(Debug, Default)]
@@ -290,6 +303,9 @@ pub fn read_structure(text: &str, body_start: usize) -> Structure {
                 props_content: None,
                 props_closed: false,
                 closed: false,
+                line_from: line.from,
+                body_from: line.to,
+                closer: None,
             };
             i += 1;
             if all.get(i).is_some_and(|next| next.text.trim() == "---") {
@@ -319,6 +335,7 @@ pub fn read_structure(text: &str, body_start: usize) -> Structure {
                 block.props = Some(Range::new(props_from, props_to));
                 block.props_content = content;
             }
+            block.body_from = all.get(i).map_or(text.len(), |next| next.from);
             open.push(out.blocks.len());
             out.blocks.push(block);
             continue;
@@ -331,6 +348,7 @@ pub fn read_structure(text: &str, body_start: usize) -> Structure {
                 .rposition(|&index| out.blocks[index].colons == colons)
             {
                 out.blocks[open[at]].closed = true;
+                out.blocks[open[at]].closer = Some(Range::new(line.from, line.to));
                 open.truncate(at);
             }
             i += 1;
@@ -521,6 +539,21 @@ mod tests {
         assert_eq!(&text[content.from..content.to], "x: 1");
         let unclosed = &read_structure("::a\n---\nx: 1\n::", 0).blocks[0];
         assert!(!unclosed.props_closed && unclosed.closed);
+    }
+
+    #[test]
+    fn finds_the_slot() {
+        let text = "::a\n---\nx: 1\n---\n| A |\n  ::b\n  Hi\n  ::\n::\n::c\n";
+        let blocks = read_structure(text, 0).blocks;
+        let body = blocks[0].body().unwrap();
+        assert_eq!(&text[body.from..body.to], "| A |\n  ::b\n  Hi\n  ::\n");
+        let inner = blocks[1].body().unwrap();
+        assert_eq!(&text[inner.from..inner.to], "  Hi\n");
+        assert_eq!(blocks[0].line_from, 0);
+        assert_eq!(blocks[1].line_from, text.find("  ::b").unwrap());
+        assert_eq!(blocks[2].body(), None);
+        let empty = &read_structure("::a\n::", 0).blocks[0];
+        assert_eq!(empty.body(), Some(Range::new(4, 4)));
     }
 
     #[test]

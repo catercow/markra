@@ -273,6 +273,40 @@ describe("external lint", () => {
     expect(diagnostic).toMatchObject({ message: "Problem with `x`.", severity: "error", source: "missing-image" });
   });
 
+  it("offers the fix as a quick-fix action that is one change", () => {
+    const view = createView("Price: 7.5 today");
+    const [diagnostic] = externalLintDiagnostics(
+      view.state.doc,
+      [found(7, 10, { fix: { fromUtf16: 7, insert: "$7.50", toUtf16: 10 } })],
+      "Repair",
+    );
+    expect(diagnostic!.actions?.map((action) => action.name)).toEqual(["Repair"]);
+    diagnostic!.actions![0]!.apply(view, diagnostic!.from, diagnostic!.to);
+    expect(view.state.doc.toString()).toBe("Price: $7.50 today");
+  });
+
+  it("follows edits before the diagnostic and skips a fix whose text changed", () => {
+    const view = createView("Price: 7.5");
+    const [diagnostic] = externalLintDiagnostics(view.state.doc, [
+      found(7, 10, { fix: { fromUtf16: 7, insert: "$7.50", toUtf16: 10 } }),
+    ]);
+    view.dispatch({ changes: { from: 0, insert: "New " } });
+    diagnostic!.actions![0]!.apply(view, diagnostic!.from + 4, diagnostic!.to + 4);
+    expect(view.state.doc.toString()).toBe("New Price: $7.50");
+    diagnostic!.actions![0]!.apply(view, 11, 13);
+    expect(view.state.doc.toString()).toBe("New Price: $7.50");
+  });
+
+  it("has no action without a usable fix", () => {
+    const state = EditorState.create({ doc: "abc" });
+    const [plain, outside] = externalLintDiagnostics(state.doc, [
+      found(0, 1),
+      found(0, 1, { fix: { fromUtf16: 0, insert: "x", toUtf16: 9 } }),
+    ]);
+    expect(plain!.actions).toBeUndefined();
+    expect(outside!.actions).toBeUndefined();
+  });
+
   it("clamps offsets to the document", () => {
     const state = EditorState.create({ doc: "short" });
     const ranges = externalLintDiagnostics(state.doc, [found(3, 99), found(40, 50), found(-2, 1), found(4, 2)])

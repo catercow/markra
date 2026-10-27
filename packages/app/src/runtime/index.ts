@@ -1,6 +1,6 @@
 import type { AppLanguage } from "@markra/shared";
 import type { ContentAccessRuntime, MergeText } from "../lib/content-access";
-import type { ContentLint } from "../lib/content-lint";
+import type { ContentCsvTable, ContentFormat, ContentLint } from "../lib/content-lint";
 import type { ContentPreviewRuntime } from "../lib/content-preview";
 import type { CowMarkCompanionRuntime } from "../lib/cowmark-companion";
 import type { MarkdownShortcutMap } from "@markra/editor";
@@ -220,6 +220,10 @@ export type AppFileRuntime = {
   mergeText?: MergeText;
   /** CowMark's shared content linter (`crates/cowmark-lint`); desktop only. */
   contentLint?: ContentLint;
+  /** Writes a content page's component input in canonical form; desktop only. */
+  contentFormat?: ContentFormat;
+  /** CSV to a Markdown table, for pasting into content pages; desktop only. */
+  contentCsvTable?: ContentCsvTable;
   /** CowMark's browser preview and `cowmark` command connection; desktop only. */
   cowmarkCompanion?: CowMarkCompanionRuntime;
   /** Reads any text file by runtime path; resolves null when it is missing or unreadable. */

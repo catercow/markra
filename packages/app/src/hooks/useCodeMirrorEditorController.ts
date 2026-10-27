@@ -3,6 +3,8 @@ import { EditorView, runScopeHandlers } from "@codemirror/view";
 import { redo, undo } from "@codemirror/commands";
 import {
   applyCodeMirrorAiResult,
+  applyCodeMirrorMarkdownEdit,
+  insertMdcCsv,
   clearCodeMirrorAiPreview,
   clearCodeMirrorAiSelectionHold,
   clearCodeMirrorSelectionFormatting,
@@ -35,6 +37,7 @@ import {
   type CodeMirrorMarkdownImageReference,
   type CodeMirrorMarkdownLinkReference,
   type ReplaceCodeMirrorMarkdownOptions,
+  type MdcCsvPluginOptions,
 } from "@markra/editor/codemirror";
 import type { AiDiffResult, AiSelectionContext } from "@markra/ai";
 import {
@@ -393,6 +396,24 @@ export function useCodeMirrorEditorController() {
     [],
   );
 
+  /** Rewrites the document to `markdown` as one undoable change over only what differs. */
+  const applyMarkdownEdit = useCallback((markdown: string) => {
+    const view = viewRef.current;
+    return view ? applyCodeMirrorMarkdownEdit(view, markdown) : false;
+  }, []);
+
+  /** Inserts CSV as a Markdown table where it was dropped; false when it isn't a table. */
+  const insertCsvAtPoint = useCallback(
+    async (text: string, point: { left: number; top: number } | undefined, options: MdcCsvPluginOptions) => {
+      const view = viewRef.current;
+      if (!view) return false;
+      const position = point ? view.posAtCoords({ x: point.left, y: point.top }) : null;
+      const at = position ?? view.state.selection.main.head;
+      return insertMdcCsv(view, { ...options, csvType: true, from: at, text, to: at });
+    },
+    [],
+  );
+
   const insertMarkdownLink = useCallback(() => {
     const view = viewRef.current;
     return view ? insertCodeMirrorMarkdownLink(view) : false;
@@ -557,9 +578,11 @@ export function useCodeMirrorEditorController() {
     getSectionAnchors,
     getSelection,
     getSelectionAnchor,
+    applyMarkdownEdit,
     getSelectionFormattingActions,
     getSelectionFormattingState,
     getTableAnchors,
+    insertCsvAtPoint,
     handleEditorReady,
     holdAiSelection,
     insertMarkdownImage,

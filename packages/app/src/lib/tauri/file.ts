@@ -120,6 +120,13 @@ export type NativeMarkdownDroppedTarget =
       path: string;
       name: string;
       point?: NativeMarkdownDropPoint;
+    }
+  | {
+      /** A `.csv` file; CowMark content pages insert it as a table. */
+      kind: "csv";
+      path: string;
+      name: string;
+      point?: NativeMarkdownDropPoint;
     };
 
 export type SaveNativeMarkdownFileInput = {

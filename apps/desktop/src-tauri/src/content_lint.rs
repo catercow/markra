@@ -10,7 +10,9 @@ use std::time::SystemTime;
 
 use cowmark_lint::fs::FsLookup;
 use cowmark_core::content_check::read_schemas;
-use cowmark_lint::{Diagnostic, Linter, Messages};
+use cowmark_core::csv_table::{self, ComponentTable};
+use cowmark_lint::{Diagnostic, Formatted, Linter, Messages};
+use serde::Serialize;
 
 const SCHEMA_FILES: [&str; 2] = ["schema/components.json", "schema/collections.json"];
 
@@ -44,6 +46,21 @@ impl ContentLintState {
         text: &str,
         messages: Option<Messages>,
     ) -> Vec<Diagnostic> {
+        self.with_linter(root, messages, |linter| linter.lint(path, text, &FsLookup::new(root)))
+    }
+
+    /// `text` with component input in canonical form, and the problems left in it.
+    pub(crate) fn format(
+        &self,
+        root: &Path,
+        path: &str,
+        text: &str,
+        messages: Option<Messages>,
+    ) -> Formatted {
+        self.with_linter(root, messages, |linter| linter.format(path, text, &FsLookup::new(root)))
+    }
+
+    fn with_linter<T>(&self, root: &Path, messages: Option<Messages>, run: impl FnOnce(&Linter) -> T) -> T {
         let current = fingerprint(root);
         let mut linters = self
             .linters
@@ -62,7 +79,7 @@ impl ContentLintState {
         if let Some(messages) = messages {
             prepared.linter.messages = messages;
         }
-        prepared.linter.lint(path, text, &FsLookup::new(root))
+        run(&prepared.linter)
     }
 }
 
@@ -82,6 +99,67 @@ pub(crate) async fn cowmark_lint(
     })
     .await
     .map_err(|error| error.to_string())
+}
+
+/// A formatted document, as the editor applies it on save.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FormatResult {
+    text: String,
+    changed: bool,
+    diagnostics: Vec<Diagnostic>,
+}
+
+/// Formats a managed page before it is saved: tables, prices, codes and links in canonical
+/// form. Never removes text; what can't be read is left as written and stays in `diagnostics`.
+#[tauri::command]
+pub(crate) async fn cowmark_format(
+    state: tauri::State<'_, ContentLintState>,
+    root: String,
+    path: String,
+    text: String,
+    messages: Option<Messages>,
+) -> Result<FormatResult, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let formatted = state.format(Path::new(&root), &path, &text, messages);
+        FormatResult {
+            text: formatted.text,
+            changed: formatted.changed,
+            diagnostics: formatted.diagnostics,
+        }
+    })
+    .await
+    .map_err(|error| error.to_string())
+}
+
+/// Pasted or dropped CSV as a Markdown table, or None when `text` doesn't look like a table
+/// (and `csv_type`, the clipboard's `text/csv`, isn't set). With `component`, the table gets
+/// that table component's columns and canonical values; `wrap` puts it inside the component.
+#[tauri::command]
+pub(crate) async fn cowmark_csv_table(
+    root: String,
+    text: String,
+    csv_type: bool,
+    component: Option<String>,
+    wrap: bool,
+) -> Result<Option<ComponentTable>, String> {
+    tauri::async_runtime::spawn_blocking(move || csv_to_table(Path::new(&root), &text, csv_type, component.as_deref(), wrap))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+fn csv_to_table(root: &Path, text: &str, csv_type: bool, component: Option<&str>, wrap: bool) -> Result<Option<ComponentTable>, String> {
+    let Some(delimiter) = csv_table::detect(text, csv_type) else {
+        return Ok(None);
+    };
+    match component {
+        Some(component) => csv_table::for_component(text, Some(delimiter), component, &read_schemas(root), wrap).map(Some),
+        None => Ok(Some(ComponentTable {
+            markdown: csv_table::to_markdown(text, Some(delimiter))?,
+            problems: Vec::new(),
+        })),
+    }
 }
 
 #[cfg(test)]
@@ -188,6 +266,36 @@ mod tests {
             .contains("isn't closed"));
     }
 
+    #[test]
+    fn formats_with_the_folder_schema_and_turns_csv_into_tables() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("schema")).unwrap();
+        fs::write(
+            dir.path().join("schema/components.json"),
+            r#"[{"name":"facts-grid","props":[],"input":{"kind":"table","columns":[
+              {"name":"Fact","aliases":["Label"],"required":true},{"name":"Value","required":true}]}}]"#,
+        )
+        .unwrap();
+        let state = ContentLintState::default();
+        let formatted = state.format(dir.path(), "content/a.md", "::facts-grid
+label|value
+Café ✓|1
+::
+", None);
+        assert!(formatted.changed);
+        assert_eq!(formatted.text, "::facts-grid\n| Fact | Value |\n| --- | --- |\n| Café ✓ | 1 |\n::\n");
+        assert!(formatted.diagnostics.is_empty());
+
+        assert!(csv_to_table(dir.path(), "Just a sentence, really.", false, None, false).unwrap().is_none());
+        let table = csv_to_table(dir.path(), "Label\tValue\nFounded\t2014\n", false, Some("facts-grid"), false)
+            .unwrap()
+            .unwrap();
+        assert_eq!(table.markdown, "| Fact | Value |\n| --- | --- |\n| Founded | 2014 |");
+        let wrapped = csv_to_table(dir.path(), "a,b\n1,2\n", true, Some("facts-grid"), true).unwrap().unwrap();
+        assert!(wrapped.markdown.starts_with("::facts-grid\n") && !wrapped.problems.is_empty());
+        assert!(csv_to_table(dir.path(), "a,b\n1,2\n", true, Some("nope"), true).is_err());
+    }
+
     /// The app sends `editor.mdcLint.*` and `editor.contentLint.*` as the templates; in English
     /// they must be the linter's own, so the editor and `cowmark check` read the same.
     #[test]
@@ -209,7 +317,7 @@ mod tests {
             let value: String = serde_json::from_str(value.trim_end_matches(',')).unwrap();
             templates.insert(key.to_string(), value.into());
         }
-        assert_eq!(templates.len(), 34);
+        assert_eq!(templates.len(), 34 + 29);
         let defaults = format!("{:?}", Messages::default());
         for key in templates.keys() {
             // A key the linter doesn't know would be ignored silently.

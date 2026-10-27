@@ -108,7 +108,7 @@ pub fn write_file(root: &Path, path: &str, content: &str, create_only: bool) -> 
 
 /// Writes through a temporary file in the same folder, so an editor watching
 /// the file never reads half of it.
-fn write_atomically(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_atomically(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let dir = path.parent().ok_or_else(|| std::io::Error::other("no parent folder"))?;
     std::fs::create_dir_all(dir)?;
     let name = path

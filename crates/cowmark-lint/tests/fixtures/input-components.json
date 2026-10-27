@@ -1,0 +1,68 @@
+{
+  "components": [
+    {
+      "name": "pricing-grid",
+      "props": [],
+      "input": {
+        "kind": "table",
+        "columns": [
+          { "name": "Item", "aliases": ["Name", "Dish"], "required": true, "format": "text", "markdown": true },
+          { "name": "Price", "aliases": ["Cost", "Per person", "Price per person"], "required": true, "format": "price" },
+          { "name": "Description", "aliases": ["Details", "Notes"], "format": "text", "markdown": true },
+          { "name": "Tag", "aliases": ["Badge", "Label"], "format": "text" }
+        ]
+      }
+    },
+    {
+      "name": "facts-grid",
+      "props": [],
+      "input": {
+        "kind": "table",
+        "columns": [
+          { "name": "Fact", "aliases": ["Label", "Name"], "required": true, "format": "text" },
+          { "name": "Value", "aliases": ["Detail"], "required": true, "format": "text", "markdown": true }
+        ]
+      }
+    },
+    {
+      "name": "promo-codes",
+      "props": [
+        { "name": "label-heading", "type": "string", "required": false },
+        { "name": "code-heading", "type": "string", "required": false }
+      ],
+      "input": {
+        "kind": "table",
+        "columns": [
+          { "name": "Location", "aliases": ["Label", "City", "Area"], "required": true, "format": "text" },
+          { "name": "Code", "aliases": ["Promo code"], "required": true, "format": "code" },
+          { "name": "Link", "aliases": ["URL"], "format": "link" }
+        ]
+      }
+    },
+    { "name": "gallery", "props": [], "input": { "kind": "images" } },
+    {
+      "name": "packages",
+      "props": [
+        {
+          "name": "link",
+          "type": "string",
+          "required": false,
+          "format": "search-link",
+          "searchParams": {
+            "package_type": { "values": ["breakfast", "lunch_or_dinner", "appetizer_snack", "dessert"] },
+            "presentation_type": { "values": ["individual", "buffet"] },
+            "package_category": { "values": null }
+          }
+        }
+      ]
+    },
+    {
+      "name": "reviews",
+      "props": [
+        { "name": "link", "type": "string", "required": false, "format": "review-link" },
+        { "name": "limit", "type": "number", "required": false }
+      ]
+    },
+    { "name": "callout", "props": [] }
+  ]
+}

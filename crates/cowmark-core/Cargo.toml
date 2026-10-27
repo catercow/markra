@@ -16,6 +16,7 @@ serde_json = "1"
 sha2 = "0.10.9"
 similar = "3.2.1"
 interprocess = "2.4.7"
+csv = "1"
 
 [target.'cfg(windows)'.dependencies]
 widestring = "1"

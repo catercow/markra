@@ -96,6 +96,7 @@ export {
   readCodeMirrorSectionAnchors,
   readCodeMirrorTableAnchors,
   replaceAllCodeMirrorSearchMatches,
+  applyCodeMirrorMarkdownEdit,
   replaceCodeMirrorMarkdown,
   replaceCodeMirrorSearchMatch,
   serializeCodeMirrorMarkdownImage,
@@ -337,7 +338,9 @@ export {
   mdcComponentsPlugin,
   nestMdcSnippet,
 } from "./mdc-insert.ts";
-export type { ExternalLintDiagnostic, ExternalMdcLint, MdcLintMessages, MdcLintPluginOptions } from "./mdc-lint.ts";
+export type { ExternalLintDiagnostic, ExternalLintFix, ExternalMdcLint, MdcLintMessages, MdcLintPluginOptions } from "./mdc-lint.ts";
+export type { MdcCsvConvert, MdcCsvInput, MdcCsvPluginOptions } from "./mdc-csv.ts";
+export { insertMdcCsv, mdcCsvPastePlugin, mdcTableSlotAt, mightBeCsv } from "./mdc-csv.ts";
 export {
   defaultMdcLintMessages,
   externalLintDiagnostics,

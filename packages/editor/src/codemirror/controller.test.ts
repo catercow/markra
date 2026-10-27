@@ -3,6 +3,7 @@ import { EditorView } from "@codemirror/view";
 import { history, redo, undo } from "@codemirror/commands";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  applyCodeMirrorMarkdownEdit,
   findCodeMirrorSearchMatches,
   insertCodeMirrorMarkdownImage,
   insertCodeMirrorMarkdownImages,
@@ -54,6 +55,17 @@ afterEach(() => {
 });
 
 describe("CodeMirror editor controller", () => {
+  it("applies a formatted document as one undoable change that keeps the caret", () => {
+    const view = createView("Intro\n\n| a | b |\n|-|-|\n| 1 | 2 |\n\nEnd", EditorSelection.cursor(3));
+    const formatted = "Intro\n\n| a   | b   |\n| --- | --- |\n| 1   | 2   |\n\nEnd";
+    expect(applyCodeMirrorMarkdownEdit(view, formatted)).toBe(true);
+    expect(view.state.doc.toString()).toBe(formatted);
+    expect(view.state.selection.main.head).toBe(3);
+    expect(applyCodeMirrorMarkdownEdit(view, formatted)).toBe(false);
+    undo(view);
+    expect(view.state.doc.toString()).toBe("Intro\n\n| a | b |\n|-|-|\n| 1 | 2 |\n\nEnd");
+  });
+
   it("replaces raw Markdown while preserving a bounded cursor", () => {
     const view = createView("Before", EditorSelection.cursor(5));
 
