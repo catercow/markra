@@ -345,6 +345,29 @@ describe("imagePreviewPlugin", () => {
     expect(view.dom.querySelector(".cm-markra-image")).toBeNull();
   });
 
+  it("keeps the Markdown source open while a press moves focus into it", () => {
+    const doc = "Text\n\n![](https://example.test/a.png)\n\nMore";
+    const view = createView(doc);
+    view.dom.querySelector(".cm-markra-image")?.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+    );
+    const source = view.dom.querySelector<HTMLInputElement>(".markra-image-node-source");
+    expect(source).not.toBeNull();
+    if (!source) return;
+
+    // WebKit blurs the editor (focus goes to the body) before the input takes focus.
+    source.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+    view.contentDOM.blur();
+    view.dispatch({});
+    expect(view.dom.querySelector(".markra-image-node-source")).toBe(source);
+    source.focus();
+    document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    view.dispatch({});
+
+    expect(view.dom.querySelector(".markra-image-node-source")).toBe(source);
+    expect(document.activeElement).toBe(source);
+  });
+
   it("keeps the Markdown source open while a lint underline over the image changes", async () => {
     const doc = "Text\n\n![](https://example.test/a.png)\n\nMore";
     const view = createView(doc);

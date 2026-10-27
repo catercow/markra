@@ -41,6 +41,8 @@ interface ImageDetails {
 
 interface ImageWidgetDomState {
   frame: HTMLSpanElement;
+  /** Pressed into the source, before it has focus (see keepSourceFocused). */
+  focusingSource: boolean;
   image: HTMLImageElement;
   imageRecord: ImageWidgetDomRecord;
   mediaViewer: MediaViewerHandle | null;
@@ -511,6 +513,7 @@ class ImageWidget extends WidgetType {
         });
         view.focus();
       },
+      focusingSource: false,
       selected: false,
       sourceInput,
       sourceRow,
@@ -554,6 +557,17 @@ class ImageWidget extends WidgetType {
     };
     const keepSourceFocused = (event: MouseEvent) => {
       event.stopPropagation();
+      if (event.type === "mousedown") {
+        // The press blurs the editor before the input takes focus, and the
+        // blurred editor no longer counts the image as selected; without this
+        // the redraw in between hides the source and the click lands nowhere.
+        state.focusingSource = true;
+        const done = () => {
+          state.focusingSource = false;
+        };
+        sourceInput.addEventListener("focus", done, { once: true });
+        root.ownerDocument.addEventListener("mouseup", () => setTimeout(done), { once: true });
+      }
       showImageSource(root, state, true);
     };
     const handleSourceKeyDown = (event: KeyboardEvent) => {
@@ -625,7 +639,7 @@ class ImageWidget extends WidgetType {
     const preserveInput = dom.ownerDocument.activeElement === state.sourceInput;
     // Cursor-driven source mode is temporary: once Enter moves the caret
     // beyond the image, only an actively focused source input may keep it open.
-    if (this.selected || preserveInput) {
+    if (this.selected || preserveInput || state.focusingSource) {
       showImageSource(dom, state, preserveInput);
     } else {
       hideImageSource(dom, state);
