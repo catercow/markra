@@ -1,8 +1,21 @@
 //! The content repository's `schema/components.json` and `schema/collections.json`.
 
-use serde::Deserialize;
+use indexmap::IndexMap;
+use serde::{Deserialize, Deserializer};
 
+use crate::formats::SearchParam;
 use crate::value::Value;
+
+/// Reads an optional schema section, treating a shape it doesn't understand as absent, so a
+/// newer or older `components.json` never stops the rest from being checked.
+fn lenient<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).ok())
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct PropSchema {
@@ -18,6 +31,63 @@ pub struct PropSchema {
     pub options: Option<Vec<serde_json::Value>>,
     #[serde(default)]
     pub items: Option<Vec<PropSchema>>,
+    /// How the value is read and written: `search-link`, `review-link`; see `formats.rs`.
+    #[serde(default, deserialize_with = "lenient")]
+    pub format: Option<String>,
+    /// For a `search-link`: the search filters the site understands, in canonical order.
+    #[serde(default, rename = "searchParams", deserialize_with = "lenient")]
+    pub search_params: Option<IndexMap<String, SearchParam>>,
+}
+
+/// What goes in a component's slot, when it isn't free Markdown.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum ComponentInput {
+    /// One Markdown table with these columns.
+    Table { columns: Vec<InputColumn> },
+    /// Markdown images; each paragraph is a row.
+    Images,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct InputColumn {
+    /// The canonical header text.
+    pub name: String,
+    #[serde(default)]
+    pub aliases: Vec<String>,
+    #[serde(default)]
+    pub required: bool,
+    /// `text` (the default), `price`, `code` or `link`.
+    #[serde(default, deserialize_with = "lenient")]
+    pub format: Option<String>,
+    /// Inline Markdown is allowed in the cells.
+    #[serde(default)]
+    pub markdown: bool,
+}
+
+impl InputColumn {
+    pub fn format(&self) -> &str {
+        self.format.as_deref().unwrap_or("text")
+    }
+
+    /// Whether `header` names this column: its name or an alias, ignoring case, spacing and
+    /// emphasis or a trailing colon.
+    pub fn matches(&self, header: &str) -> bool {
+        let wanted = normalize_header(header);
+        std::iter::once(&self.name)
+            .chain(&self.aliases)
+            .any(|name| normalize_header(name) == wanted)
+    }
+}
+
+pub fn normalize_header(header: &str) -> String {
+    header
+        .trim()
+        .trim_matches(|c: char| c == '*' || c == '_' || c == ':' || c == '`')
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -25,6 +95,8 @@ pub struct ComponentSchema {
     pub name: String,
     #[serde(default)]
     pub props: Vec<PropSchema>,
+    #[serde(default, deserialize_with = "lenient")]
+    pub input: Option<ComponentInput>,
 }
 
 impl PropSchema {
@@ -447,6 +519,39 @@ mod tests {
         fn pipe_list(self, fields: Vec<ObjectField>) -> FieldType {
             FieldType::List(Box::new(FieldType::Object(Some(fields))))
         }
+    }
+
+    #[test]
+    fn reads_inputs_and_formats_and_ignores_shapes_it_does_not_know() {
+        let schemas = Schemas::from_json(
+            Some(r#"[
+              {"name":"pricing-grid","props":[],"input":{"kind":"table","columns":[
+                {"name":"Item","aliases":["Name","Dish"],"required":true,"format":"text","markdown":true},
+                {"name":"Price","aliases":["Cost"],"required":true,"format":"price"}]}},
+              {"name":"gallery","input":{"kind":"images"}},
+              {"name":"packages","props":[{"name":"link","type":"string","format":"search-link",
+                "searchParams":{"package_type":{"values":["breakfast"]},"package_category":{"values":null}}}]},
+              {"name":"future","input":{"kind":"chart","series":3},"props":[{"name":"x","format":{"weird":1},"searchParams":[1]}]},
+              {"name":"old","input":null}
+            ]"#),
+            None,
+        )
+        .unwrap();
+        let Some(ComponentInput::Table { columns }) = &schemas.component("pricing-grid").unwrap().input else {
+            panic!("no table input");
+        };
+        assert!(columns[1].matches(" **cost**: ") && columns[0].matches("DISH"));
+        assert_eq!(columns[0].format(), "text");
+        assert_eq!(schemas.component("gallery").unwrap().input, Some(ComponentInput::Images));
+        let link = &schemas.component("packages").unwrap().props[0];
+        assert_eq!(link.format.as_deref(), Some("search-link"));
+        let params = link.search_params.as_ref().unwrap();
+        assert_eq!(params.keys().collect::<Vec<_>>(), ["package_type", "package_category"]);
+        assert_eq!(params["package_category"].values, None);
+        let future = schemas.component("future").unwrap();
+        assert_eq!(future.input, None);
+        assert_eq!((future.props[0].format.as_deref(), future.props[0].search_params.is_none()), (None, true));
+        assert_eq!(schemas.component("old").unwrap().input, None);
     }
 
     #[test]

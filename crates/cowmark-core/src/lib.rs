@@ -11,6 +11,7 @@
 
 pub mod access;
 pub mod content_check;
+pub mod csv_table;
 pub mod control;
 pub mod git;
 pub mod git_tool;

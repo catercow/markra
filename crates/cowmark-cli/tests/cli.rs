@@ -201,3 +201,89 @@ fn the_binary_checks_without_the_app_and_exits_by_severity() {
     let _ = fs::remove_dir_all(root);
     let _ = fs::remove_dir_all(data);
 }
+
+const TABLE_COMPONENTS: &str = r#"{"components":[{"name":"pricing-grid","props":[],"input":{"kind":"table","columns":[
+  {"name":"Item","aliases":["Name"],"required":true,"markdown":true},
+  {"name":"Price","aliases":["Cost"],"required":true,"format":"price"}]}}]}"#;
+
+#[test]
+fn fmt_writes_canonical_tables_and_check_fix_does_too() {
+    let root = content_repo("fmt");
+    fs::write(root.join("schema/components.json"), TABLE_COMPONENTS).unwrap();
+    let page = root.join("content/blog/menu.md");
+    let messy = "---\ntitle: Menu\ndescription: Prices\npublished_at: '2026-01-01'\n---\n\n::pricing-grid\nname,cost\n| Tacos | 7.5 USD |\n::\n";
+    fs::write(&page, messy.replace("name,cost", "name | cost")).unwrap();
+    let context = Context {
+        root_flag: Some(root.clone()),
+        cwd: None,
+        app: None,
+    };
+
+    let (code, out, _) = cowmark(&context, &["check"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains("[cell-format] `Price` in row 1 will be saved as `$7.50`."),
+        "{out}"
+    );
+
+    let (code, out, _) = cowmark(&context, &["fmt", "--check"]);
+    assert_eq!((code, out.trim()), (1, "Would format content/blog/menu.md"));
+    assert!(fs::read_to_string(&page).unwrap().contains("7.5 USD"));
+
+    let (code, out, _) = cowmark(&context, &["fmt"]);
+    assert_eq!(code, 0, "{out}");
+    let formatted = fs::read_to_string(&page).unwrap();
+    assert!(
+        formatted.ends_with("::pricing-grid\n| Item  | Price |\n| ----- | ----- |\n| Tacos | $7.50 |\n::\n"),
+        "{formatted}"
+    );
+    assert_eq!(cowmark(&context, &["fmt", "--check"]).0, 0);
+    let (code, out, _) = cowmark(&context, &["check"]);
+    assert_eq!(code, 0, "{out}");
+
+    fs::write(&page, messy.replace("name,cost", "| Name | Cost |\n|--|--|")).unwrap();
+    let (code, out, err) = cowmark(&context, &["check", "--fix", "content/blog/menu.md"]);
+    assert_eq!(code, 0, "{out}");
+    assert_eq!(err.trim(), "Fixed content/blog/menu.md");
+    assert_eq!(fs::read_to_string(&page).unwrap(), formatted);
+
+    // What can't be read stays as written and fails the check.
+    fs::write(&page, formatted.replace("$7.50", "TBD  ")).unwrap();
+    assert_eq!(cowmark(&context, &["fmt", "--check"]).0, 0);
+    let (code, out, _) = cowmark(&context, &["check", "--fix"]);
+    assert_eq!(code, 1);
+    assert!(out.contains("must be a price like $7.25 (got “TBD”)"), "{out}");
+}
+
+#[test]
+fn table_turns_csv_into_markdown() {
+    let root = content_repo("table");
+    fs::write(root.join("schema/components.json"), TABLE_COMPONENTS).unwrap();
+    let csv = root.join("prices.csv");
+    fs::write(&csv, "Cost,Name\n7,\"Tacos, three\"\nsoon,Pie\n").unwrap();
+    let context = Context {
+        root_flag: Some(root.clone()),
+        cwd: None,
+        app: None,
+    };
+    let path = csv.to_str().unwrap();
+    let (code, out, _) = cowmark(&context, &["table", path]);
+    assert_eq!(code, 0);
+    assert_eq!(
+        out,
+        "| Cost | Name         |\n| ---- | ------------ |\n| 7    | Tacos, three |\n| soon | Pie          |\n"
+    );
+    let (code, out, err) = cowmark(&context, &["table", path, "--component", "pricing-grid"]);
+    assert_eq!(code, 1);
+    assert_eq!(
+        out,
+        "::pricing-grid\n| Item         | Price |\n| ------------ | ----- |\n| Tacos, three | $7.00 |\n| Pie          | soon  |\n::\n"
+    );
+    assert_eq!(
+        err.trim(),
+        "Line 4: `Price` in row 2 must be a price like $7.25 (got “soon”)."
+    );
+    let (code, _, err) = cowmark(&context, &["table", path, "--component", "nope"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("no component named `nope`"), "{err}");
+}

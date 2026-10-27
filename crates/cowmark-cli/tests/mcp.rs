@@ -262,3 +262,73 @@ fn an_agent_writes_checks_and_proposes_over_stdio() {
     let reply = session.request("tools/call", json!({ "name": "publish", "arguments": {} }));
     assert!(reply["error"].is_object(), "{reply}");
 }
+
+#[test]
+fn write_file_stores_canonical_values_and_csv_becomes_a_table() {
+    if find_git().is_none() {
+        return;
+    }
+    let app = FakeApp::start("mcp-fmt");
+    let folder = app.folder.clone();
+    fs::write(
+        folder.join("schema/components.json"),
+        r#"{"components":[{"name":"pricing-grid","props":[],"input":{"kind":"table","columns":[
+          {"name":"Item","aliases":["Name"],"required":true,"markdown":true},
+          {"name":"Price","aliases":["Cost"],"required":true,"format":"price"}]}}]}"#,
+    )
+    .unwrap();
+    let mut session = Session::start(&app.data_dir, &app.data_dir);
+    session.request(
+        "initialize",
+        json!({ "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": { "name": "test", "version": "1" } }),
+    );
+    session.send(json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }));
+
+    let head = "---\ntitle: Menu\ndescription: Prices\npublished_at: '2026-10-26'\n---\n\n";
+    let (error, text) = session.call(
+        "write_file",
+        json!({ "path": "content/blog/menu.md", "content": format!("{head}::pricing-grid\nName | Cost\nTacos | 7.5\nPie | soon\n::\n") }),
+    );
+    assert!(!error, "{text}");
+    let result: Value = serde_json::from_str(&text).unwrap();
+    assert!(
+        result["formatted"].as_str().unwrap().contains("canonical form"),
+        "{text}"
+    );
+    assert!(text.contains("must be a price like $7.25 (got “soon”)"), "{text}");
+    assert_eq!(
+        fs::read_to_string(folder.join("content/blog/menu.md")).unwrap(),
+        format!(
+            "{head}::pricing-grid\n| Item  | Price |\n| ----- | ----- |\n| Tacos | $7.50 |\n| Pie   | soon  |\n::\n"
+        )
+    );
+
+    // A file changed on disk is formatted in place.
+    fs::write(
+        folder.join("content/blog/menu.md"),
+        format!("{head}::pricing-grid\nName | Cost\nTacos | 8\n::\n"),
+    )
+    .unwrap();
+    let (error, text) = session.call("format_file", json!({ "path": "content/blog/menu.md" }));
+    assert!(!error, "{text}");
+    let result: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        (result["changed"].clone(), result["check"].clone()),
+        (json!(true), json!("no problems found"))
+    );
+    let (_, text) = session.call("format_file", json!({ "path": "content/blog/menu.md" }));
+    assert_eq!(serde_json::from_str::<Value>(&text).unwrap()["changed"], false);
+
+    let (error, text) = session.call(
+        "csv_to_table",
+        json!({ "csv": "Name,Cost\nTacos,7\n", "component": "pricing-grid" }),
+    );
+    assert!(!error, "{text}");
+    assert_eq!(
+        text,
+        "::pricing-grid\n| Item  | Price |\n| ----- | ----- |\n| Tacos | $7.00 |\n::\n"
+    );
+    let (error, text) = session.call("csv_to_table", json!({ "csv": "a,b\n1,2\n" }));
+    assert!(!error);
+    assert_eq!(text, "| a   | b   |\n| --- | --- |\n| 1   | 2   |");
+}

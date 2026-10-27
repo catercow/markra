@@ -12,7 +12,10 @@
 //! ```
 
 mod conflict;
+pub mod formats;
+mod format;
 mod frontmatter;
+mod input;
 #[cfg(feature = "fs")]
 pub mod fs;
 mod markdown;
@@ -28,9 +31,12 @@ mod yaml;
 
 use serde::Serialize;
 
+pub use format::{Formatted, format};
+pub use input::render_table;
 pub use messages::Messages;
 pub use schema::{
-    page_image_folder, CollectionSchema, ComponentSchema, FieldSchema, PropSchema, SchemaError, Schemas,
+    page_image_folder, CollectionSchema, ComponentInput, ComponentSchema, FieldSchema, InputColumn, PropSchema,
+    SchemaError, Schemas,
 };
 pub use text::{utf8_to_utf16, utf16_to_utf8};
 
@@ -73,10 +79,15 @@ pub enum Rule {
     RawHtml,
     UnsafeLink,
     UnsafeAttribute,
+    // What goes in a component's slot or a link prop (`input` and `format` in the schema).
+    ComponentTable,
+    CellFormat,
+    LinkFormat,
+    GalleryImages,
 }
 
 impl Rule {
-    pub const ALL: [Rule; 23] = [
+    pub const ALL: [Rule; 27] = [
         Rule::UnknownComponent,
         Rule::MissingProp,
         Rule::MissingItemField,
@@ -100,6 +111,10 @@ impl Rule {
         Rule::RawHtml,
         Rule::UnsafeLink,
         Rule::UnsafeAttribute,
+        Rule::ComponentTable,
+        Rule::CellFormat,
+        Rule::LinkFormat,
+        Rule::GalleryImages,
     ];
 
     pub fn id(self) -> &'static str {
@@ -127,6 +142,10 @@ impl Rule {
             Rule::RawHtml => "raw-html",
             Rule::UnsafeLink => "unsafe-link",
             Rule::UnsafeAttribute => "unsafe-attribute",
+            Rule::ComponentTable => "component-table",
+            Rule::CellFormat => "cell-format",
+            Rule::LinkFormat => "link-format",
+            Rule::GalleryImages => "gallery-images",
         }
     }
 }
@@ -157,6 +176,21 @@ pub struct Diagnostic {
     pub rule: Rule,
     /// Plain-language message; text between backticks is a name to show as code.
     pub message: String,
+    /// The edit that writes the value in its canonical form, when the problem is only how it
+    /// is written. [`format`] applies these; the editor offers them as a quick fix.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fix: Option<Fix>,
+}
+
+/// Replace `from..to` with `insert`. Offsets as in [`Diagnostic`].
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Fix {
+    pub from: usize,
+    pub to: usize,
+    pub from_utf16: usize,
+    pub to_utf16: usize,
+    pub insert: String,
 }
 
 /// Answers whether a path exists in the content repository. Paths are repository-relative with
@@ -180,6 +214,7 @@ pub(crate) struct Found {
     pub severity: Severity,
     pub rule: Rule,
     pub message: String,
+    pub fix: Option<(text::Range, String)>,
 }
 
 pub(crate) struct Report<'m> {
@@ -202,7 +237,23 @@ impl Report<'_> {
             severity,
             rule,
             message: messages::fill(template, values),
+            fix: None,
         });
+    }
+
+    /// An error whose `fix` replaces `fix.0` with `fix.1`.
+    pub fn add_fix(
+        &mut self,
+        range: text::Range,
+        rule: Rule,
+        template: &str,
+        values: &[(&str, &str)],
+        fix: (text::Range, String),
+    ) {
+        self.add(range, Severity::Error, rule, template, values);
+        if let Some(found) = self.found.last_mut() {
+            found.fix = Some(fix);
+        }
     }
 }
 
@@ -231,6 +282,12 @@ impl Linter {
     pub fn lint(&self, path: &str, text: &str, files: &dyn FileLookup) -> Vec<Diagnostic> {
         run(&self.schemas, &self.messages, path, text, files)
     }
+
+    /// The document with every fix applied (values in their canonical form), and the problems
+    /// left in it. See [`format()`].
+    pub fn format(&self, path: &str, text: &str, files: &dyn FileLookup) -> Formatted {
+        format::format_with(&self.schemas, &self.messages, path, text, files)
+    }
 }
 
 /// [`Linter::lint`] with the default messages.
@@ -243,7 +300,7 @@ pub fn lint_document(
     run(schemas, &Messages::default(), path, text, files)
 }
 
-fn run(
+pub(crate) fn run(
     schemas: &Schemas,
     messages: &Messages,
     path: &str,
@@ -260,8 +317,22 @@ fn run(
     let body_start = frontmatter::check(text, &context, &mut report);
     let structure = mdc::read_structure(text, body_start);
     let components = (!schemas.components.is_empty()).then_some(schemas);
+    // Components inside others, from opener to closer: not part of the outer one's slot.
+    let extents: Vec<text::Range> = structure
+        .blocks
+        .iter()
+        .filter_map(|block| block.closer.map(|closer| text::Range::new(block.line_from, closer.to)))
+        .collect();
     for block in &structure.blocks {
-        mdc_lint::check_block(text, block, components, &context, &mut report);
+        let nested: Vec<text::Range> = match block.body() {
+            Some(body) => extents
+                .iter()
+                .filter(|extent| extent.from >= body.from && extent.from < body.to)
+                .copied()
+                .collect(),
+            None => Vec::new(),
+        };
+        mdc_lint::check_block(text, block, &nested, components, &context, &mut report);
     }
     markdown::check_prose(text, &structure.prose, &context, &mut report);
     safety::check_prose(text, &structure.prose, &mut report);
@@ -287,6 +358,13 @@ fn run(
                 severity: found.severity,
                 rule: found.rule,
                 message: found.message,
+                fix: found.fix.map(|(range, insert)| Fix {
+                    from: range.from,
+                    to: range.to,
+                    from_utf16: index.utf16(range.from),
+                    to_utf16: index.utf16(range.to),
+                    insert,
+                }),
             }
         })
         .collect()

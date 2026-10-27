@@ -21,6 +21,7 @@ enum Source {
 pub fn check_block(
     text: &str,
     block: &MdcBlock,
+    nested: &[Range],
     schemas: Option<&Schemas>,
     context: &Context,
     report: &mut Report,
@@ -52,12 +53,15 @@ pub fn check_block(
     let read = PropsText::read(text, block);
     if let Some(schemas) = schemas {
         match schemas.component(&block.name) {
-            Some(component) => BlockLinter {
-                text,
-                block,
-                report: &mut *report,
+            Some(component) => {
+                BlockLinter {
+                    text,
+                    block,
+                    report: &mut *report,
+                }
+                .props(component, &read);
+                crate::input::check_slot(text, block, component, nested, report);
             }
-            .props(component, &read),
             None => report.add(
                 block.name_range,
                 Severity::Error,
@@ -273,6 +277,13 @@ struct Locations<'n> {
     yaml_base: usize,
 }
 
+/// The key of the attribute written at `range`, without a leading `:`.
+fn attribute_key(text: &str, range: Range) -> &str {
+    let source = &text[range.from..range.to];
+    let key = source.split('=').next().unwrap_or(source);
+    key.trim_start_matches(':')
+}
+
 fn node_range(node: &Node, base: usize) -> Range {
     Range::new(base + node.from, base + node.to)
 }
@@ -414,6 +425,27 @@ impl BlockLinter<'_, '_, '_> {
             if let Some(expected) = expectation(prop, value) {
                 self.report_expectation(range, expected, &name);
                 continue;
+            }
+            if prop.format.is_some()
+                && let Value::Str(link) = value
+            {
+                let written = match from {
+                    Some(Source::Attribute) => Some(crate::input::Written::Attribute {
+                        range,
+                        key: attribute_key(self.text, range),
+                    }),
+                    Some(Source::Yaml) => locations
+                        .yaml
+                        .as_ref()
+                        .and_then(|yaml| yaml.get(&name))
+                        .map(|(_, value)| crate::input::Written::Yaml {
+                            range: node_range(value, locations.yaml_base),
+                        }),
+                    _ => None,
+                };
+                if let Some(written) = written {
+                    crate::input::check_prop(self.text, prop, &name, link, written, self.report);
+                }
             }
             if !prop.items().is_empty()
                 && let Value::Arr(items) = value
