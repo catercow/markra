@@ -26,9 +26,11 @@ pub struct ContentRoot {
     pub source: Source,
 }
 
-/// A content checkout: a `content/` folder and `schema/collections.json`.
+/// A content checkout: a `content/` folder and `preview.json` (or, in older checkouts,
+/// `schema/collections.json`).
 pub fn is_content_repo(dir: &Path) -> bool {
-    dir.join("content").is_dir() && dir.join("schema").join("collections.json").is_file()
+    dir.join("content").is_dir()
+        && (dir.join("preview.json").is_file() || dir.join("schema").join("collections.json").is_file())
 }
 
 /// Finds the content folder, first match wins: `flag`, the working directory
@@ -156,6 +158,12 @@ mod tests {
 
         let found = find(None, Some(&repo.join("content/blog")), None).unwrap();
         assert_eq!((found.path, found.source), (repo.clone(), Source::WorkingDir));
+        // A checkout without schema/ files is recognised by its preview.json.
+        let served = temp("find-served");
+        std::fs::create_dir_all(served.join("content")).unwrap();
+        assert!(!is_content_repo(&served));
+        std::fs::write(served.join("preview.json"), "{}").unwrap();
+        assert!(is_content_repo(&served));
 
         // Not a checkout, no app: nothing.
         assert!(find(None, Some(&other), None).is_err());

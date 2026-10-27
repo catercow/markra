@@ -8,24 +8,18 @@ use cowmark_lint::fs::FsLookup;
 use cowmark_lint::{Linter, Schemas, Severity};
 use serde::Serialize;
 
-const SCHEMA_FILES: [&str; 2] = ["schema/components.json", "schema/collections.json"];
+use crate::schema_source::{self, Request, default_url};
+
 /// Follows a `lint:` message: a JSON array of [`Problem`]s, one per file.
 pub const LINT_PROBLEMS_PREFIX: &str = "\nlint-problems: ";
 
-/// The folder's schemas. A schema file that can't be read is left out, as if absent, so a
-/// broken `components.json` still leaves front matter, images and links checked.
+/// The folder's schemas without going online: the copy cached from the site in `preview.json`
+/// (else the newest cached copy), else the folder's `schema/` files. A schema text that can't
+/// be read is left out, as if absent, so a broken `components.json` still leaves front matter,
+/// images and links checked. The app refreshes the cache (see [`crate::schema_source`]).
 pub fn read_schemas(root: &Path) -> Schemas {
-    let read = |file: &str| std::fs::read_to_string(root.join(file)).ok();
-    let mut components = read(SCHEMA_FILES[0]);
-    let mut collections = read(SCHEMA_FILES[1]);
-    loop {
-        match Schemas::from_json(components.as_deref(), collections.as_deref()) {
-            Ok(schemas) => return schemas,
-            Err(error) if error.file == "components.json" && components.is_some() => components = None,
-            Err(_) if collections.is_some() => collections = None,
-            Err(_) => return Schemas::default(),
-        }
-    }
+    let request = Request { url: default_url(root, None, None), offline: true, dir: None };
+    schema_source::load(root, &request).schemas()
 }
 
 /// A file's first lint error.

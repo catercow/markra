@@ -10,9 +10,9 @@ publish = false
 base64 = "0.22"
 cowmark-lint = { path = "../cowmark-lint" }
 getrandom = "0.3"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10.9"
 similar = "3.2.1"
 interprocess = "2.4.7"
@@ -22,4 +22,5 @@ csv = "1"
 widestring = "1"
 
 [dev-dependencies]
+tempfile = "3"
 tokio = { version = "1", features = ["rt", "macros"] }

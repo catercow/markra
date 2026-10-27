@@ -107,13 +107,21 @@ impl ServerHandler for CowMarkMcp {
         let context = self.context.clone();
         let name = request.name.to_string();
         let arguments = request.arguments.unwrap_or_default();
-        // File and socket work blocks; keep it off the transport's thread.
-        let outcome = tokio::task::spawn_blocking(move || call(&context, &name, &arguments))
-            .await
-            .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+        // File, socket and schema fetches block; keep them off the transport's thread.
+        let (outcome, note) = tokio::task::spawn_blocking(move || {
+            let outcome = call(&context, &name, &arguments);
+            (outcome, schema_note(&context, &name))
+        })
+        .await
+        .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+        let with_note = |text: String| {
+            let mut blocks = vec![ContentBlock::text(text)];
+            blocks.extend(note.map(ContentBlock::text));
+            blocks
+        };
         Ok(match outcome {
-            Ok(text) => CallToolResult::success(vec![ContentBlock::text(text)]),
-            Err(message) => CallToolResult::error(vec![ContentBlock::text(message)]),
+            Ok(text) => CallToolResult::success(with_note(text)),
+            Err(message) => CallToolResult::error(with_note(message)),
         }
         .into())
     }
@@ -165,10 +173,37 @@ fn pretty(value: Value) -> String {
     serde_json::to_string_pretty(&value).unwrap_or_default()
 }
 
+/// Tools whose results depend on the content schema.
+const SCHEMA_TOOLS: [&str; 8] = [
+    "list_components",
+    "get_component_schema",
+    "get_collection_schema",
+    "check",
+    "write_file",
+    "format_file",
+    "csv_to_table",
+    "new_page",
+];
+
+/// A second text block for schema tools when the schema may be out of date (a week-old cached
+/// copy, or the folder's files because the site couldn't be reached), else None.
+fn schema_note(context: &Context, name: &str) -> Option<String> {
+    if !SCHEMA_TOOLS.contains(&name) {
+        return None;
+    }
+    let root = context.root().ok()?;
+    context.schema(&root.path).note()
+}
+
 /// Runs one tool; `Err` is shown to the agent as a tool error.
 pub fn call(context: &Context, name: &str, arguments: &JsonObject) -> Result<String, String> {
     let args = Args(arguments);
     let root = || context.root().map(|root| root.path);
+    let schemas = |root: &Path| context.schemas(root).map(|(schemas, _)| schemas);
+    let texts = |root: &Path| {
+        let loaded = context.schema(root);
+        if loaded.is_available() { Ok(loaded.texts) } else { Err(loaded.unavailable_message()) }
+    };
     match name {
         "read_file" => content::read_file(&root()?, args.required("path")?),
         "list_files" => content::list_files(&root()?, args.str("dir")?, args.str("extension")?, args.bool("recursive", true)?).map(pretty),
@@ -181,7 +216,7 @@ pub fn call(context: &Context, name: &str, arguments: &JsonObject) -> Result<Str
                 .ok()
                 .filter(|(_, relative)| relative.starts_with("content/") && crate::root::is_markdown(relative))
                 .and_then(|(_, relative)| {
-                    let linter = cowmark_lint::Linter::new(check::load_schemas(&root).ok()?);
+                    let linter = cowmark_lint::Linter::new(schemas(&root).ok()?);
                     Some(linter.format(&relative, text, &|_: &str| true))
                 })
                 .filter(|formatted| formatted.changed);
@@ -191,7 +226,7 @@ pub fn call(context: &Context, name: &str, arguments: &JsonObject) -> Result<Str
                 formatted.as_ref().map_or(text, |formatted| formatted.text.as_str()),
                 args.bool("create_only", false)?,
             )?;
-            let mut result = json!({ "written": written, "check": check_summary(&root, written["path"].as_str().unwrap_or(path)) });
+            let mut result = json!({ "written": written, "check": check_summary(context, &root, written["path"].as_str().unwrap_or(path)) });
             if formatted.is_some() {
                 result["formatted"] = json!(FORMATTED_NOTE);
             }
@@ -200,11 +235,11 @@ pub fn call(context: &Context, name: &str, arguments: &JsonObject) -> Result<Str
         "format_file" => {
             let root = root()?;
             let paths = vec![args.required("path")?.to_string()];
-            let changed = check::format_files(&root, &paths, true)?;
+            let changed = check::format_files(&root, &schemas(&root)?, &paths, true)?;
             Ok(pretty(json!({
                 "path": paths[0],
                 "changed": !changed.is_empty(),
-                "check": check_summary(&root, &paths[0]),
+                "check": check_summary(context, &root, &paths[0]),
             })))
         }
         "csv_to_table" => {
@@ -212,8 +247,7 @@ pub fn call(context: &Context, name: &str, arguments: &JsonObject) -> Result<Str
             match args.str("component")? {
                 None => cowmark_core::csv_table::to_markdown(csv, None),
                 Some(component) => {
-                    let schemas = check::load_schemas(&root()?)?;
-                    let table = cowmark_core::csv_table::for_component(csv, None, component, &schemas, true)?;
+                    let table = cowmark_core::csv_table::for_component(csv, None, component, &schemas(&root()?)?, true)?;
                     Ok(if table.problems.is_empty() {
                         table.markdown
                     } else {
@@ -224,17 +258,19 @@ pub fn call(context: &Context, name: &str, arguments: &JsonObject) -> Result<Str
         }
         "rename_file" => content::rename_file(&root()?, args.required("from")?, args.required("to")?).map(pretty),
         "delete_file" => content::delete_file(&root()?, args.required("path")?).map(pretty),
-        "list_components" => content::list_components(&root()?).map(pretty),
-        "get_component_schema" => content::get_component_schema(&root()?, args.required("name")?).map(pretty),
-        "get_collection_schema" => content::get_collection_schema(&root()?, args.str("name")?).map(pretty),
+        "list_components" => content::list_components(&texts(&root()?)?).map(pretty),
+        "get_component_schema" => content::get_component_schema(&texts(&root()?)?, args.required("name")?).map(pretty),
+        "get_collection_schema" => content::get_collection_schema(&texts(&root()?)?, args.str("name")?).map(pretty),
         "new_page" => {
             let fields = match arguments.get("fields") {
                 None | Some(Value::Null) => None,
                 Some(Value::Object(fields)) => Some(fields),
                 Some(_) => return Err("`fields` must be an object".into()),
             };
+            let root = root()?;
             content::new_page(
-                &root()?,
+                &root,
+                &texts(&root)?,
                 args.required("collection")?,
                 args.required("title")?,
                 args.str("slug")?,
@@ -245,8 +281,12 @@ pub fn call(context: &Context, name: &str, arguments: &JsonObject) -> Result<Str
         }
         "add_image" => {
             let source = args.str("source")?.map(expand_home);
+            let root = root()?;
+            // Without a schema, images go under the page's path in content/.
+            let schema = context.schema(&root).texts;
             content::add_image(
-                &root()?,
+                &root,
+                &schema,
                 args.required("page")?,
                 source.as_deref(),
                 args.str("data")?,
@@ -256,7 +296,8 @@ pub fn call(context: &Context, name: &str, arguments: &JsonObject) -> Result<Str
             .map(pretty)
         }
         "check" => {
-            let report = check::check(&root()?, &args.strings("paths")?)?;
+            let root = root()?;
+            let report = check::check(&root, &schemas(&root)?, &args.strings("paths")?)?;
             let strict = args.bool("strict", false)?;
             let verdict = if report.exit_code(strict) == 0 { "PASSED" } else { "FAILED" };
             Ok(format!("{verdict}\n{}", report.to_text()))
@@ -290,8 +331,8 @@ const FORMATTED_NOTE: &str = "Some values were rewritten in their canonical form
 promo codes, CaterCow links as site paths). read_file shows the saved text.";
 
 /// A short lint result for a file just written, so the agent sees mistakes at once.
-fn check_summary(root: &Path, path: &str) -> Value {
-    match check::check(root, &[path.to_string()]) {
+fn check_summary(context: &Context, root: &Path, path: &str) -> Value {
+    match context.schemas(root).and_then(|(schemas, _)| check::check(root, &schemas, &[path.to_string()])) {
         Ok(report) if report.diagnostics.is_empty() => json!("no problems found"),
         Ok(report) => json!(report.to_text().lines().map(str::to_string).collect::<Vec<_>>()),
         Err(error) => json!(error),
@@ -360,7 +401,7 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "read_file",
             "Read a file",
-            "Reads a text file from the content folder: a page, or schema/components.json, README.md and the like.",
+            "Reads a text file from the content folder: a page, README.md and the like.",
             object(json!({ "path": { "type": "string", "description": PATH } }), &["path"]),
             READ,
         ),
@@ -441,7 +482,7 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "list_components",
             "List MDC components",
-            "Lists the MDC components pages can use (from schema/components.json), with each one's group and purpose. Use get_component_schema for props.",
+            "Lists the MDC components pages can use (from the content schema the site serves), with each one's group and purpose. Use get_component_schema for props.",
             object(json!({}), &[]),
             READ,
         ),
@@ -577,4 +618,44 @@ pub fn tools() -> Vec<Tool> {
             },
         ),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cowmark_core::schema_source::{STALE_AFTER, write_cache};
+
+    #[test]
+    fn schema_tools_mention_a_stale_cached_schema() {
+        let dir = tempfile_dir("mcp-note");
+        std::fs::create_dir_all(dir.join(".git")).unwrap();
+        std::fs::create_dir_all(dir.join("content")).unwrap();
+        let url = "http://127.0.0.1:9/_cowmark/schema.json";
+        let envelope = r#"{"format":1,"components":{"components":[{"name":"cached","props":[]}]},"collections":{"collections":[]}}"#;
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        write_cache(&dir, url, envelope, now - STALE_AFTER.as_secs() - 60).unwrap();
+        let context = Context {
+            root_flag: Some(dir.clone()),
+            schema: crate::ops::SchemaFlags { url: Some(url.into()), offline: true, dir: None },
+            ..Context::default()
+        };
+
+        let listed = call(&context, "list_components", &JsonObject::new()).unwrap();
+        assert!(listed.contains("\"cached\""), "{listed}");
+        let note = schema_note(&context, "list_components").unwrap();
+        assert!(note.contains("may be out of date") && note.contains("7 days ago"), "{note}");
+        assert!(schema_note(&context, "list_files").is_none());
+
+        // A fresh cache needs no note.
+        write_cache(&dir, url, envelope, now).unwrap();
+        assert!(schema_note(&context, "check").is_none());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn tempfile_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("cm-cli-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.canonicalize().unwrap()
+    }
 }

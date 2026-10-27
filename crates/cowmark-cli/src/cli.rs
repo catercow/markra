@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use serde_json::{Value, json};
 
-use crate::ops::Context;
+use crate::ops::{Context, SchemaFlags};
 use crate::{check, mcp};
 
 #[derive(Debug, Parser)]
@@ -22,6 +22,17 @@ pub struct Cli {
     /// The content folder (default: found as described above). Also COWMARK_ROOT.
     #[arg(long, global = true, value_name = "FOLDER")]
     pub root: Option<PathBuf>,
+    /// The content schema endpoint, e.g. https://www.catercow.com/_cowmark/schema.json
+    /// (default: the site in the folder's preview.json). If it can't be fetched, the cached
+    /// copy or the folder's schema/ files are used, with a warning.
+    #[arg(long, global = true, value_name = "URL")]
+    pub schema_url: Option<String>,
+    /// A folder with components.json and collections.json to use instead of the site's schema.
+    #[arg(long = "schema", global = true, value_name = "FOLDER", conflicts_with = "schema_url")]
+    pub schema_dir: Option<PathBuf>,
+    /// Don't fetch the schema: use the cached copy, else the folder's schema/ files.
+    #[arg(long, global = true)]
+    pub offline: bool,
     #[command(subcommand)]
     pub command: Command,
 }
@@ -91,6 +102,16 @@ pub enum Command {
 /// Runs a parsed command and returns the exit code: 0 ok, 1 check failed,
 /// 2 couldn't run.
 pub fn run(cli: Cli, context: &Context, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+    let flags = SchemaFlags {
+        url: cli.schema_url,
+        dir: cli.schema_dir,
+        offline: cli.offline,
+    };
+    let context = &if flags == SchemaFlags::default() {
+        context.clone()
+    } else {
+        context.clone().with_schema(flags)
+    };
     match execute(cli.command, context, out, err) {
         Ok(code) => code,
         Err(message) => {
@@ -112,12 +133,13 @@ fn execute(command: Command, context: &Context, out: &mut dyn Write, err: &mut d
         } => {
             let root = context.root()?;
             let paths: Vec<String> = paths.iter().map(|path| cwd_relative(context, path)).collect();
+            let schemas = schemas_for(context, &root.path, true, err, github.then_some(&mut *out))?;
             if fix {
-                for file in check::format_files(&root.path, &paths, true)? {
+                for file in check::format_files(&root.path, &schemas, &paths, true)? {
                     writeln!(err, "Fixed {file}").map_err(io)?;
                 }
             }
-            let report = check::check(&root.path, &paths)?;
+            let report = check::check(&root.path, &schemas, &paths)?;
             if json {
                 writeln!(
                     out,
@@ -136,7 +158,8 @@ fn execute(command: Command, context: &Context, out: &mut dyn Write, err: &mut d
         Command::Fmt { paths, check: dry_run } => {
             let root = context.root()?;
             let paths: Vec<String> = paths.iter().map(|path| cwd_relative(context, path)).collect();
-            let changed = check::format_files(&root.path, &paths, !dry_run)?;
+            let schemas = schemas_for(context, &root.path, false, err, None)?;
+            let changed = check::format_files(&root.path, &schemas, &paths, !dry_run)?;
             let verb = if dry_run { "Would format" } else { "Formatted" };
             for file in &changed {
                 writeln!(out, "{verb} {file}").map_err(io)?;
@@ -167,7 +190,7 @@ fn execute(command: Command, context: &Context, out: &mut dyn Write, err: &mut d
                 }
                 Some(component) => {
                     let root = context.root()?;
-                    let schemas = check::load_schemas(&root.path)?;
+                    let schemas = schemas_for(context, &root.path, false, err, None)?;
                     let table = cowmark_core::csv_table::for_component(&text, None, &component, &schemas, true)?;
                     write!(out, "{}", table.markdown).map_err(io)?;
                     for problem in &table.problems {
@@ -250,6 +273,37 @@ fn execute(command: Command, context: &Context, out: &mut dyn Write, err: &mut d
             Ok(0)
         }
     }
+}
+
+/// The folder's schema. On stderr: why a better source wasn't used (also as GitHub annotations
+/// on `github`), and with `announce` (or a warning) where it came from. No schema at all is an
+/// error (exit 2).
+fn schemas_for(
+    context: &Context,
+    root: &std::path::Path,
+    announce: bool,
+    err: &mut dyn Write,
+    github: Option<&mut dyn Write>,
+) -> Result<cowmark_lint::Schemas, String> {
+    let (schemas, loaded) = context.schemas(root)?;
+    let io = |error: std::io::Error| error.to_string();
+    for warning in &loaded.warnings {
+        writeln!(err, "cowmark: warning: {warning}").map_err(io)?;
+    }
+    if loaded.is_stale() {
+        writeln!(err, "cowmark: warning: the cached schema is more than a week old.").map_err(io)?;
+    }
+    if announce || !loaded.warnings.is_empty() || loaded.is_stale() {
+        writeln!(err, "cowmark: {}", loaded.describe()).map_err(io)?;
+    }
+    if let Some(github) = github {
+        let escape = |text: &str| text.replace('%', "%25").replace('\r', "%0D").replace('\n', "%0A");
+        for warning in &loaded.warnings {
+            writeln!(github, "::warning title=cowmark schema::{} Using {}.", escape(warning), escape(&loaded.describe()))
+                .map_err(io)?;
+        }
+    }
+    Ok(schemas)
 }
 
 /// The Claude Desktop `mcpServers` entry that runs `exe mcp`.
