@@ -44,7 +44,7 @@ describe("contentLintSource", () => {
 describe("contentLintMessages", () => {
   it("has a template for every message the Rust linter uses", () => {
     const messages = contentLintMessages("en");
-    expect(Object.keys(messages)).toHaveLength(31);
+    expect(Object.keys(messages)).toHaveLength(34);
     for (const [key, text] of Object.entries(messages)) {
       expect(text, key).not.toMatch(/^editor\./u);
     }

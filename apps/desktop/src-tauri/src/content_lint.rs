@@ -226,7 +226,7 @@ mod tests {
             let value: String = serde_json::from_str(value.trim_end_matches(',')).unwrap();
             templates.insert(key.to_string(), value.into());
         }
-        assert_eq!(templates.len(), 31);
+        assert_eq!(templates.len(), 34);
         let defaults = format!("{:?}", Messages::default());
         for key in templates.keys() {
             // A key the linter doesn't know would be ignored silently.

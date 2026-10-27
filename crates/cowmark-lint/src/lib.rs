@@ -1,7 +1,8 @@
 //! Checks CaterCow marketing content files: MDC components against `schema/components.json`,
-//! front matter against `schema/collections.json`, images, links to content pages, and leftover
-//! merge conflicts. Pure: it reads no files itself. The caller passes the document text and a
-//! [`FileLookup`] that answers whether a repository-relative path exists.
+//! front matter against `schema/collections.json`, images, links to content pages, leftover
+//! merge conflicts, and what the site refuses to render (raw HTML, scripting links, event
+//! handler attributes). Pure: it reads no files itself. The caller passes the document text
+//! and a [`FileLookup`] that answers whether a repository-relative path exists.
 //!
 //! ```
 //! use cowmark_lint::{Linter, Rule, Schemas};
@@ -19,6 +20,7 @@ mod mdc;
 mod mdc_lint;
 mod messages;
 mod refs;
+mod safety;
 mod schema;
 pub mod text;
 mod value;
@@ -67,10 +69,14 @@ pub enum Rule {
     BrokenLink,
     // Merges.
     UnresolvedConflict,
+    // What the site refuses to render.
+    RawHtml,
+    UnsafeLink,
+    UnsafeAttribute,
 }
 
 impl Rule {
-    pub const ALL: [Rule; 20] = [
+    pub const ALL: [Rule; 23] = [
         Rule::UnknownComponent,
         Rule::MissingProp,
         Rule::MissingItemField,
@@ -91,6 +97,9 @@ impl Rule {
         Rule::ImageAlt,
         Rule::BrokenLink,
         Rule::UnresolvedConflict,
+        Rule::RawHtml,
+        Rule::UnsafeLink,
+        Rule::UnsafeAttribute,
     ];
 
     pub fn id(self) -> &'static str {
@@ -115,6 +124,9 @@ impl Rule {
             Rule::ImageAlt => "image-alt",
             Rule::BrokenLink => "broken-link",
             Rule::UnresolvedConflict => "unresolved-conflict",
+            Rule::RawHtml => "raw-html",
+            Rule::UnsafeLink => "unsafe-link",
+            Rule::UnsafeAttribute => "unsafe-attribute",
         }
     }
 }
@@ -252,6 +264,7 @@ fn run(
         mdc_lint::check_block(text, block, components, &context, &mut report);
     }
     markdown::check_prose(text, &structure.prose, &context, &mut report);
+    safety::check_prose(text, &structure.prose, &mut report);
 
     let index = text::LineIndex::new(text);
     let mut found = report.found;
