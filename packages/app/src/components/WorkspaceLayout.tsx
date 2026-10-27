@@ -11,6 +11,8 @@ type MarkdownFileTreeDrawerProps = ComponentProps<typeof MarkdownFileTreeDrawer>
 type WorkspaceLayoutProps = {
   aiAgentPanel: ReactNode;
   contentPreviewPanel?: ReactNode;
+  /** Companion view: the preview fills the window, so it must start below the title bar to keep its buttons reachable. */
+  contentPreviewFill?: boolean;
   children: ReactNode;
   compactFileTreeOverlay?: boolean;
   documentSearchAvailable: boolean;
@@ -31,6 +33,7 @@ type WorkspaceLayoutProps = {
 export function WorkspaceLayout({
   aiAgentPanel,
   contentPreviewPanel,
+  contentPreviewFill = false,
   children,
   compactFileTreeOverlay = false,
   documentSearchAvailable,
@@ -91,7 +94,11 @@ export function WorkspaceLayout({
           {children}
         </div>
 
-        <div className="content-preview-panel-slot relative z-20 min-h-0 overflow-hidden">
+        <div
+          className={`content-preview-panel-slot relative z-20 min-h-0 overflow-hidden ${
+            contentPreviewFill && !windowsSelfDrawnChrome ? "pt-10" : ""
+          }`}
+        >
           {contentPreviewPanel}
         </div>
 

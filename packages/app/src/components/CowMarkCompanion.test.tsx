@@ -96,6 +96,8 @@ describe("CowMark as a companion", () => {
     expect(await screen.findByRole("button", { name: "Save to studio" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Close site preview" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Show site preview" })).toBeNull();
+    // The preview starts below the title bar so the Companion view button stays clickable.
+    expect(document.querySelector(".content-preview-panel-slot")).toHaveClass("pt-10");
     expect(window.localStorage.getItem("cowmark.companionMode")).toBe("1");
 
     unmount();
@@ -108,6 +110,7 @@ describe("CowMark as a companion", () => {
     expect(layoutColumns()).toMatch(/^minmax\(0,\s?1fr\) 520px/u);
     expect(await screen.findByRole("button", { name: "Close site preview" })).toBeInTheDocument();
     expect(document.querySelector(".content-preview-panel")).toHaveStyle({ width: "520px" });
+    expect(document.querySelector(".content-preview-panel-slot")).not.toHaveClass("pt-10");
     expect(window.localStorage.getItem("cowmark.companionMode")).toBe("0");
   });
 

@@ -5024,6 +5024,7 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
         <WorkspaceLayout
           aiAgentPanel={aiAgentPanel}
           contentPreviewPanel={contentPreviewPanel}
+          contentPreviewFill={companionMode}
           compactFileTreeOverlay={compactViewport}
           documentSearchAvailable={documentSearchAvailable}
           documentSearchOpen={documentSearchOpen}
