@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
+use cowmark_core::schema_source::SchemaTexts;
 use serde_json::{Map, Value, json};
 
 use crate::root::{self, resolve, resolve_writable};
@@ -155,32 +156,30 @@ pub fn delete_file(root: &Path, path: &str) -> Result<Value, String> {
 
 // --- schemas ---------------------------------------------------------------------
 
-fn schema_file(root: &Path, name: &str) -> Result<Value, String> {
-    let path = root.join("schema").join(name);
-    let text =
-        std::fs::read_to_string(&path).map_err(|_| format!("schema/{name} is missing from the content folder"))?;
-    serde_json::from_str(&text).map_err(|error| format!("schema/{name} can't be read: {error}"))
+fn schema_part(text: Option<&str>, name: &str) -> Result<Value, String> {
+    let text = text.ok_or_else(|| format!("the content schema has no {name}; check that the site serves /_cowmark/schema.json"))?;
+    serde_json::from_str(text).map_err(|error| format!("the content schema's {name} can't be read: {error}"))
 }
 
-fn components(root: &Path) -> Result<Vec<Value>, String> {
-    let file = schema_file(root, "components.json")?;
+fn components(schema: &SchemaTexts) -> Result<Vec<Value>, String> {
+    let file = schema_part(schema.components.as_deref(), "components")?;
     let list = file.get("components").cloned().unwrap_or(file);
     list.as_array()
         .cloned()
-        .ok_or("schema/components.json has no component list".into())
+        .ok_or("the content schema has no component list".into())
 }
 
-fn collections(root: &Path) -> Result<Vec<Value>, String> {
-    schema_file(root, "collections.json")?
+fn collections(schema: &SchemaTexts) -> Result<Vec<Value>, String> {
+    schema_part(schema.collections.as_deref(), "collections")?
         .get("collections")
         .and_then(Value::as_array)
         .cloned()
-        .ok_or("schema/collections.json has no collection list".into())
+        .ok_or("the content schema has no collection list".into())
 }
 
 /// Every component with its group and purpose, without the props.
-pub fn list_components(root: &Path) -> Result<Value, String> {
-    let list: Vec<Value> = components(root)?
+pub fn list_components(schema: &SchemaTexts) -> Result<Value, String> {
+    let list: Vec<Value> = components(schema)?
         .iter()
         .map(|component| {
             let mut summary = Map::new();
@@ -198,9 +197,9 @@ pub fn list_components(root: &Path) -> Result<Value, String> {
 }
 
 /// One component's full schema: props with types, defaults, options, item fields.
-pub fn get_component_schema(root: &Path, name: &str) -> Result<Value, String> {
+pub fn get_component_schema(schema: &SchemaTexts, name: &str) -> Result<Value, String> {
     let name = name.trim().trim_start_matches(':');
-    components(root)?
+    components(schema)?
         .into_iter()
         .find(|component| {
             component.get("name").and_then(Value::as_str) == Some(name)
@@ -209,9 +208,9 @@ pub fn get_component_schema(root: &Path, name: &str) -> Result<Value, String> {
         .ok_or_else(|| format!("no component named `{name}`; list_components shows them"))
 }
 
-fn find_collection(root: &Path, name: &str) -> Result<Value, String> {
+fn find_collection(schema: &SchemaTexts, name: &str) -> Result<Value, String> {
     let wanted = name.trim().trim_end_matches('/');
-    let all = collections(root)?;
+    let all = collections(schema)?;
     all.iter()
         .find(|collection| {
             let field = |key: &str| collection.get(key).and_then(Value::as_str).unwrap_or_default();
@@ -235,17 +234,17 @@ Keep titles under 60 characters and descriptions under 160 for search results. \
 Image fields hold a site path starting with `/`, e.g. `/blog/my-post/photo.jpg` for `public/blog/my-post/photo.jpg` (see add_image).";
 
 /// A collection's front matter fields, or every collection without `name`.
-pub fn get_collection_schema(root: &Path, name: Option<&str>) -> Result<Value, String> {
+pub fn get_collection_schema(schema: &SchemaTexts, name: Option<&str>) -> Result<Value, String> {
     match name.map(str::trim).filter(|name| !name.is_empty()) {
         Some(name) => {
-            let mut collection = find_collection(root, name)?;
+            let mut collection = find_collection(schema, name)?;
             if let Value::Object(object) = &mut collection {
                 object.insert("notes".into(), FRONT_MATTER_NOTES.into());
             }
             Ok(collection)
         }
         None => {
-            let list: Vec<Value> = collections(root)?
+            let list: Vec<Value> = collections(schema)?
                 .iter()
                 .map(|collection| {
                     json!({
@@ -369,6 +368,7 @@ fn field_is_date(name: &str) -> bool {
 /// gives them), any extra `fields`, and `body`.
 pub fn new_page(
     root: &Path,
+    schema: &SchemaTexts,
     collection: &str,
     title: &str,
     slug: Option<&str>,
@@ -379,7 +379,7 @@ pub fn new_page(
     if title.is_empty() {
         return Err("`title` is empty".into());
     }
-    let collection = find_collection(root, collection)?;
+    let collection = find_collection(schema, collection)?;
     let folder = collection
         .get("folder")
         .and_then(Value::as_str)
@@ -486,11 +486,11 @@ fn sniff_image(bytes: &[u8]) -> Option<&'static str> {
 /// The site path of a page's image folder (`content/blog/my-post.md` →
 /// `/blog/my-post`), served from `public/`. Follows the collection's URL prefix;
 /// a page outside every collection uses its path under `content/`.
-fn page_image_folder(root: &Path, page_relative: &str) -> Result<String, String> {
+fn page_image_folder(schema: &SchemaTexts, page_relative: &str) -> Result<String, String> {
     let without_extension = page_relative
         .rsplit_once('.')
         .map_or(page_relative, |(stem, _)| stem);
-    let all = collections(root).unwrap_or_default();
+    let all = collections(schema).unwrap_or_default();
     let found = all.iter().find_map(|collection| {
         let field = |key: &str| collection.get(key).and_then(Value::as_str).unwrap_or_default();
         let folder = field("folder").trim_end_matches('/');
@@ -512,6 +512,7 @@ fn page_image_folder(root: &Path, page_relative: &str) -> Result<String, String>
 /// page (`/blog/my-post/<name>.<ext>`). From a local file (`source`) or base64 `data`.
 pub fn add_image(
     root: &Path,
+    schema: &SchemaTexts,
     page: &str,
     source: Option<&Path>,
     data_base64: Option<&str>,
@@ -567,7 +568,7 @@ pub fn add_image(
     {
         base = format!("{}-image", if stem.is_empty() { "page".into() } else { slugify(&stem) });
     }
-    let site_folder = page_image_folder(root, &page_relative)?;
+    let site_folder = page_image_folder(schema, &page_relative)?;
     let folder = root.join("public").join(site_folder.trim_start_matches('/'));
     let mut file_name = format!("{base}.{extension}");
     let mut n = 2;
@@ -596,6 +597,14 @@ pub fn display(root: &Path, relative: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn schema(root: &Path) -> SchemaTexts {
+        cowmark_core::schema_source::load(root, &Default::default()).texts
+    }
+
+    fn check(root: &Path, paths: &[String]) -> Result<crate::check::CheckReport, String> {
+        crate::check::check_folder(root, paths)
+    }
 
     fn repo(name: &str) -> PathBuf {
         let root = std::env::temp_dir().join(format!("cm-cli-content-{name}-{}", std::process::id()));
@@ -648,7 +657,7 @@ mod tests {
         let root = repo("new");
         let fields: Map<String, Value> =
             serde_json::from_value(json!({ "description": "About lunch", "category": "a" })).unwrap();
-        let made = new_page(&root, "blog", "Lunch Ideas: 2026", None, Some(&fields), Some("Hello")).unwrap();
+        let made = new_page(&root, &schema(&root), "blog", "Lunch Ideas: 2026", None, Some(&fields), Some("Hello")).unwrap();
         assert_eq!(made["path"], "content/blog/lunch-ideas-2026.md");
         assert_eq!(made["url"], "/blog/lunch-ideas-2026");
         let text = std::fs::read_to_string(root.join("content/blog/lunch-ideas-2026.md")).unwrap();
@@ -659,20 +668,20 @@ mod tests {
                 today()
             )
         );
-        let report = crate::check::check(&root, &[made["path"].as_str().unwrap().into()]).unwrap();
+        let report = check(&root, &[made["path"].as_str().unwrap().into()]).unwrap();
         assert_eq!(report.errors(), 0, "{}", report.to_text());
 
         // Without a description the field is left empty for the writer to fill.
-        let made = new_page(&root, "content/blog", "Second", Some("custom-slug"), None, None).unwrap();
+        let made = new_page(&root, &schema(&root), "content/blog", "Second", Some("custom-slug"), None, None).unwrap();
         assert_eq!(made["path"], "content/blog/custom-slug.md");
         assert_eq!(made["fieldsToFill"], json!(["description"]));
         assert!(
-            new_page(&root, "blog", "Second", Some("custom-slug"), None, None)
+            new_page(&root, &schema(&root), "blog", "Second", Some("custom-slug"), None, None)
                 .unwrap_err()
                 .contains("already exists")
         );
         assert!(
-            new_page(&root, "nope", "X", None, None, None)
+            new_page(&root, &schema(&root), "nope", "X", None, None, None)
                 .unwrap_err()
                 .contains("blog")
         );
@@ -722,21 +731,21 @@ mod tests {
     fn schemas_are_served_from_the_repo() {
         let root = repo("schemas");
         assert_eq!(
-            list_components(&root).unwrap()["components"][0],
+            list_components(&schema(&root)).unwrap()["components"][0],
             json!({ "name": "callout", "group": "Text", "purpose": "A box", "props": 1 })
         );
-        assert_eq!(get_component_schema(&root, "Callout").unwrap()["name"], "callout");
+        assert_eq!(get_component_schema(&schema(&root), "Callout").unwrap()["name"], "callout");
         assert_eq!(
-            get_component_schema(&root, "::callout").unwrap()["props"][0]["name"],
+            get_component_schema(&schema(&root), "::callout").unwrap()["props"][0]["name"],
             "type"
         );
-        assert!(get_component_schema(&root, "nope").is_err());
+        assert!(get_component_schema(&schema(&root), "nope").is_err());
         assert_eq!(
-            get_collection_schema(&root, Some("blog")).unwrap()["fields"][0]["name"],
+            get_collection_schema(&schema(&root), Some("blog")).unwrap()["fields"][0]["name"],
             "title"
         );
         assert_eq!(
-            get_collection_schema(&root, None).unwrap()["collections"][0]["url"],
+            get_collection_schema(&schema(&root), None).unwrap()["collections"][0]["url"],
             "/blog/<file name without .md>"
         );
         let _ = std::fs::remove_dir_all(root);
@@ -752,6 +761,7 @@ mod tests {
 
         let added = add_image(
             &root,
+            &schema(&root),
             "content/blog/my-post.md",
             Some(&source),
             None,
@@ -762,12 +772,13 @@ mod tests {
         assert_eq!(added["path"], "public/blog/my-post/team-lunch.png");
         assert_eq!(added["markdown"], "![Team lunch](/blog/my-post/team-lunch.png)");
         assert!(root.join("public/blog/my-post/team-lunch.png").is_file());
-        let again = add_image(&root, "content/blog/my-post.md", Some(&source), None, None, None).unwrap();
+        let again = add_image(&root, &schema(&root), "content/blog/my-post.md", Some(&source), None, None, None).unwrap();
         assert_eq!(again["reference"], "/blog/my-post/team-lunch-2.png");
 
         let data = base64::engine::general_purpose::STANDARD.encode(b"\xff\xd8\xff\xe0jpeg");
         let pasted = add_image(
             &root,
+            &schema(&root),
             "content/blog/my-post.md",
             None,
             Some(&data),
@@ -778,9 +789,9 @@ mod tests {
         assert_eq!(pasted["reference"], "/blog/my-post/my-post-image.jpg");
 
         std::fs::write(&source, "not an image").unwrap();
-        assert!(add_image(&root, "content/blog/my-post.md", Some(&source), None, None, None).is_err());
-        assert!(add_image(&root, "content/blog/missing.md", None, Some(&data), None, None).is_err());
-        assert!(add_image(&root, "content/blog/my-post.md", None, None, None, None).is_err());
+        assert!(add_image(&root, &schema(&root), "content/blog/my-post.md", Some(&source), None, None, None).is_err());
+        assert!(add_image(&root, &schema(&root), "content/blog/missing.md", None, Some(&data), None, None).is_err());
+        assert!(add_image(&root, &schema(&root), "content/blog/my-post.md", None, None, None, None).is_err());
         // The references resolve for the linter as they do on the site.
         let page = format!(
             "---\ntitle: Post\ndescription: D\npublished_at: '2026-01-01'\ndraft: true\n---\n\n{}\n\n![Pasted]({})\n",
@@ -788,7 +799,7 @@ mod tests {
             pasted["reference"].as_str().unwrap()
         );
         write_file(&root, "content/blog/my-post.md", &page, false).unwrap();
-        let report = crate::check::check(&root, &[]).unwrap();
+        let report = check(&root, &[]).unwrap();
         assert!(report.diagnostics.is_empty(), "{}", report.to_text());
         write_file(
             &root,
@@ -797,7 +808,7 @@ mod tests {
             false,
         )
         .unwrap();
-        assert_eq!(crate::check::check(&root, &[]).unwrap().errors(), 1);
+        assert_eq!(check(&root, &[]).unwrap().errors(), 1);
         let _ = std::fs::remove_dir_all(root);
     }
 }

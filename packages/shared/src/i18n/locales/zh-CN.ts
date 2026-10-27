@@ -702,6 +702,8 @@ const messages: LocaleMessages = {
   "app.cowmark.imageAltInsert": "插入图片",
   "app.cowmark.imageAltSkip": "跳过",
   "app.cowmark.imageSaveFailed": "无法添加图片：{message}",
+  "app.cowmark.schemaOutOfDate": "组件列表可能已过期——无法连接 {site}。",
+  "app.cowmark.schemaMissing": "没有组件列表——无法连接 {site}。",
   "app.cowmark.newPost": "新文章",
   "app.cowmark.newPostTitle": "文章标题",
   "app.cowmark.newPostCreate": "创建文章",

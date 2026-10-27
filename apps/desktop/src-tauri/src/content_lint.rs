@@ -1,32 +1,48 @@
-//! Tauri command for CowMark's in-editor content lint. The rules are in the
+//! Tauri commands for CowMark's in-editor content lint. The rules are in the
 //! `cowmark-lint` crate, shared with `cowmark check` and CI, so all three report
 //! the same problems. This keeps one prepared `Linter` per content folder and
-//! rebuilds it when the folder's schema files change.
+//! rebuilds it when the schema changes: the schema the site serves, once
+//! `cowmark_schema` has fetched it (or its cached copy), else the folder's
+//! `schema/` files, rebuilt when they change on disk.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
-use cowmark_lint::fs::FsLookup;
 use cowmark_core::content_check::read_schemas;
 use cowmark_core::csv_table::{self, ComponentTable};
-use cowmark_lint::{Diagnostic, Formatted, Linter, Messages};
+use cowmark_core::schema_source::{self, Loaded, Memo, Origin, Request};
+use cowmark_lint::fs::FsLookup;
+use cowmark_lint::{Diagnostic, Formatted, Linter, Messages, Schemas};
 use serde::Serialize;
+use serde_json::Value;
 
 const SCHEMA_FILES: [&str; 2] = ["schema/components.json", "schema/collections.json"];
 
 /// What a schema file looked like when the linter was built: absent, or its mtime and size.
 type Fingerprint = [Option<(SystemTime, u64)>; 2];
 
+/// Which schema a linter was built from.
+#[derive(Clone, PartialEq, Eq)]
+enum SchemaKey {
+    /// The schema `cowmark_schema` loaded, by hash.
+    Loaded(String),
+    /// The folder's own files (or the cached copy) before that, by fingerprint.
+    Folder(Fingerprint),
+}
+
 struct Prepared {
-    fingerprint: Fingerprint,
+    key: SchemaKey,
     linter: Linter,
 }
 
 #[derive(Default, Clone)]
 pub(crate) struct ContentLintState {
     linters: Arc<Mutex<HashMap<PathBuf, Prepared>>>,
+    /// The last schema `cowmark_schema` loaded for each folder.
+    loaded: Arc<Mutex<HashMap<PathBuf, Arc<Loaded>>>>,
+    memo: Arc<Memo>,
 }
 
 fn fingerprint(root: &Path) -> Fingerprint {
@@ -60,8 +76,58 @@ impl ContentLintState {
         self.with_linter(root, messages, |linter| linter.format(path, text, &FsLookup::new(root)))
     }
 
+    /// Loads the schema for `root` (see `cowmark_core::schema_source`): the site's, fetched at
+    /// most every ten minutes unless `force`, else its cached copy, else the folder's files.
+    /// `site` is used when the folder has no `preview.json`. The linter follows on its next run.
+    pub(crate) fn refresh(&self, root: &Path, site: Option<&str>, force: bool) -> Arc<Loaded> {
+        if force {
+            self.memo.clear();
+        }
+        let request = Request {
+            url: schema_source::default_url(root, None, site),
+            offline: false,
+            dir: None,
+        };
+        self.store(root, schema_source::load_with(root, &request, Some(&self.memo)))
+    }
+
+    fn store(&self, root: &Path, loaded: Loaded) -> Arc<Loaded> {
+        let loaded = Arc::new(loaded);
+        self.loaded
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(root.to_path_buf(), loaded.clone());
+        loaded
+    }
+
+    /// The schema loaded for `root`, unless it was the folder's files (or nothing), which are
+    /// read afresh so edits to them show up.
+    fn served(&self, root: &Path) -> Option<Arc<Loaded>> {
+        let loaded = self.loaded.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        loaded
+            .get(root)
+            .filter(|loaded| !matches!(loaded.origin, Origin::Repo | Origin::None))
+            .cloned()
+    }
+
+    fn schema_key(&self, root: &Path) -> (SchemaKey, Option<Arc<Loaded>>) {
+        match self.served(root) {
+            Some(loaded) => (SchemaKey::Loaded(loaded.hash.clone()), Some(loaded)),
+            None => (SchemaKey::Folder(fingerprint(root)), None),
+        }
+    }
+
+    /// The schemas the linter uses for `root`.
+    pub(crate) fn schemas(&self, root: &Path) -> Schemas {
+        match self.served(root) {
+            Some(loaded) => loaded.schemas(),
+            None => read_schemas(root),
+        }
+    }
+
     fn with_linter<T>(&self, root: &Path, messages: Option<Messages>, run: impl FnOnce(&Linter) -> T) -> T {
-        let current = fingerprint(root);
+        let (key, served) = self.schema_key(root);
+        let build = || served.as_ref().map_or_else(|| read_schemas(root), |loaded| loaded.schemas());
         let mut linters = self
             .linters
             .lock()
@@ -69,12 +135,12 @@ impl ContentLintState {
         let prepared = linters
             .entry(root.to_path_buf())
             .or_insert_with(|| Prepared {
-                fingerprint: current,
-                linter: Linter::new(read_schemas(root)),
+                key: key.clone(),
+                linter: Linter::new(build()),
             });
-        if prepared.fingerprint != current {
-            prepared.fingerprint = current;
-            prepared.linter.schemas = read_schemas(root);
+        if prepared.key != key {
+            prepared.key = key;
+            prepared.linter.schemas = build();
         }
         if let Some(messages) = messages {
             prepared.linter.messages = messages;
@@ -133,28 +199,52 @@ pub(crate) async fn cowmark_format(
     .map_err(|error| error.to_string())
 }
 
+/// Loads the content schema for the managed folder `root` and returns it for the editor's
+/// component list and page forms: `{ components, collections, origin, warnings, hash, url,
+/// stale, description }` (see `Loaded::to_json`). `site` is the app's preview site, used when
+/// the folder has no `preview.json`; `force` skips the ten-minute reuse of the last fetch.
+#[tauri::command]
+pub(crate) async fn cowmark_schema(
+    state: tauri::State<'_, ContentLintState>,
+    root: String,
+    site: Option<String>,
+    force: Option<bool>,
+) -> Result<Value, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        state.refresh(Path::new(&root), site.as_deref(), force.unwrap_or(false)).to_json()
+    })
+    .await
+    .map_err(|error| error.to_string())
+}
+
 /// Pasted or dropped CSV as a Markdown table, or None when `text` doesn't look like a table
 /// (and `csv_type`, the clipboard's `text/csv`, isn't set). With `component`, the table gets
 /// that table component's columns and canonical values; `wrap` puts it inside the component.
 #[tauri::command]
 pub(crate) async fn cowmark_csv_table(
+    state: tauri::State<'_, ContentLintState>,
     root: String,
     text: String,
     csv_type: bool,
     component: Option<String>,
     wrap: bool,
 ) -> Result<Option<ComponentTable>, String> {
-    tauri::async_runtime::spawn_blocking(move || csv_to_table(Path::new(&root), &text, csv_type, component.as_deref(), wrap))
-        .await
-        .map_err(|error| error.to_string())?
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = Path::new(&root);
+        csv_to_table(&state.schemas(root), text.as_str(), csv_type, component.as_deref(), wrap)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
-fn csv_to_table(root: &Path, text: &str, csv_type: bool, component: Option<&str>, wrap: bool) -> Result<Option<ComponentTable>, String> {
+fn csv_to_table(schemas: &Schemas, text: &str, csv_type: bool, component: Option<&str>, wrap: bool) -> Result<Option<ComponentTable>, String> {
     let Some(delimiter) = csv_table::detect(text, csv_type) else {
         return Ok(None);
     };
     match component {
-        Some(component) => csv_table::for_component(text, Some(delimiter), component, &read_schemas(root), wrap).map(Some),
+        Some(component) => csv_table::for_component(text, Some(delimiter), component, schemas, wrap).map(Some),
         None => Ok(Some(ComponentTable {
             markdown: csv_table::to_markdown(text, Some(delimiter))?,
             problems: Vec::new(),
@@ -209,6 +299,68 @@ mod tests {
         assert!(state
             .lint(dir.path(), "content/a.md", text, None)
             .is_empty());
+    }
+
+    /// Serves `body()` as the schema endpoint until the test ends; returns the site.
+    fn serve(body: Arc<Mutex<String>>) -> String {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let site = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut buffer = [0u8; 4096];
+                let _ = stream.read(&mut buffer);
+                let body = body.lock().unwrap().clone();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+        site
+    }
+
+    fn envelope(component: &str) -> String {
+        format!(r#"{{"format":1,"components":{{"components":[{{"name":"{component}","props":[]}}]}},"collections":{{"collections":[]}}}}"#)
+    }
+
+    #[test]
+    fn follows_the_schema_the_site_serves() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join(".git")).unwrap();
+        fs::create_dir_all(dir.path().join("schema")).unwrap();
+        fs::write(dir.path().join("schema/components.json"), r#"[{"name":"card-a","props":[]}]"#).unwrap();
+        let body = Arc::new(Mutex::new(envelope("banner")));
+        let site = serve(body.clone());
+        let state = ContentLintState::default();
+        let text = "::banner\nHi\n::\n";
+
+        // Before the first load: the folder's files.
+        assert_eq!(rules(&state.lint(dir.path(), "content/a.md", text, None)), ["unknown-component"]);
+
+        let loaded = state.refresh(dir.path(), Some(&site), false);
+        assert_eq!(loaded.origin, Origin::Site { url: format!("{site}/_cowmark/schema.json") });
+        assert_eq!(loaded.to_json()["components"].as_str().unwrap(), r#"{"components":[{"name":"banner","props":[]}]}"#);
+        assert!(state.lint(dir.path(), "content/a.md", text, None).is_empty());
+        assert_eq!(state.schemas(dir.path()).components[0].name, "banner");
+
+        // Within ten minutes the last fetch is reused; forcing fetches, and the linter is rebuilt.
+        *body.lock().unwrap() = envelope("other");
+        let same = state.refresh(dir.path(), Some(&site), false);
+        assert_eq!(same.hash, loaded.hash);
+        let changed = state.refresh(dir.path(), Some(&site), true);
+        assert_ne!(changed.hash, loaded.hash);
+        assert_eq!(rules(&state.lint(dir.path(), "content/a.md", text, None)), ["unknown-component"]);
+
+        // A preview.json in the folder names the site instead.
+        fs::write(dir.path().join("preview.json"), r#"{"site":"http://127.0.0.1:9"}"#).unwrap();
+        let cached = state.refresh(dir.path(), Some(&site), true);
+        assert!(matches!(cached.origin, Origin::Repo), "{:?}", cached.origin);
+        assert!(!cached.warnings.is_empty());
+        // The folder's files are linted again.
+        assert_eq!(state.schemas(dir.path()).components[0].name, "card-a");
     }
 
     #[test]
@@ -286,14 +438,14 @@ Café ✓|1
         assert_eq!(formatted.text, "::facts-grid\n| Fact | Value |\n| --- | --- |\n| Café ✓ | 1 |\n::\n");
         assert!(formatted.diagnostics.is_empty());
 
-        assert!(csv_to_table(dir.path(), "Just a sentence, really.", false, None, false).unwrap().is_none());
-        let table = csv_to_table(dir.path(), "Label\tValue\nFounded\t2014\n", false, Some("facts-grid"), false)
+        assert!(csv_to_table(&state.schemas(dir.path()), "Just a sentence, really.", false, None, false).unwrap().is_none());
+        let table = csv_to_table(&state.schemas(dir.path()), "Label\tValue\nFounded\t2014\n", false, Some("facts-grid"), false)
             .unwrap()
             .unwrap();
         assert_eq!(table.markdown, "| Fact | Value |\n| --- | --- |\n| Founded | 2014 |");
-        let wrapped = csv_to_table(dir.path(), "a,b\n1,2\n", true, Some("facts-grid"), true).unwrap().unwrap();
+        let wrapped = csv_to_table(&state.schemas(dir.path()), "a,b\n1,2\n", true, Some("facts-grid"), true).unwrap().unwrap();
         assert!(wrapped.markdown.starts_with("::facts-grid\n") && !wrapped.problems.is_empty());
-        assert!(csv_to_table(dir.path(), "a,b\n1,2\n", true, Some("nope"), true).is_err());
+        assert!(csv_to_table(&state.schemas(dir.path()), "a,b\n1,2\n", true, Some("nope"), true).is_err());
     }
 
     /// The app sends `editor.mdcLint.*` and `editor.contentLint.*` as the templates; in English

@@ -103,17 +103,17 @@ impl CheckReport {
     }
 }
 
-/// The content repository's schemas; missing files are fine, broken ones are not.
-pub fn load_schemas(root: &Path) -> Result<Schemas, String> {
-    let read = |name: &str| std::fs::read_to_string(root.join("schema").join(name)).ok();
-    Schemas::from_json(read("components.json").as_deref(), read("collections.json").as_deref())
-        .map_err(|error| error.to_string())
+/// The folder's own `schema/` files, offline; for tests.
+#[cfg(test)]
+pub(crate) fn check_folder(root: &Path, paths: &[String]) -> Result<CheckReport, String> {
+    let schemas = cowmark_core::schema_source::load(root, &Default::default()).parse()?;
+    check(root, &schemas, paths)
 }
 
 /// Checks the Markdown files at `paths` (files or folders; relative to the
 /// root, or absolute inside it), or everything under `content/` when empty.
-pub fn check(root: &Path, paths: &[String]) -> Result<CheckReport, String> {
-    let linter = Linter::new(load_schemas(root)?);
+pub fn check(root: &Path, schemas: &Schemas, paths: &[String]) -> Result<CheckReport, String> {
+    let linter = Linter::new(schemas.clone());
     let lookup = FsLookup::cached(root);
 
     let mut report = CheckReport::default();
@@ -143,8 +143,8 @@ fn relative_path(root: &Path, file: &Path) -> String {
 /// Writes component input in its canonical form (`cowmark fmt`): the fixes `check` offers, such
 /// as `$7.25` for `7.25 USD` or a tidied table. Returns the root-relative paths that changed (or
 /// would, with `write` false). Only pages under `content/` are rewritten.
-pub fn format_files(root: &Path, paths: &[String], write: bool) -> Result<Vec<String>, String> {
-    let linter = Linter::new(load_schemas(root)?);
+pub fn format_files(root: &Path, schemas: &Schemas, paths: &[String], write: bool) -> Result<Vec<String>, String> {
+    let linter = Linter::new(schemas.clone());
     let mut changed = Vec::new();
     for file in resolve_files(root, paths)? {
         let relative = relative_path(root, &file);
@@ -226,7 +226,7 @@ mod tests {
     fn exit_codes_follow_errors_and_strict_warnings() {
         let root = repo("exit");
         std::fs::write(root.join("content/blog/good.md"), "---\ntitle: Good\n---\n\nHello\n").unwrap();
-        let clean = check(&root, &[]).unwrap();
+        let clean = check_folder(&root, &[]).unwrap();
         assert_eq!((clean.files.len(), clean.errors(), clean.warnings()), (1, 0, 0));
         assert_eq!((clean.exit_code(false), clean.exit_code(true)), (0, 0));
 
@@ -238,7 +238,7 @@ mod tests {
             "---\ntitle: Warn\n---\n\n![](/blog/warn/a.png)\n",
         )
         .unwrap();
-        let warned = check(&root, &["content/blog/warn.md".into()]).unwrap();
+        let warned = check_folder(&root, &["content/blog/warn.md".into()]).unwrap();
         assert_eq!((warned.errors(), warned.warnings()), (0, 1));
         assert_eq!((warned.exit_code(false), warned.exit_code(true)), (0, 1));
         assert!(
@@ -251,7 +251,7 @@ mod tests {
 
         // An error: the required title is missing.
         std::fs::write(root.join("content/blog/bad.md"), "---\nother: x\n---\n").unwrap();
-        let all = check(&root, &["content".into()]).unwrap();
+        let all = check_folder(&root, &["content".into()]).unwrap();
         assert_eq!(
             all.files,
             vec!["content/blog/bad.md", "content/blog/good.md", "content/blog/warn.md"]
@@ -270,12 +270,12 @@ mod tests {
                 .contains("::warning file=content/blog/warn.md,line=5,col=1,")
         );
 
-        assert!(check(&root, &["content/blog/missing.md".into()]).is_err());
-        assert!(check(&root, &["../elsewhere".into()]).is_err());
-        assert!(check(&root, &["schema/collections.json".into()]).is_err());
+        assert!(check_folder(&root, &["content/blog/missing.md".into()]).is_err());
+        assert!(check_folder(&root, &["../elsewhere".into()]).is_err());
+        assert!(check_folder(&root, &["schema/collections.json".into()]).is_err());
 
         std::fs::write(root.join("schema/components.json"), "{nope").unwrap();
-        assert!(check(&root, &[]).unwrap_err().contains("components.json"));
+        assert!(check_folder(&root, &[]).unwrap_err().contains("components.json"));
         let _ = std::fs::remove_dir_all(root);
     }
 }

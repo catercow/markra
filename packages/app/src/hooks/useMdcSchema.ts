@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { parseMdcSchema, type MdcSchema } from "@markra/shared";
 import { getAppRuntime } from "../runtime";
 
@@ -11,10 +11,18 @@ export function mdcSchemaPathForRoot(rootPath: string) {
 }
 
 /**
- * Loads `schema/components.json` from the workspace root. Reloads when the root changes and
- * whenever the window regains focus, so regenerating the schema outside Markra is picked up.
+ * The components schema: `served` (CowMark's schema from the site, see useContentSchema) when
+ * given, else `schema/components.json` from the workspace root, reloaded when the root changes
+ * and whenever the window regains focus, so regenerating the schema outside Markra is picked up.
  */
-export function useMdcSchema(rootPath: string | null): MdcSchema | null {
+export function useMdcSchema(rootPath: string | null, served?: string | null): MdcSchema | null {
+  const fromFile = useWorkspaceMdcSchema(served === undefined ? rootPath : null);
+  const fromServed = useMemo(() => (served ? parseMdcSchema(served) : null), [served]);
+
+  return served === undefined ? fromFile : fromServed;
+}
+
+function useWorkspaceMdcSchema(rootPath: string | null): MdcSchema | null {
   const [schema, setSchema] = useState<MdcSchema | null>(null);
 
   useEffect(() => {

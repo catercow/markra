@@ -702,6 +702,8 @@ const messages: BaseLocaleMessages = {
   "app.cowmark.imageAltInsert": "Insert image",
   "app.cowmark.imageAltSkip": "Skip",
   "app.cowmark.imageSaveFailed": "Couldn't add the image: {message}",
+  "app.cowmark.schemaOutOfDate": "Component list may be out of date — couldn't reach {site}.",
+  "app.cowmark.schemaMissing": "No component list — couldn't reach {site}.",
   "app.cowmark.newPost": "New post",
   "app.cowmark.newPostTitle": "Post title",
   "app.cowmark.newPostCreate": "Create post",

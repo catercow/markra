@@ -345,6 +345,8 @@ const messages: LocaleMessages = {
   "app.cowmark.imageAltInsert": "Insertar imagen",
   "app.cowmark.imageAltSkip": "Omitir",
   "app.cowmark.imageSaveFailed": "No se pudo añadir la imagen: {message}",
+  "app.cowmark.schemaOutOfDate": "Puede que la lista de componentes no esté actualizada: no se pudo conectar con {site}.",
+  "app.cowmark.schemaMissing": "No hay lista de componentes: no se pudo conectar con {site}.",
   "app.cowmark.newPost": "Nueva entrada",
   "app.cowmark.newPostTitle": "Título de la entrada",
   "app.cowmark.newPostCreate": "Crear entrada",

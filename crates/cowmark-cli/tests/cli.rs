@@ -26,6 +26,7 @@ fn context_for(app: &FakeApp) -> Context {
         root_flag: None,
         cwd: None,
         app: Some(App::at(&app.data_dir)),
+        ..Context::default()
     }
 }
 
@@ -217,6 +218,7 @@ fn fmt_writes_canonical_tables_and_check_fix_does_too() {
         root_flag: Some(root.clone()),
         cwd: None,
         app: None,
+        ..Context::default()
     };
 
     let (code, out, _) = cowmark(&context, &["check"]);
@@ -244,7 +246,10 @@ fn fmt_writes_canonical_tables_and_check_fix_does_too() {
     fs::write(&page, messy.replace("name,cost", "| Name | Cost |\n|--|--|")).unwrap();
     let (code, out, err) = cowmark(&context, &["check", "--fix", "content/blog/menu.md"]);
     assert_eq!(code, 0, "{out}");
-    assert_eq!(err.trim(), "Fixed content/blog/menu.md");
+    assert_eq!(
+        err.trim(),
+        "cowmark: schema: the folder's schema/ files (legacy)\nFixed content/blog/menu.md"
+    );
     assert_eq!(fs::read_to_string(&page).unwrap(), formatted);
 
     // What can't be read stays as written and fails the check.
@@ -265,6 +270,7 @@ fn table_turns_csv_into_markdown() {
         root_flag: Some(root.clone()),
         cwd: None,
         app: None,
+        ..Context::default()
     };
     let path = csv.to_str().unwrap();
     let (code, out, _) = cowmark(&context, &["table", path]);
@@ -286,4 +292,102 @@ fn table_turns_csv_into_markdown() {
     let (code, _, err) = cowmark(&context, &["table", path, "--component", "nope"]);
     assert_eq!(code, 2);
     assert!(err.contains("no component named `nope`"), "{err}");
+}
+
+/// Serves `body` at any path until the test ends.
+fn serve(body: String) -> String {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://127.0.0.1:{}/_cowmark/schema.json", listener.local_addr().unwrap().port());
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let mut buffer = [0u8; 4096];
+            let _ = stream.read(&mut buffer);
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = stream.write_all(response.as_bytes());
+        }
+    });
+    url
+}
+
+fn dead_url() -> String {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    format!("http://127.0.0.1:{port}/_cowmark/schema.json")
+}
+
+#[test]
+fn check_takes_the_schema_from_the_site_then_the_cache_then_the_folder() {
+    if find_git().is_none() {
+        return;
+    }
+    let root = content_repo("schema-source");
+    // The page uses a component only the site's schema has.
+    fs::write(
+        root.join("content/blog/hello.md"),
+        "---\ntitle: Hello\ndescription: First post\npublished_at: '2026-01-01'\n---\n\n::site-only\n::\n",
+    )
+    .unwrap();
+    let site_components = r#"{"components":[{"name":"site-only","props":[]}]}"#;
+    let envelope = format!(
+        r#"{{"format":1,"build":{{"revision":"abc","contentRevision":null,"generatedAt":"2026-10-27T00:00:00Z"}},"components":{site_components},"collections":{}}}"#,
+        common::COLLECTIONS
+    );
+    let url = serve(envelope);
+    let context = Context { root_flag: Some(root.clone()), ..Context::default() };
+
+    // The folder's schema/ doesn't know the component.
+    let (code, out, err) = cowmark(&context, &["check", "--offline"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("[unknown-component]"), "{out}");
+    assert!(err.contains("cowmark: schema: the folder's schema/ files (legacy)"), "{err}");
+
+    // The site's does; the source is reported.
+    let (code, out, err) = cowmark(&context, &["check", "--schema-url", &url]);
+    assert_eq!(code, 0, "{out}");
+    assert_eq!(err.trim(), format!("cowmark: schema: {url}"));
+
+    // Offline afterwards: the cached copy (in .git, so nothing tracked changes).
+    let (code, _, err) = cowmark(&context, &["check", "--schema-url", &url, "--offline"]);
+    assert_eq!(code, 0);
+    assert!(err.contains(&format!("cached copy of {url} from just now")), "{err}");
+    assert!(root.join(".git/cowmark").is_dir());
+
+    // preview.json's site is the default endpoint.
+    let site = url.trim_end_matches("/_cowmark/schema.json");
+    fs::write(root.join("preview.json"), format!(r#"{{"site":"{site}"}}"#)).unwrap();
+    let (code, _, err) = cowmark(&context, &["check"]);
+    assert_eq!((code, err.trim()), (0, format!("cowmark: schema: {url}").as_str()));
+    fs::remove_file(root.join("preview.json")).unwrap();
+
+    // An unreachable endpoint: warn and use the cache (here) or the folder's files.
+    fs::remove_dir_all(root.join(".git/cowmark")).unwrap();
+    let dead = dead_url();
+    let (code, out, err) = cowmark(&context, &["check", "--github", "--schema-url", &dead]);
+    assert_eq!(code, 1, "{out}");
+    assert!(err.contains(&format!("cowmark: warning: Couldn't get the schema from {dead}")), "{err}");
+    assert!(err.contains("schema/ files (legacy)"), "{err}");
+    assert!(out.contains("::warning title=cowmark schema::Couldn't get the schema"), "{out}");
+
+    // No schema anywhere: exit 2.
+    fs::remove_dir_all(root.join("schema")).unwrap();
+    let (code, _, err) = cowmark(&context, &["check", "--schema-url", &dead]);
+    assert_eq!(code, 2);
+    assert!(err.contains("No content schema: couldn't get"), "{err}");
+    let (code, _, err) = cowmark(&context, &["check", "--offline"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("no --schema-url, no preview.json"), "{err}");
+
+    // An explicit schema folder.
+    let dir = root.join("elsewhere");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("components.json"), site_components).unwrap();
+    fs::write(dir.join("collections.json"), common::COLLECTIONS).unwrap();
+    let (code, out, err) = cowmark(&context, &["check", "--schema", dir.to_str().unwrap()]);
+    assert_eq!(code, 0, "{out}");
+    assert!(err.contains("elsewhere"), "{err}");
 }

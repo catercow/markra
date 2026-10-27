@@ -2,6 +2,7 @@ import type { AppLanguage } from "@markra/shared";
 import type { ContentAccessRuntime, MergeText } from "../lib/content-access";
 import type { ContentCsvTable, ContentFormat, ContentLint } from "../lib/content-lint";
 import type { ContentPreviewRuntime } from "../lib/content-preview";
+import type { ContentSchemaLoader } from "../lib/content-schema";
 import type { CowMarkCompanionRuntime } from "../lib/cowmark-companion";
 import type { MarkdownShortcutMap } from "@markra/editor";
 import type { DesktopPlatform } from "../lib/platform";
@@ -224,6 +225,8 @@ export type AppFileRuntime = {
   contentFormat?: ContentFormat;
   /** CSV to a Markdown table, for pasting into content pages; desktop only. */
   contentCsvTable?: ContentCsvTable;
+  /** The content schema the site serves (else its cached copy, else the folder's `schema/`); desktop only. */
+  contentSchema?: ContentSchemaLoader;
   /** CowMark's browser preview and `cowmark` command connection; desktop only. */
   cowmarkCompanion?: CowMarkCompanionRuntime;
   /** Reads any text file by runtime path; resolves null when it is missing or unreadable. */

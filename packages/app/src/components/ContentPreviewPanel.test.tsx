@@ -168,4 +168,33 @@ describe("ContentPreviewPanel", () => {
     expect(await screen.findByText("Port 4100 is in use by another program.")).toBeInTheDocument();
     expect(openExternalUrl).not.toHaveBeenCalled();
   });
+
+  it("shows a notice when the component list couldn't be loaded from the site", () => {
+    mockContentPreview().pending.mockResolvedValue({ events: [] });
+    const { rerender } = renderPanel(null, { schemaNotice: { kind: "outOfDate", site: "content-preview.catercow.com" } });
+    expect(screen.getByRole("status").textContent).toBe(
+      "Component list may be out of date — couldn't reach content-preview.catercow.com."
+    );
+    rerender(
+      <ContentPreviewPanel
+        activeDocument={null}
+        config={config}
+        language="en"
+        maxWidth={1200}
+        minWidth={360}
+        rootPath="/work/mc"
+        schemaNotice={{ kind: "missing", site: "localhost:3000" }}
+        width={520}
+        onClose={() => {}}
+        onResize={() => {}}
+      />
+    );
+    expect(screen.getByRole("status").textContent).toBe("No component list — couldn't reach localhost:3000.");
+  });
+
+  it("shows no schema notice when the site's schema is in use", () => {
+    mockContentPreview().pending.mockResolvedValue({ events: [] });
+    renderPanel(null);
+    expect(screen.queryByRole("status")).toBeNull();
+  });
 });

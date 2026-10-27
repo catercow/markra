@@ -94,6 +94,7 @@ import { useWorkspaceBackupSync } from "./hooks/useWorkspaceBackupSync";
 import { useWorkspaceSearch } from "./hooks/useWorkspaceSearch";
 import { useWorkspaceAssetCleanup } from "./hooks/useWorkspaceAssetCleanup";
 import { useMdcSchema } from "./hooks/useMdcSchema";
+import { useContentSchema } from "./hooks/useContentSchema";
 import { useContentPreviewConfig } from "./hooks/useContentPreviewConfig";
 import { useCompanionMode, useCowMarkCompanion } from "./hooks/useCowMarkCompanion";
 import { CowMarkGate } from "./components/CowMarkGate";
@@ -820,8 +821,12 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
     () => defaultSaveDirectoryFromFileTree(fileTreeSourcePath),
     [fileTreeSourcePath]
   );
-  const mdcSchema = useMdcSchema(defaultMarkdownSaveDirectory);
+  // CowMark: the schema the site serves for the managed folder; other folders read schema/ files.
+  const contentSchema = useContentSchema(managedRoot, managedContent?.site ?? null);
+  const servedSchema = contentSchema && defaultMarkdownSaveDirectory === managedRoot ? contentSchema : null;
+  const mdcSchema = useMdcSchema(defaultMarkdownSaveDirectory, servedSchema ? servedSchema.components : undefined);
   const cowmarkPages = useCowMarkPages({
+    collectionsText: contentSchema ? contentSchema.collections : undefined,
     onImageError: (error) => {
       showAppToast({
         message: translate("app.cowmark.imageSaveFailed").replace("{message}", String((error as Error)?.message ?? error)),
@@ -4959,6 +4964,7 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
         onResizeEnd={() => setContentPreviewResizing(false)}
         onResizeStart={() => setContentPreviewResizing(true)}
         managed={managedContent}
+        schemaNotice={contentSchema?.notice ?? null}
         beforeSave={saveDirtyMarkdownFiles}
         onConflictFiles={handleContentConflictFiles}
         onNewPost={cowmarkPages?.collections.some((collection) => collection.name === "blog") ? handleNewContentPost : undefined}
