@@ -34,7 +34,7 @@ Unknown keys and odd types are ignored rather than rejected, so an older or newe
 
 | Format | Read leniently | Stored as | Error when |
 | --- | --- | --- | --- |
-| table headers | Any alias, any case, any order; extra spaces; no outer pipes | Canonical names in schema order, columns padded and aligned | Unknown, duplicate or unnamed column; a required column missing; a row with more cells than headers; no rows |
+| table headers | Any alias, any case, any order; extra spaces; no outer pipes | Canonical names in schema order; `| a | b |` rows with one space around each cell and a `| --- |` row, no padding | Unknown, duplicate or unnamed column; a required column missing; no `| --- |` row of the header's width; a row with more cells than headers; no rows |
 | `price` | `7.5`, `7.5 USD`, `US$ 9`, `1200.5`, `$1,200` | `$7.50`, `$9.00`, `$1,200.50` | Ranges (`7-9`), approximations (`~$13`, `13+`), decimal commas (`7,25`), more than two decimals, other currencies, words (`TBD`) |
 | `code` | Lower case, spaces, backticks | `SAVE10` (A–Z, 0–9, `-`, `_`) | Other characters |
 | `link` | `https://www.catercow.com/x`, `<…>` | `/x` for CaterCow addresses, else the http(s) address | Other schemes or text that isn't an address |
@@ -42,7 +42,7 @@ Unknown keys and odd types are ignored rather than rejected, so an older or newe
 | `review-link` | Full URLs, query strings, fragments, trailing slashes | `/catering/<id>-slug` or `/packages/<id>-slug` | Anything else |
 | gallery | Images on separate lines or one line | Each row on one line, separated by a blank line | Text or anything but images in the slot; no images |
 
-Something that can't be read is an error (`component-table`, `cell-format`, `link-format`, `gallery-images`). Something understood but not canonical is also an error, and its diagnostic carries a fix (`fix: { from, to, fromUtf16, toUtf16, insert }`). `cowmark_lint::format(path, text, &schemas)` applies every fix, repeatedly until nothing changes, and returns the problems left. A table with a structural error (unknown, duplicate or unnamed column, extra cells) is never rewritten, so formatting never drops text.
+Something that can't be read is an error (`component-table`, `cell-format`, `link-format`, `gallery-images`). Something understood but not canonical is also an error, and its diagnostic carries a fix (`fix: { from, to, fromUtf16, toUtf16, insert }`). Layout alone is never reported, so tables edited elsewhere don't have to line up: cell spacing, dash counts, alignment colons, outer pipes, empty rows and empty unnamed columns, and gallery images split over several lines. `cowmark_lint::format(path, text, &schemas)` applies every fix and also tidies that layout, repeatedly until nothing changes, and returns the problems left. Formatted tables aren't padded, so changing one cell changes one line. A table with a structural error (unknown, duplicate or unnamed column, extra cells) is never rewritten, so formatting never drops text.
 
 Where formatting runs:
 

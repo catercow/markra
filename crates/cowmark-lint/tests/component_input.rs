@@ -41,7 +41,7 @@ fn a_pasted_pricing_table_is_written_canonically() {
     let formatted = fmt(text);
     assert_eq!(
         formatted,
-        "Intro\n\n::pricing-grid\n| Item         | Price  | Description     |\n| ------------ | ------ | --------------- |\n| Tacos        | $7.25  | **Best** seller |\n| Burrito bowl | $12.00 |                 |\n::\n"
+        "Intro\n\n::pricing-grid\n| Item | Price | Description |\n| --- | --- | --- |\n| Tacos | $7.25 | **Best** seller |\n| Burrito bowl | $12.00 | |\n::\n"
     );
     assert!(lint(&formatted).is_empty(), "{:#?}", lint(&formatted));
     assert_eq!(fmt(&formatted), formatted);
@@ -52,7 +52,7 @@ fn columns_are_put_in_schema_order_with_canonical_names() {
     let text = "::pricing-grid\n| Badge | Dish | Price per person |\n| --- | --- | --- |\n| New | Pho | 9 |\n::\n";
     assert_eq!(
         fmt(text),
-        "::pricing-grid\n| Item | Price | Tag |\n| ---- | ----- | --- |\n| Pho  | $9.00 | New |\n::\n"
+        "::pricing-grid\n| Item | Price | Tag |\n| --- | --- | --- |\n| Pho | $9.00 | New |\n::\n"
     );
 }
 
@@ -61,7 +61,39 @@ fn a_table_without_a_delimiter_row_is_understood() {
     let text = "::facts-grid\nLabel | Detail\nFounded | 2014\n::\n";
     assert_eq!(
         fmt(text),
-        "::facts-grid\n| Fact    | Value |\n| ------- | ----- |\n| Founded | 2014  |\n::\n"
+        "::facts-grid\n| Fact | Value |\n| --- | --- |\n| Founded | 2014 |\n::\n"
+    );
+    // A missing or short `| --- |` row is reported: without it Markdown has no table.
+    for broken in [
+        "::facts-grid\n| Fact | Value |\n| Founded | 2014 |\n::\n",
+        "::facts-grid\n| Fact | Value |\n| --- |\n| Founded | 2014 |\n::\n",
+    ] {
+        let found = lint(broken);
+        assert_eq!(found.len(), 1, "{found:#?}");
+        assert!(found[0].message.starts_with("Add a `| --- |` row"));
+        assert_eq!(
+            fmt(broken),
+            "::facts-grid\n| Fact | Value |\n| --- | --- |\n| Founded | 2014 |\n::\n"
+        );
+    }
+}
+
+#[test]
+fn layout_alone_is_formatted_but_never_reported() {
+    for text in [
+        "::facts-grid\nFact|Value\n-|-\nFounded|2014\n::\n",
+        "::facts-grid\n| Fact    | Value |\n| :------ | ----: |\n| Founded | 2014  |\n|  |  |\n::\n",
+        "::facts-grid\n|Fact|Value|  |\n|---|---|---|\n|  Founded |2014|  |\n::\n",
+        "::gallery\n![A](/blog/a/1.jpg)\n![B](/blog/a/2.jpg)\n::\n",
+    ] {
+        assert!(lint(text).is_empty(), "{text}\n{:#?}", lint(text));
+        let formatted = fmt(text);
+        assert_ne!(formatted, text);
+        assert_eq!(fmt(&formatted), formatted);
+    }
+    assert_eq!(
+        fmt("::facts-grid\nFact|Value\n-|-\nFounded|2014\n::\n"),
+        "::facts-grid\n| Fact | Value |\n| --- | --- |\n| Founded | 2014 |\n::\n"
     );
 }
 
@@ -93,8 +125,8 @@ fn values_that_cannot_be_read_are_errors_without_a_fix() {
     // Formatting fixes what it can and keeps the rest as written.
     let formatted = fmt(text);
     assert!(
-        formatted.contains("| TBD   |")
-            && formatted.contains("| €3    |")
+        formatted.contains("| TBD |")
+            && formatted.contains("| €3 |")
             && formatted.contains("$4.00"),
         "{formatted}"
     );
@@ -163,7 +195,7 @@ fn the_slot_needs_exactly_one_table() {
     );
     assert_eq!(
         fmt(empty),
-        "::facts-grid\n| Fact | Value |\n| ---- | ----- |\n::\n"
+        "::facts-grid\n| Fact | Value |\n| --- | --- |\n::\n"
     );
 }
 
@@ -181,7 +213,7 @@ fn promo_codes_and_links_are_normalized() {
     )));
     let formatted = fmt(text);
     assert!(
-        formatted.contains("| NYC      | SAVE10 | /explore/new-york-city/catering |"),
+        formatted.contains("| NYC | SAVE10 | /explore/new-york-city/catering |"),
         "{formatted}"
     );
     assert!(formatted.contains("| Location |") && formatted.contains("https://example.com/Deal"));
@@ -190,13 +222,8 @@ fn promo_codes_and_links_are_normalized() {
 #[test]
 fn galleries_put_each_row_on_one_line() {
     let text = "::gallery\n![A](/blog/a/1.jpg)\n![B](/blog/a/2.jpg)\n\n![C](/blog/a/3.jpg)   ![D](/blog/a/4.jpg)\n\nPhotos by **Sam**.\n::\n";
-    let found = lint(text);
-    assert_eq!(found.len(), 2, "{found:#?}");
-    assert!(
-        found
-            .iter()
-            .all(|d| d.rule == Rule::GalleryImages && d.fix.is_some())
-    );
+    // Line breaks between images are layout: tidied, not reported.
+    assert!(lint(text).is_empty(), "{:#?}", lint(text));
     let formatted = fmt(text);
     assert_eq!(
         formatted,
@@ -301,15 +328,17 @@ fn fix_offsets_count_utf16_units() {
         "7.5"
     );
     assert_eq!(utf16_to_utf8(text, fix.from_utf16), fix.from);
-    let layout = lint(text)
+    let renamed = text.replace("| Item |", "| Dish |");
+    let utf16: Vec<u16> = renamed.encode_utf16().collect();
+    let columns = lint(&renamed)
         .into_iter()
         .find(|d| d.rule == Rule::ComponentTable)
         .unwrap()
         .fix
         .unwrap();
     assert_eq!(
-        String::from_utf16(&utf16[layout.from_utf16..layout.to_utf16]).unwrap(),
-        &text[layout.from..layout.to]
+        String::from_utf16(&utf16[columns.from_utf16..columns.to_utf16]).unwrap(),
+        &renamed[columns.from..columns.to]
     );
     let formatted = fmt(text);
     assert!(
@@ -333,7 +362,7 @@ fn nested_and_indented_tables_keep_their_indentation() {
     let (formatted, left) = format("content/blog/a.md", text, &schemas);
     assert_eq!(
         formatted,
-        ":::section\n  ::facts-grid\n  | Fact | Value |\n  | ---- | ----- |\n  | A    | B     |\n  ::\n:::\n"
+        ":::section\n  ::facts-grid\n  | Fact | Value |\n  | --- | --- |\n  | A | B |\n  ::\n:::\n"
     );
     assert!(left.is_empty(), "{left:#?}");
 }

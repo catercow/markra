@@ -214,7 +214,7 @@ mod tests {
             "Name,Cost,Notes\n\"Tacos, three\",7.25,\"Spicy\nwith lime\"\n\nPie | slice,$4,\n";
         assert_eq!(
             to_markdown(csv, None).unwrap(),
-            "| Name         | Cost | Notes           |\n| ------------ | ---- | --------------- |\n| Tacos, three | 7.25 | Spicy with lime |\n| Pie \\| slice | $4   |                 |"
+            "| Name | Cost | Notes |\n| --- | --- | --- |\n| Tacos, three | 7.25 | Spicy with lime |\n| Pie \\| slice | $4 | |"
         );
     }
 
@@ -223,7 +223,7 @@ mod tests {
         let tsv = "\u{feff}A\tB\n1\n2\t3\t4\n";
         assert_eq!(
             to_markdown(tsv, None).unwrap(),
-            "| A   | B   |     |\n| --- | --- | --- |\n| 1   |     |     |\n| 2   | 3   | 4   |"
+            "| A | B | |\n| --- | --- | --- |\n| 1 | | |\n| 2 | 3 | 4 |"
         );
         assert!(to_markdown("", None).is_err());
         assert!(to_markdown("a,\"b\nc", None).is_ok());
@@ -241,7 +241,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             table.markdown,
-            "::pricing-grid\n| Item  | Price |\n| ----- | ----- |\n| Tacos | $7.50 |\n| Pie   | TBD   |\n::\n"
+            "::pricing-grid\n| Item | Price |\n| --- | --- |\n| Tacos | $7.50 |\n| Pie | TBD |\n::\n"
         );
         assert_eq!(
             table.problems,
@@ -257,7 +257,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             bare.markdown,
-            "| Item  | Price |\n| ----- | ----- |\n| Tacos | $7.00 |"
+            "| Item | Price |\n| --- | --- |\n| Tacos | $7.00 |"
         );
         assert!(bare.problems.is_empty());
         assert!(for_component("a,b", None, "callout", &schemas(), true).is_err());

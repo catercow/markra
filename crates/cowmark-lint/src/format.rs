@@ -1,6 +1,7 @@
-//! Writes component input in its canonical form: applies the fixes diagnostics carry, until
-//! none are left. Only values the linter understood are rewritten, and a table is rewritten
-//! only when every cell has a place in it, so formatting never drops what someone wrote.
+//! Writes component input in its canonical form: applies the fixes diagnostics carry, and the
+//! layout fixes that aren't reported (table spacing, gallery rows), until none are left. Only
+//! values the linter understood are rewritten, and a table is rewritten only when every cell
+//! has a place in it, so formatting never drops what someone wrote.
 
 use crate::messages::Messages;
 use crate::schema::Schemas;
@@ -35,10 +36,12 @@ pub(crate) fn format_with(
     let mut current = text.to_string();
     // A fix can uncover another (a fixed price widens its column); a few passes settle it.
     for _ in 0..4 {
-        let found = crate::run(schemas, messages, path, &current, &everything);
+        let (found, layout) =
+            crate::run_with_layout(schemas, messages, path, &current, &everything);
         let fixes: Vec<&Fix> = found
             .iter()
             .filter_map(|diagnostic| diagnostic.fix.as_ref())
+            .chain(&layout)
             .collect();
         if fixes.is_empty() {
             break;

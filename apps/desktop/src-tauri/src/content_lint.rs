@@ -283,14 +283,14 @@ Café ✓|1
 ::
 ", None);
         assert!(formatted.changed);
-        assert_eq!(formatted.text, "::facts-grid\n| Fact   | Value |\n| ------ | ----- |\n| Café ✓ | 1     |\n::\n");
+        assert_eq!(formatted.text, "::facts-grid\n| Fact | Value |\n| --- | --- |\n| Café ✓ | 1 |\n::\n");
         assert!(formatted.diagnostics.is_empty());
 
         assert!(csv_to_table(dir.path(), "Just a sentence, really.", false, None, false).unwrap().is_none());
         let table = csv_to_table(dir.path(), "Label\tValue\nFounded\t2014\n", false, Some("facts-grid"), false)
             .unwrap()
             .unwrap();
-        assert_eq!(table.markdown, "| Fact    | Value |\n| ------- | ----- |\n| Founded | 2014  |");
+        assert_eq!(table.markdown, "| Fact | Value |\n| --- | --- |\n| Founded | 2014 |");
         let wrapped = csv_to_table(dir.path(), "a,b\n1,2\n", true, Some("facts-grid"), true).unwrap().unwrap();
         assert!(wrapped.markdown.starts_with("::facts-grid\n") && !wrapped.problems.is_empty());
         assert!(csv_to_table(dir.path(), "a,b\n1,2\n", true, Some("nope"), true).is_err());

@@ -59,16 +59,16 @@ export function groupMdcComponents(components: readonly MdcCatalogComponent[]): 
 const blockOpener = /^[ \t]*:{2,}[A-Za-z]/u;
 
 /**
- * `| Item | Price |` with a `| --- |` row and one empty row, padded the way CowMark writes tables
- * (`render_table` in cowmark-lint), so filling it in doesn't reflow the other rows.
+ * `| Item | Price |` with a `| --- |` row and one empty row, written the way CowMark formats
+ * tables (`render_table` in cowmark-lint): one space around each cell, no padding.
  */
 export function mdcTableSkeleton(columns: readonly MdcInputColumn[]): string {
-  const widths = columns.map((column) => Math.max(3, [...column.name].length));
-  const row = (cells: string[]) => `| ${cells.map((cell, index) => cell.padEnd(widths[index]!)).join(" | ")} |`;
+  const row = (cells: string[]) => `| ${cells.join(" | ")} |`;
   return [
     row(columns.map((column) => column.name)),
-    row(widths.map((width) => "-".repeat(width))),
-    row(columns.map(() => "")),
+    row(columns.map(() => "---")),
+    // Two spaces, so the caret can sit between them and typing comes out as `| text |`.
+    `|${columns.map(() => "  ").join("|")}|`,
   ].join("\n");
 }
 

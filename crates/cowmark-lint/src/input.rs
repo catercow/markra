@@ -424,27 +424,40 @@ impl TableCheck<'_, '_, '_> {
             .iter()
             .map(|&(column, _)| self.columns[column].name.clone())
             .collect();
-        let rendered = render_table(
-            &headers,
-            &written,
-            &table.indent,
-            line_break(&text[table.range.from..table.range.to]),
-        );
-        if rendered != text[table.range.from..table.range.to] {
-            let fix = render_table(
-                &headers,
-                &canonical,
-                &table.indent,
-                line_break(&text[table.range.from..table.range.to]),
-            );
-            self.report.add_fix(
-                header_row.line,
-                Rule::ComponentTable,
-                &messages.table_layout,
-                &[],
-                (table.range, fix),
-            );
+        let source = &text[table.range.from..table.range.to];
+        let fix = render_table(&headers, &canonical, &table.indent, line_break(source));
+        if fix == source {
+            return;
         }
+        // Header names and order, and a missing or short `| --- |` row, change what the page
+        // shows and are reported; spacing, dash counts and empty rows or columns are only
+        // layout, which formatting tidies without a diagnostic.
+        let named: Vec<&str> = header_row
+            .cells
+            .iter()
+            .map(|cell| cell.text(text))
+            .filter(|name| !name.is_empty())
+            .collect();
+        // Without a `| --- |` row of the header's width, Markdown doesn't read it as a table.
+        let delimited = table
+            .rows
+            .get(1)
+            .is_some_and(|row| row.delimiter && row.cells.len() == header_row.cells.len());
+        let template = if named != headers {
+            &messages.table_columns
+        } else if !delimited {
+            &messages.table_delimiter
+        } else {
+            self.report.add_layout(table.range, fix);
+            return;
+        };
+        self.report.add_fix(
+            header_row.line,
+            Rule::ComponentTable,
+            template,
+            &[],
+            (table.range, fix),
+        );
     }
 
     /// Checks one cell and returns its canonical value (the text as written when it has none).
@@ -529,37 +542,27 @@ impl TableCheck<'_, '_, '_> {
     }
 }
 
-/// `| a | b |` lines with the columns padded to the same width, and a `| --- |` row under the
-/// header. Lines after the first start with `indent`.
+/// `| a | b |` lines, one space either side of each cell (`| |` when empty), with a `| --- |` row under the
+/// header: no padding, so editing one cell never changes another line. Lines after the first
+/// start with `indent`.
 pub fn render_table(
     headers: &[String],
     rows: &[Vec<String>],
     indent: &str,
     line_break: &str,
 ) -> String {
-    let width = |text: &str| text.chars().count();
-    let widths: Vec<usize> = (0..headers.len())
-        .map(|column| {
-            rows.iter()
-                .map(|row| width(&row[column]))
-                .chain([width(&headers[column]), 3])
-                .max()
-                .unwrap_or(3)
-        })
-        .collect();
-    let line = |cells: Vec<String>| {
-        let padded: Vec<String> = cells
+    let line = |cells: &[String]| {
+        let cells: Vec<String> = cells
             .iter()
-            .zip(&widths)
-            .map(|(cell, &w)| format!("{cell}{}", " ".repeat(w - width(cell))))
+            .map(|cell| if cell.is_empty() { " ".into() } else { format!(" {cell} ") })
             .collect();
-        format!("| {} |", padded.join(" | "))
+        format!("|{}|", cells.join("|"))
     };
     let mut out = vec![
-        line(headers.to_vec()),
-        line(widths.iter().map(|&w| "-".repeat(w)).collect()),
+        line(headers),
+        format!("|{}", " --- |".repeat(headers.len())),
     ];
-    out.extend(rows.iter().map(|row| line(row.clone())));
+    out.extend(rows.iter().map(|row| line(row)));
     out.join(&format!("{line_break}{indent}"))
 }
 
@@ -708,13 +711,7 @@ fn check_gallery(text: &str, block: &MdcBlock, lines: &[SlotLine], report: &mut 
             .collect();
         let canonical = row.join(" ");
         if text[paragraph.range.from..paragraph.range.to] != canonical {
-            report.add_fix(
-                paragraph.range,
-                Rule::GalleryImages,
-                &messages.gallery_layout,
-                &[],
-                (paragraph.range, canonical),
-            );
+            report.add_layout(paragraph.range, canonical);
         }
     }
 }
@@ -879,7 +876,7 @@ mod tests {
     }
 
     #[test]
-    fn renders_aligned_tables() {
+    fn renders_minimal_tables() {
         let rendered = render_table(
             &["Item".into(), "Price".into()],
             &[
@@ -891,7 +888,7 @@ mod tests {
         );
         assert_eq!(
             rendered,
-            "| Item    | Price |\n  | ------- | ----- |\n  | Tacos ñ | $7.25 |\n  | A       |       |"
+            "| Item | Price |\n  | --- | --- |\n  | Tacos ñ | $7.25 |\n  | A | |"
         );
     }
 }

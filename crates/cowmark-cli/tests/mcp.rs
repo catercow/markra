@@ -299,7 +299,7 @@ fn write_file_stores_canonical_values_and_csv_becomes_a_table() {
     assert_eq!(
         fs::read_to_string(folder.join("content/blog/menu.md")).unwrap(),
         format!(
-            "{head}::pricing-grid\n| Item  | Price |\n| ----- | ----- |\n| Tacos | $7.50 |\n| Pie   | soon  |\n::\n"
+            "{head}::pricing-grid\n| Item | Price |\n| --- | --- |\n| Tacos | $7.50 |\n| Pie | soon |\n::\n"
         )
     );
 
@@ -326,9 +326,9 @@ fn write_file_stores_canonical_values_and_csv_becomes_a_table() {
     assert!(!error, "{text}");
     assert_eq!(
         text,
-        "::pricing-grid\n| Item  | Price |\n| ----- | ----- |\n| Tacos | $7.00 |\n::\n"
+        "::pricing-grid\n| Item | Price |\n| --- | --- |\n| Tacos | $7.00 |\n::\n"
     );
     let (error, text) = session.call("csv_to_table", json!({ "csv": "a,b\n1,2\n" }));
     assert!(!error);
-    assert_eq!(text, "| a   | b   |\n| --- | --- |\n| 1   | 2   |");
+    assert_eq!(text, "| a | b |\n| --- | --- |\n| 1 | 2 |");
 }

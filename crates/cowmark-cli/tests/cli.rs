@@ -234,7 +234,7 @@ fn fmt_writes_canonical_tables_and_check_fix_does_too() {
     assert_eq!(code, 0, "{out}");
     let formatted = fs::read_to_string(&page).unwrap();
     assert!(
-        formatted.ends_with("::pricing-grid\n| Item  | Price |\n| ----- | ----- |\n| Tacos | $7.50 |\n::\n"),
+        formatted.ends_with("::pricing-grid\n| Item | Price |\n| --- | --- |\n| Tacos | $7.50 |\n::\n"),
         "{formatted}"
     );
     assert_eq!(cowmark(&context, &["fmt", "--check"]).0, 0);
@@ -248,7 +248,7 @@ fn fmt_writes_canonical_tables_and_check_fix_does_too() {
     assert_eq!(fs::read_to_string(&page).unwrap(), formatted);
 
     // What can't be read stays as written and fails the check.
-    fs::write(&page, formatted.replace("$7.50", "TBD  ")).unwrap();
+    fs::write(&page, formatted.replace("$7.50", "TBD")).unwrap();
     assert_eq!(cowmark(&context, &["fmt", "--check"]).0, 0);
     let (code, out, _) = cowmark(&context, &["check", "--fix"]);
     assert_eq!(code, 1);
@@ -271,13 +271,13 @@ fn table_turns_csv_into_markdown() {
     assert_eq!(code, 0);
     assert_eq!(
         out,
-        "| Cost | Name         |\n| ---- | ------------ |\n| 7    | Tacos, three |\n| soon | Pie          |\n"
+        "| Cost | Name |\n| --- | --- |\n| 7 | Tacos, three |\n| soon | Pie |\n"
     );
     let (code, out, err) = cowmark(&context, &["table", path, "--component", "pricing-grid"]);
     assert_eq!(code, 1);
     assert_eq!(
         out,
-        "::pricing-grid\n| Item         | Price |\n| ------------ | ----- |\n| Tacos, three | $7.00 |\n| Pie          | soon  |\n::\n"
+        "::pricing-grid\n| Item | Price |\n| --- | --- |\n| Tacos, three | $7.00 |\n| Pie | soon |\n::\n"
     );
     assert_eq!(
         err.trim(),

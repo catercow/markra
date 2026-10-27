@@ -165,7 +165,7 @@ describe("inserting a component", () => {
 
   it("gives a table component an empty table to fill in, caret in its first cell", () => {
     expect(mdcComponentSnippet(pricingGrid)).toBe(
-      "::pricing-grid\n| Item | Price | Description |\n| ---- | ----- | ----------- |\n|      |       |             |\n::",
+      "::pricing-grid\n| Item | Price | Description |\n| --- | --- | --- |\n|  |  |  |\n::",
     );
     const view = createView("/", 1, [pricingGrid]);
     pick(view, "pricing-grid");
@@ -178,7 +178,7 @@ describe("inserting a component", () => {
     expect(mdcComponentSnippet({ input: { kind: "images" }, name: "photo-grid", props: [] })).toBe(
       `::photo-grid\n${MDC_GALLERY_SKELETON}\n::`,
     );
-    expect(mdcTableSkeleton([{ name: "A" }])).toBe("| A   |\n| --- |\n|     |");
+    expect(mdcTableSkeleton([{ name: "A" }])).toBe("| A |\n| --- |\n|  |");
   });
 
   it("splits a paragraph when chosen on one of its lines", () => {

@@ -386,7 +386,7 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "format_file",
             "Format a page",
-            "Rewrites a Markdown page under content/ in canonical form, the fixes check offers: component tables with canonical column names, order and spacing, prices like $7.25, promo codes in capitals, CaterCow links as site paths, one line per gallery row. Never removes text. Returns whether it changed and the problems left.",
+            "Rewrites a Markdown page under content/ in canonical form: the fixes check offers, plus table spacing and gallery line breaks, which check never reports. Component tables get canonical column names and order and one space around each cell, prices like $7.25, promo codes in capitals, CaterCow links as site paths, one line per gallery row. Never removes text. Returns whether it changed and the problems left.",
             object(json!({ "path": { "type": "string", "description": PATH } }), &["path"]),
             Hints {
                 read_only: false,

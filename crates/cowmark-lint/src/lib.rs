@@ -12,12 +12,12 @@
 //! ```
 
 mod conflict;
-pub mod formats;
 mod format;
+pub mod formats;
 mod frontmatter;
-mod input;
 #[cfg(feature = "fs")]
 pub mod fs;
+mod input;
 mod markdown;
 mod mdc;
 mod mdc_lint;
@@ -35,8 +35,8 @@ pub use format::{Formatted, format};
 pub use input::render_table;
 pub use messages::Messages;
 pub use schema::{
-    page_image_folder, CollectionSchema, ComponentInput, ComponentSchema, FieldSchema, InputColumn, PropSchema,
-    SchemaError, Schemas,
+    CollectionSchema, ComponentInput, ComponentSchema, FieldSchema, InputColumn, PropSchema,
+    SchemaError, Schemas, page_image_folder,
 };
 pub use text::{utf8_to_utf16, utf16_to_utf8};
 
@@ -220,6 +220,9 @@ pub(crate) struct Found {
 pub(crate) struct Report<'m> {
     pub messages: &'m Messages,
     pub found: Vec<Found>,
+    /// Layout-only rewrites (table padding, gallery line breaks): applied by `format`, never
+    /// reported, since people editing elsewhere shouldn't have to align pipes.
+    pub layout: Vec<(text::Range, String)>,
 }
 
 impl Report<'_> {
@@ -254,6 +257,11 @@ impl Report<'_> {
         if let Some(found) = self.found.last_mut() {
             found.fix = Some(fix);
         }
+    }
+
+    /// A rewrite that only changes layout: formatting applies it; linting doesn't report it.
+    pub fn add_layout(&mut self, range: text::Range, insert: String) {
+        self.layout.push((range, insert));
     }
 }
 
@@ -307,9 +315,21 @@ pub(crate) fn run(
     text: &str,
     files: &dyn FileLookup,
 ) -> Vec<Diagnostic> {
+    run_with_layout(schemas, messages, path, text, files).0
+}
+
+/// The problems, and the layout-only fixes that aren't reported.
+pub(crate) fn run_with_layout(
+    schemas: &Schemas,
+    messages: &Messages,
+    path: &str,
+    text: &str,
+    files: &dyn FileLookup,
+) -> (Vec<Diagnostic>, Vec<Fix>) {
     let mut report = Report {
         messages,
         found: Vec::new(),
+        layout: Vec::new(),
     };
     let context = refs::Context::new(path, schemas, files);
 
@@ -321,7 +341,11 @@ pub(crate) fn run(
     let extents: Vec<text::Range> = structure
         .blocks
         .iter()
-        .filter_map(|block| block.closer.map(|closer| text::Range::new(block.line_from, closer.to)))
+        .filter_map(|block| {
+            block
+                .closer
+                .map(|closer| text::Range::new(block.line_from, closer.to))
+        })
         .collect();
     for block in &structure.blocks {
         let nested: Vec<text::Range> = match block.body() {
@@ -338,9 +362,21 @@ pub(crate) fn run(
     safety::check_prose(text, &structure.prose, &mut report);
 
     let index = text::LineIndex::new(text);
+    let fix = |range: text::Range, insert: String| Fix {
+        from: range.from,
+        to: range.to,
+        from_utf16: index.utf16(range.from),
+        to_utf16: index.utf16(range.to),
+        insert,
+    };
+    let layout: Vec<Fix> = report
+        .layout
+        .into_iter()
+        .map(|(range, insert)| fix(range, insert))
+        .collect();
     let mut found = report.found;
     found.sort_by(|a, b| a.from.cmp(&b.from).then(a.to.cmp(&b.to)));
-    found
+    let diagnostics = found
         .into_iter()
         .map(|found| {
             let (line, column) = index.line_column(found.from);
@@ -358,14 +394,9 @@ pub(crate) fn run(
                 severity: found.severity,
                 rule: found.rule,
                 message: found.message,
-                fix: found.fix.map(|(range, insert)| Fix {
-                    from: range.from,
-                    to: range.to,
-                    from_utf16: index.utf16(range.from),
-                    to_utf16: index.utf16(range.to),
-                    insert,
-                }),
+                fix: found.fix.map(|(range, insert)| fix(range, insert)),
             }
         })
-        .collect()
+        .collect();
+    (diagnostics, layout)
 }
