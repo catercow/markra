@@ -199,11 +199,11 @@ mod tests {
         assert_eq!((clean.exit_code(false), clean.exit_code(true)), (0, 0));
 
         // A warning only: image without alt text.
-        std::fs::create_dir_all(root.join("content/blog/warn")).unwrap();
-        std::fs::write(root.join("content/blog/warn/a.png"), "png").unwrap();
+        std::fs::create_dir_all(root.join("public/blog/warn")).unwrap();
+        std::fs::write(root.join("public/blog/warn/a.png"), "png").unwrap();
         std::fs::write(
             root.join("content/blog/warn.md"),
-            "---\ntitle: Warn\n---\n\n![](warn/a.png)\n",
+            "---\ntitle: Warn\n---\n\n![](/blog/warn/a.png)\n",
         )
         .unwrap();
         let warned = check(&root, &["content/blog/warn.md".into()]).unwrap();

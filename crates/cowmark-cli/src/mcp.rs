@@ -25,7 +25,9 @@ Workflow:
 list_components / get_component_schema and get_collection_schema. Components use MDC syntax: `::name` … `::` blocks \
 with optional YAML props between `---` lines, or `:name{prop=\"value\"}` inline.
 2. Create pages with new_page, edit them with write_file (whole-file writes), add pictures with add_image and put the \
-returned Markdown in the page. Only Markdown and images under content/ can be changed.
+returned Markdown in the page. Images live in public/ and are written as site paths starting with `/`, e.g. \
+`/blog/my-post/photo.jpg` for `public/blog/my-post/photo.jpg`. Only Markdown and images under content/, and images \
+under public/, can be changed.
 3. Run check on the files you changed and fix every error. Warnings (such as missing alt text) should be fixed too.
 4. Optionally open_in_cowmark or preview_link so the person can see the page in the live preview.
 5. Call propose_publish with the changed files and a short message. This does NOT publish: it ticks the files in \
@@ -332,7 +334,7 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "rename_file",
             "Rename a file",
-            "Renames or moves a Markdown file or image under content/. Never replaces an existing file. Moving a page changes its URL; images referenced relatively live in a folder named after the page.",
+            "Renames or moves a Markdown file or image under content/, or an image under public/. Never replaces an existing file. Moving a page changes its URL; its images in public/ stay where they are, so move them too and update the references.",
             object(
                 json!({
                     "from": { "type": "string", "description": PATH },
@@ -350,7 +352,7 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "delete_file",
             "Delete a file",
-            "Deletes one Markdown file or image under content/. The deletion shows in CowMark's save checklist and is only published when a person saves it.",
+            "Deletes one Markdown file or image under content/, or an image under public/. The deletion shows in CowMark's save checklist and is only published when a person saves it.",
             object(json!({ "path": { "type": "string", "description": PATH } }), &["path"]),
             Hints {
                 read_only: false,
@@ -410,7 +412,7 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "add_image",
             "Add an image to a page",
-            "Copies an image into the page's own folder (`content/blog/my-post.md` → `content/blog/my-post/`), named in lowercase with hyphens, and returns the relative reference and a Markdown snippet to put in the page. Give either `source` (a file on this computer) or `data` (base64). PNG, JPEG, GIF, WebP, AVIF and SVG.",
+            "Copies an image into the page's image folder in public/ (`content/blog/my-post.md` → `public/blog/my-post/`), named in lowercase with hyphens, and returns its site path (`/blog/my-post/<name>`) and a Markdown snippet to put in the page. Give either `source` (a file on this computer) or `data` (base64). PNG, JPEG, GIF, WebP, AVIF and SVG.",
             object(
                 json!({
                     "page": { "type": "string", "description": "The page the image belongs to, e.g. `content/blog/my-post.md`." },

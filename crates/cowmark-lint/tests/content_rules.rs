@@ -43,7 +43,8 @@ fn linter() -> Linter {
 fn files() -> Files {
     Files::new(&[
         "content/blog/my-post.md",
-        "content/blog/my-post/photo.jpg",
+        "public/blog/my-post/photo.jpg",
+        "content/cuisines/thai/leftover.jpg",
         "content/blog/other-post.md",
         "content/cuisines/thai.md",
         "public/blog/old-post/banner.png",
@@ -65,7 +66,7 @@ fn rules(path: &str, doc: &str) -> Vec<(Rule, String)> {
         .collect()
 }
 
-const POST: &str = "---\ntitle: Breakfast catering\ndescription: Ideas for the morning.\nfeature_image: my-post/photo.jpg\npublished_at: '2026-10-06'\ncategory: ordering-catering\n---\n\nBody.\n";
+const POST: &str = "---\ntitle: Breakfast catering\ndescription: Ideas for the morning.\nfeature_image: /blog/my-post/photo.jpg\npublished_at: '2026-10-06'\ncategory: ordering-catering\n---\n\nBody.\n";
 
 fn post(front: &str, body: &str) -> String {
     format!("---\n{front}---\n\n{body}\n")
@@ -195,10 +196,10 @@ fn flags_unreadable_and_unclosed_front_matter() {
 }
 
 #[test]
-fn checks_images_next_to_the_page_and_in_public() {
+fn checks_images_in_public() {
     let doc = post(
-        "title: T\ndescription: D\npublished_at: '2026-10-06'\nfeature_image: my-post/missing.jpg\n",
-        "![A photo](my-post/photo.jpg)\n\n![Old](/blog/old-post/banner.png)\n\n![Gone](/blog/old-post/gone.png)\n\n![From the app](/images/x.jpg)\n\n![](https://example.com/a.png)\n\n`![Code](nope.jpg)`",
+        "title: T\ndescription: D\npublished_at: '2026-10-06'\nfeature_image: /blog/my-post/missing.jpg\n",
+        "![A photo](/blog/my-post/photo.jpg)\n\n![Old](/blog/old-post/banner.png)\n\n![Gone](/blog/old-post/gone.png)\n\n![From the app](/images/x.jpg)\n\n![](https://example.com/a.png)\n\n`![Code](nope.jpg)`",
     );
     assert_eq!(
         lint("content/blog/my-post.md", &doc),
@@ -206,8 +207,8 @@ fn checks_images_next_to_the_page_and_in_public() {
             (
                 Rule::MissingImage,
                 Severity::Error,
-                "The image `my-post/missing.jpg` can't be found. Check the file name, or add the image again.".into(),
-                "my-post/missing.jpg".into()
+                "The image `/blog/my-post/missing.jpg` can't be found. Check the file name, or add the image again.".into(),
+                "/blog/my-post/missing.jpg".into()
             ),
             (
                 Rule::MissingImage,
@@ -229,32 +230,56 @@ fn checks_images_next_to_the_page_and_in_public() {
 fn matches_image_names_exactly() {
     let doc = post(
         "title: T\ndescription: D\npublished_at: '2026-10-06'\n",
-        "![A](my-post/Photo.JPG)",
+        "![A](/blog/my-post/Photo.JPG)",
     );
     assert_eq!(
         rules("content/blog/my-post.md", &doc),
-        vec![(Rule::MissingImage, "my-post/Photo.JPG".into())]
+        vec![(Rule::MissingImage, "/blog/my-post/Photo.JPG".into())]
     );
+}
+
+#[test]
+fn reports_images_written_relative_to_the_page() {
+    // The site no longer serves images stored under content/, even when the file is there.
     let doc = post(
-        "title: T\ndescription: D\npublished_at: '2026-10-06'\n",
+        "title: T\ndescription: D\npublished_at: '2026-10-06'\nfeature_image: my-post/photo.jpg\n",
         "![A](../../x.jpg)",
     );
     assert_eq!(
-        rules("content/blog/my-post.md", &doc),
-        vec![(Rule::MissingImage, "../../x.jpg".into())]
+        lint("content/blog/my-post.md", &doc),
+        vec![
+            (
+                Rule::MissingImage,
+                Severity::Error,
+                "The site can't show `my-post/photo.jpg`: images go in the `public/` folder and start with `/`. Move the file to `public/blog/my-post/photo.jpg` and write `/blog/my-post/photo.jpg`, or add the image again.".into(),
+                "my-post/photo.jpg".into()
+            ),
+            (
+                Rule::MissingImage,
+                Severity::Error,
+                "The site can't show `../../x.jpg`: images go in the `public/` folder and start with `/`. Move the file to `public/blog/my-post/x.jpg` and write `/blog/my-post/x.jpg`, or add the image again.".into(),
+                "../../x.jpg".into()
+            ),
+        ]
     );
+    // The image folder follows the collection's URL prefix.
+    let thai = "---\nname: Thai\n---\n\n![A](thai/leftover.jpg)\n";
+    let found = lint("content/cuisines/thai.md", thai);
+    let relative: Vec<_> = found.iter().filter(|(_, _, _, text)| text == "thai/leftover.jpg").collect();
+    assert_eq!(relative.len(), 1, "{found:?}");
+    assert!(relative[0].2.contains("`/cuisines/thai/leftover.jpg`"), "{}", relative[0].2);
 }
 
 #[test]
 fn checks_images_in_component_props() {
     let doc = post(
         "title: T\ndescription: D\npublished_at: '2026-10-06'\n",
-        "::logo-strip\n---\npreset: custom\nlogos:\n  - src: my-post/photo.jpg\n    alt: A\n  - src: my-post/logo.png\n    alt: B\n---\n::\n\n::video-block{poster=\"/blog/old-post/nope.png\"}\n::",
+        "::logo-strip\n---\npreset: custom\nlogos:\n  - src: /blog/my-post/photo.jpg\n    alt: A\n  - src: /blog/my-post/logo.png\n    alt: B\n---\n::\n\n::video-block{poster=\"/blog/old-post/nope.png\"}\n::",
     );
     assert_eq!(
         rules("content/blog/my-post.md", &doc),
         vec![
-            (Rule::MissingImage, "my-post/logo.png".into()),
+            (Rule::MissingImage, "/blog/my-post/logo.png".into()),
             (
                 Rule::MissingImage,
                 "poster=\"/blog/old-post/nope.png\"".into()

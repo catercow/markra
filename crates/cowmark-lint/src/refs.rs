@@ -1,8 +1,8 @@
-//! Whether images and links point at files that exist. Mirrors the site: an image written
-//! relative to its page (`my-post/photo.jpg` in `content/blog/my-post.md`) is served from
-//! `content/blog/my-post/photo.jpg` (js/nuxt4/modules/content-media/rewrite.ts), and a
-//! site-absolute path (`/blog/my-post/photo.jpg`) from `public/` or `content/`. Links are
-//! checked only when a collection's URL pattern covers them; other routes come from the app.
+//! Whether images and links point at files that exist. Mirrors the site: images live in
+//! `public/` and are written as site paths (`/blog/my-post/photo.jpg` is
+//! `public/blog/my-post/photo.jpg`). A page under `content/` that writes an image relative to
+//! itself is reported, since the site doesn't serve images from `content/`. Links are checked
+//! only when a collection's URL pattern covers them; other routes come from the app.
 
 use crate::schema::{Collection, Schemas};
 use crate::text::Range;
@@ -18,15 +18,19 @@ pub struct Context<'a> {
     pub collection: Option<&'a Collection>,
     /// The page's own site path, e.g. `/blog/my-post`.
     page_url: Option<String>,
+    /// Where the page's images go, as a site path, e.g. `/blog/my-post`.
+    image_folder: Option<String>,
     files: &'a dyn FileLookup,
 }
 
 enum Target {
     /// Not checkable here (another site, the main repository's `/images/…`, a data URL).
     Skip,
-    /// Relative to the page: served only from this path under `content/`.
-    Content(String),
-    /// A site path served from `public/` or `content/`.
+    /// Relative to a page outside `content/`: this repository-relative path.
+    Relative(String),
+    /// Relative to a page under `content/`, which the site can't show.
+    ContentRelative,
+    /// A site path, served from `public/`.
     Site(String),
     Outside,
 }
@@ -34,11 +38,19 @@ enum Target {
 impl<'a> Context<'a> {
     pub fn new(path: &'a str, schemas: &'a Schemas, files: &'a dyn FileLookup) -> Context<'a> {
         let found = schemas.collection_for(path);
+        let image_folder = match &found {
+            Some((collection, slug)) => Some(collection.image_folder(slug)),
+            None => path
+                .strip_prefix("content/")
+                .and_then(|inner| inner.strip_suffix(".md"))
+                .map(|inner| format!("/{inner}")),
+        };
         Context {
             path,
             schemas,
             collection: found.as_ref().map(|(collection, _)| *collection),
             page_url: found.map(|(collection, slug)| collection.url_of(&slug)),
+            image_folder,
             files,
         }
     }
@@ -57,12 +69,10 @@ impl<'a> Context<'a> {
         if src.starts_with('/') {
             return Target::Site(decode(strip_suffixes(src)));
         }
-        // Relative to the page's folder under content/ (or, outside content/, to its folder).
-        let (root, inner) = match self.path.strip_prefix("content/") {
-            Some(inner) => ("content", inner),
-            None => ("", self.path),
-        };
-        let mut parts: Vec<&str> = inner.split('/').collect();
+        if self.path.starts_with("content/") {
+            return Target::ContentRelative;
+        }
+        let mut parts: Vec<&str> = self.path.split('/').collect();
         parts.pop();
         let src = decode(strip_suffixes(src));
         for segment in src.split('/') {
@@ -76,12 +86,7 @@ impl<'a> Context<'a> {
                 _ => parts.push(segment),
             }
         }
-        let joined = parts.join("/");
-        Target::Content(if root.is_empty() {
-            joined
-        } else {
-            format!("{root}/{joined}")
-        })
+        Target::Relative(parts.join("/"))
     }
 
     fn site_file_exists(&self, path: &str) -> Option<bool> {
@@ -92,26 +97,35 @@ impl<'a> Context<'a> {
         {
             return None;
         }
-        Some(
-            self.files.exists(&format!("public{path}"))
-                || self.files.exists(&format!("content{path}")),
-        )
+        Some(self.files.exists(&format!("public{path}")))
+    }
+
+    /// The site path `src` should have: the file name in the page's image folder.
+    fn suggested_path(&self, src: &str) -> String {
+        let src = strip_suffixes(src.trim());
+        let name = src.rsplit('/').next().unwrap_or(src);
+        match &self.image_folder {
+            Some(folder) => format!("{folder}/{name}"),
+            None => format!("/{name}"),
+        }
     }
 
     /// Reports `src` when the image it names doesn't exist.
     pub fn check_image(&self, src: &str, range: Range, report: &mut Report) {
         let missing = match self.image_target(src) {
             Target::Skip => false,
-            Target::Content(path) => !self.files.exists(&path),
+            Target::Relative(path) => !self.files.exists(&path),
             Target::Site(path) => self.site_file_exists(&path) == Some(false),
-            Target::Outside => {
+            Target::Outside => true,
+            Target::ContentRelative => {
                 let messages = report.messages;
+                let path = self.suggested_path(src);
                 report.add(
                     range,
                     Severity::Error,
                     Rule::MissingImage,
-                    &messages.image_outside_content,
-                    &[("src", src.trim())],
+                    &messages.image_relative,
+                    &[("src", src.trim()), ("path", &path)],
                 );
                 return;
             }

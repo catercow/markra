@@ -90,11 +90,19 @@ pub fn is_image(path: &str) -> bool {
 }
 
 /// [`resolve`], limited to what outside tools may change: Markdown and images
-/// under `content/`, no hidden files or folders, and never through a symlink.
+/// under `content/`, images under `public/`, no hidden files or folders, and
+/// never through a symlink.
 pub fn resolve_writable(root: &Path, path: &str) -> Result<(PathBuf, String), String> {
     let (absolute, relative) = resolve(root, path)?;
-    if !relative.starts_with("content/") {
-        return Err(format!("{relative}: only files under content/ can be changed"));
+    if relative.starts_with("public/") {
+        if !is_image(&relative) {
+            return Err(format!(
+                "{relative}: only images ({}) can be changed under public/",
+                IMAGE_EXTENSIONS.join(", ")
+            ));
+        }
+    } else if !relative.starts_with("content/") {
+        return Err(format!("{relative}: only files under content/ and images under public/ can be changed"));
     }
     if relative.split('/').any(|part| part.starts_with('.')) {
         return Err(format!("{relative}: hidden files and folders can't be changed"));
@@ -168,7 +176,7 @@ mod tests {
     }
 
     #[test]
-    fn only_content_files_are_writable() {
+    fn only_content_files_and_public_images_are_writable() {
         let root = content_repo("write");
         std::fs::create_dir_all(root.join(".git")).unwrap();
 
@@ -179,6 +187,10 @@ mod tests {
         assert_eq!(
             resolve_writable(&root, "content/blog/a/photo.JPG").unwrap().1,
             "content/blog/a/photo.JPG"
+        );
+        assert_eq!(
+            resolve_writable(&root, "public/blog/a/photo.jpg").unwrap().1,
+            "public/blog/a/photo.jpg"
         );
         let absolute = root.join("content/blog/b.md");
         assert_eq!(
@@ -191,6 +203,9 @@ mod tests {
             "README.md",
             ".git/config",
             "content/blog/a.txt",
+            "public/blog/a.md",
+            "public/robots.txt",
+            "public/.hidden/a.png",
             "content/.hidden/a.md",
             "content/blog/.a.md",
             "../x.md",

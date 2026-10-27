@@ -1,6 +1,6 @@
 //! File operations for outside tools, limited to the content folder: reading,
-//! writing Markdown and images under `content/`, the schemas, new pages and
-//! co-located images. The MCP server is built on these.
+//! writing Markdown under `content/` and images under `public/`, the schemas,
+//! new pages and page images. The MCP server is built on these.
 
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -232,7 +232,7 @@ fn find_collection(root: &Path, name: &str) -> Result<Value, String> {
 const FRONT_MATTER_NOTES: &str = "Front matter is YAML between `---` lines at the top of the file. \
 Required fields must be present and non-empty. Dates are strings in YYYY-MM-DD form. \
 Keep titles under 60 characters and descriptions under 160 for search results. \
-Image fields hold a path relative to the page, e.g. `my-post/photo.jpg` (see add_image).";
+Image fields hold a site path starting with `/`, e.g. `/blog/my-post/photo.jpg` for `public/blog/my-post/photo.jpg` (see add_image).";
 
 /// A collection's front matter fields, or every collection without `name`.
 pub fn get_collection_schema(root: &Path, name: Option<&str>) -> Result<Value, String> {
@@ -483,9 +483,33 @@ fn sniff_image(bytes: &[u8]) -> Option<&'static str> {
     }
 }
 
-/// Copies an image next to a page (`content/blog/my-post.md` →
-/// `content/blog/my-post/<name>.<ext>`) and returns the relative reference to
-/// use in the page. From a local file (`source`) or base64 `data`.
+/// The site path of a page's image folder (`content/blog/my-post.md` →
+/// `/blog/my-post`), served from `public/`. Follows the collection's URL prefix;
+/// a page outside every collection uses its path under `content/`.
+fn page_image_folder(root: &Path, page_relative: &str) -> Result<String, String> {
+    let without_extension = page_relative
+        .rsplit_once('.')
+        .map_or(page_relative, |(stem, _)| stem);
+    let all = collections(root).unwrap_or_default();
+    let found = all.iter().find_map(|collection| {
+        let field = |key: &str| collection.get(key).and_then(Value::as_str).unwrap_or_default();
+        let folder = field("folder").trim_end_matches('/');
+        let slug = without_extension.strip_prefix(folder)?.strip_prefix('/')?;
+        (!slug.is_empty() && !slug.contains('/'))
+            .then(|| cowmark_lint::page_image_folder(field("url"), folder, slug))
+    });
+    match found {
+        Some(folder) => Ok(folder),
+        None => without_extension
+            .strip_prefix("content/")
+            .map(|inner| format!("/{inner}"))
+            .ok_or_else(|| format!("{page_relative} isn't a page under content/")),
+    }
+}
+
+/// Copies an image into the page's folder under `public/` (`content/blog/my-post.md` →
+/// `public/blog/my-post/<name>.<ext>`) and returns the site path to use in the
+/// page (`/blog/my-post/<name>.<ext>`). From a local file (`source`) or base64 `data`.
 pub fn add_image(
     root: &Path,
     page: &str,
@@ -543,28 +567,24 @@ pub fn add_image(
     {
         base = format!("{}-image", if stem.is_empty() { "page".into() } else { slugify(&stem) });
     }
-    let folder = page_absolute.with_extension("");
+    let site_folder = page_image_folder(root, &page_relative)?;
+    let folder = root.join("public").join(site_folder.trim_start_matches('/'));
     let mut file_name = format!("{base}.{extension}");
     let mut n = 2;
     while folder.join(&file_name).exists() {
         file_name = format!("{base}-{n}.{extension}");
         n += 1;
     }
-    let folder_relative = page_relative
-        .rsplit_once('.')
-        .map_or(page_relative.as_str(), |(stem, _)| stem);
-    let relative = format!("{folder_relative}/{file_name}");
-    let (absolute, relative) = resolve_writable(root, &relative)?;
+    let reference = format!("{site_folder}/{file_name}");
+    let (absolute, relative) = resolve_writable(root, &format!("public{reference}"))?;
     write_atomically(&absolute, &bytes).map_err(|error| format!("{relative}: {error}"))?;
 
-    let reference = format!("{stem}/{file_name}");
     let alt = alt.unwrap_or("").replace(['[', ']'], "");
     Ok(json!({
         "path": relative,
         "reference": reference,
         "markdown": format!("![{alt}]({reference})"),
-        "url": format!("/{}", relative.strip_prefix("content/").unwrap_or(&relative)),
-        "note": "Images are copied as they are; keep photos under 2400 px on the longest side. Describe the image in the alt text."
+        "note": "Images are copied as they are; keep photos under 2400 px on the longest side. Describe the image in the alt text. Include the image's path in propose_publish."
     }))
 }
 
@@ -723,7 +743,7 @@ mod tests {
     }
 
     #[test]
-    fn images_are_copied_next_to_the_page() {
+    fn images_are_copied_into_the_pages_public_folder() {
         let root = repo("images");
         write_file(&root, "content/blog/my-post.md", "# Post\n", false).unwrap();
         let png = b"\x89PNG\r\n\x1a\n0000";
@@ -739,11 +759,11 @@ mod tests {
             Some("Team [lunch]"),
         )
         .unwrap();
-        assert_eq!(added["path"], "content/blog/my-post/team-lunch.png");
-        assert_eq!(added["markdown"], "![Team lunch](my-post/team-lunch.png)");
-        assert_eq!(added["url"], "/blog/my-post/team-lunch.png");
+        assert_eq!(added["path"], "public/blog/my-post/team-lunch.png");
+        assert_eq!(added["markdown"], "![Team lunch](/blog/my-post/team-lunch.png)");
+        assert!(root.join("public/blog/my-post/team-lunch.png").is_file());
         let again = add_image(&root, "content/blog/my-post.md", Some(&source), None, None, None).unwrap();
-        assert_eq!(again["reference"], "my-post/team-lunch-2.png");
+        assert_eq!(again["reference"], "/blog/my-post/team-lunch-2.png");
 
         let data = base64::engine::general_purpose::STANDARD.encode(b"\xff\xd8\xff\xe0jpeg");
         let pasted = add_image(
@@ -755,7 +775,7 @@ mod tests {
             None,
         )
         .unwrap();
-        assert_eq!(pasted["reference"], "my-post/my-post-image.jpg");
+        assert_eq!(pasted["reference"], "/blog/my-post/my-post-image.jpg");
 
         std::fs::write(&source, "not an image").unwrap();
         assert!(add_image(&root, "content/blog/my-post.md", Some(&source), None, None, None).is_err());
