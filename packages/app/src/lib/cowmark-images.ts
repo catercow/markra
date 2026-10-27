@@ -1,13 +1,11 @@
-// CowMark: images added to a content page are stored next to it (content/blog/my-post.md →
-// content/blog/my-post/photo.jpg) and referenced relatively (`my-post/photo.jpg`); the site
-// resolves that at build time (js/nuxt4/modules/content-media in the CaterCow monorepo).
+// CowMark: images added to a content page are stored in the site's public/ folder under the
+// page's image folder (content/blog/my-post.md → public/blog/my-post/photo.jpg) and referenced
+// by site path (`/blog/my-post/photo.jpg`); see `pageImageFolder`.
 // Large photos are scaled down first so phone pictures don't bloat the content repository.
 
-import type { SavedNativeClipboardImage, SaveNativeClipboardImageInput } from "./tauri";
+import type { SavedNativeClipboardImage, SaveNativeContentSiteImageInput } from "./tauri";
 import { slugify } from "./cowmark-pages";
 
-/** Folder variable the native image save expands to the document's file name without `.md`. */
-export const contentImageFolder = "${filename}";
 export const contentImageMaxSide = 2400;
 const lossyQuality = 0.85;
 const reencodeAboveBytes = 1_500_000;
@@ -174,26 +172,31 @@ export async function prepareContentImage(image: File): Promise<File> {
 
 export type SaveContentImageInput = {
   documentPath: string;
+  /** The page's image folder as a site path, e.g. `/blog/my-post` (see `pageImageFolder`). */
+  imageFolder: string;
   image: File;
   prepare?: (image: File) => Promise<File>;
-  saveLocalImage: (input: SaveNativeClipboardImageInput) => Promise<SavedNativeClipboardImage>;
+  rootPath: string;
+  saveSiteImage: (input: SaveNativeContentSiteImageInput) => Promise<SavedNativeClipboardImage>;
 };
 
-/** Saves an image into the page's folder; `src` is relative to the page. */
+/** Saves an image into `public/<image folder>/`; `src` is its site path. */
 export async function saveContentImage({
   documentPath,
   image,
+  imageFolder,
   prepare = prepareContentImage,
-  saveLocalImage,
+  rootPath,
+  saveSiteImage,
 }: SaveContentImageInput): Promise<SavedNativeClipboardImage> {
   const prepared = await prepare(image);
   const extension = extensions[prepared.type.toLowerCase()];
   if (!extension) throw new Error(`Images of type ${prepared.type || "unknown"} can't be used on the site.`);
-  const saved = await saveLocalImage({
-    documentPath,
+  const saved = await saveSiteImage({
     fileName: `${contentImageBaseName(image.name, documentPath)}.${extension}`,
-    folder: contentImageFolder,
+    folder: imageFolder.replace(/^\/+/u, ""),
     image: prepared,
+    root: rootPath,
   });
   return { alt: "", src: saved.src };
 }

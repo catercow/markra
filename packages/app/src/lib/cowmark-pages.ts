@@ -81,6 +81,26 @@ export function collectionForDocument(
     .sort((left, right) => right.folder.length - left.folder.length)[0] ?? null;
 }
 
+/**
+ * The site path of a page's image folder, served from the root's `public/` folder:
+ * `content/blog/my-post.md` → `/blog/my-post`. Follows the collection's URL prefix
+ * (`crates/cowmark-lint` `page_image_folder`); null for files outside `content/`.
+ */
+export function pageImageFolder(collections: readonly PageCollection[], relativePath: string) {
+  const path = relativePath.replace(/\\/gu, "/");
+  if (!/^content\/.+\.md$/iu.test(path)) return null;
+  const withoutExtension = path.replace(/\.md$/iu, "");
+  const collection = [...collections]
+    .filter((candidate) => withoutExtension.startsWith(`${candidate.folder}/`))
+    .sort((left, right) => right.folder.length - left.folder.length)[0];
+  const slug = collection ? withoutExtension.slice(collection.folder.length + 1) : "";
+  if (!collection || !slug || slug.includes("/")) return `/${withoutExtension.slice("content/".length)}`;
+  const open = collection.url?.indexOf("<") ?? -1;
+  const fromUrl = open >= 0 ? collection.url!.slice(0, open).replace(/^\/+|\/+$/gu, "") : "";
+  const prefix = fromUrl || collection.folder.replace(/^content\//u, "");
+  return prefix ? `/${prefix}/${slug}` : `/${slug}`;
+}
+
 const textareaNames = /(^|_)(description|excerpt|summary)$/u;
 const dateNames = /(_at|_on|^date)$/u;
 const imageNames = /(image|photo|thumbnail|logo)$/u;

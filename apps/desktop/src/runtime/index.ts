@@ -136,6 +136,7 @@ export const desktopRuntime = {
     resolveMarkdownPath: files.resolveNativeMarkdownPath,
     saveClipboardAttachment: files.saveNativeClipboardAttachment,
     saveClipboardImage: files.saveNativeClipboardImage,
+    saveContentSiteImage: files.saveNativeContentSiteImage,
     saveHtmlFile: files.saveNativeHtmlFile,
     saveMarkdownBundleFile: files.saveNativeMarkdownBundleFile,
     saveMarkdownFile: files.saveNativeMarkdownFile,

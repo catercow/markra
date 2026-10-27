@@ -231,6 +231,28 @@ fn split_top_level(body: &str) -> Vec<&str> {
         .collect()
 }
 
+/// The site path of a page's image folder, served from `public/`: the collection's URL prefix
+/// and the page's file name (`/blog/<file name without .md>` → `/blog/my-post`). Without a
+/// prefix, the collection's folder under `content/` stands in.
+pub fn page_image_folder(url_pattern: &str, folder: &str, slug: &str) -> String {
+    let prefix = match url_pattern.find('<') {
+        Some(open) => &url_pattern[..open],
+        None => "",
+    };
+    let prefix = prefix.trim_matches('/');
+    let prefix = if prefix.is_empty() {
+        let folder = folder.trim_matches('/');
+        folder.strip_prefix("content/").unwrap_or(folder)
+    } else {
+        prefix
+    };
+    if prefix.is_empty() {
+        format!("/{slug}")
+    } else {
+        format!("/{prefix}/{slug}")
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Collection {
     pub schema: CollectionSchema,
@@ -273,6 +295,11 @@ impl Collection {
 
     pub fn url_of(&self, slug: &str) -> String {
         format!("{}{}{}", self.url_prefix, slug, self.url_suffix)
+    }
+
+    /// Where a page's images go, as a site path (`/blog/my-post`); see [`page_image_folder`].
+    pub fn image_folder(&self, slug: &str) -> String {
+        page_image_folder(&self.schema.url, &self.schema.folder, slug)
     }
 
     /// The file a site path is served from, when the path is one of this collection's pages.
@@ -377,6 +404,17 @@ impl Schemas {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn image_folders_follow_the_url_prefix() {
+        assert_eq!(page_image_folder("/blog/<file name without .md>", "content/blog", "a"), "/blog/a");
+        assert_eq!(
+            page_image_folder("/cuisines/<file name without .md>-catering", "content/cuisines", "thai"),
+            "/cuisines/thai"
+        );
+        assert_eq!(page_image_folder("/guides/<x>", "content/catering-guides", "a"), "/guides/a");
+        assert_eq!(page_image_folder("", "content/dishes", "pizza"), "/dishes/pizza");
+    }
 
     #[test]
     fn parses_collection_types() {

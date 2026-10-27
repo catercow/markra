@@ -52,6 +52,7 @@ import type {
   SavedNativeSettingsFile,
   SaveNativeClipboardAttachmentInput,
   SaveNativeClipboardImageInput,
+  SaveNativeContentSiteImageInput,
   SaveNativeHtmlFileInput,
   SaveNativeMarkdownBundleFileInput,
   SaveNativeMarkdownFileInput,
@@ -230,6 +231,8 @@ export type AppFileRuntime = {
   ) => Promise<NativeMarkdownFolderFile>;
   resolveMarkdownPath: (path: string) => Promise<NativeMarkdownDroppedTarget>;
   saveClipboardImage: (input: SaveNativeClipboardImageInput) => Promise<SavedNativeClipboardImage>;
+  /** CowMark: saves a content page's image into the managed folder's `public/`; desktop only. */
+  saveContentSiteImage?: (input: SaveNativeContentSiteImageInput) => Promise<SavedNativeClipboardImage>;
   saveClipboardAttachment: (input: SaveNativeClipboardAttachmentInput) => Promise<SavedNativeClipboardAttachment>;
   saveHtmlFile: (input: SaveNativeHtmlFileInput) => Promise<SavedNativeHtmlFile | null>;
   saveMarkdownBundleFile?: (

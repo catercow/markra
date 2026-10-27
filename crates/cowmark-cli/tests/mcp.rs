@@ -182,7 +182,7 @@ fn an_agent_writes_checks_and_proposes_over_stdio() {
     let (_, text) = session.call("check", json!({}));
     assert!(text.starts_with("PASSED"), "{text}");
 
-    // Images go next to the page.
+    // Images go in the page's folder under public/ and are referenced by site path.
     let image = folder
         .join("..")
         .join(format!("cm-mcp-photo-{}.png", std::process::id()));
@@ -196,7 +196,7 @@ fn an_agent_writes_checks_and_proposes_over_stdio() {
     assert_eq!(
         added["markdown"],
         format!(
-            "![A buffet](holiday-party-catering/cm-mcp-photo-{}.png)",
+            "![A buffet](/blog/holiday-party-catering/cm-mcp-photo-{}.png)",
             std::process::id()
         )
     );

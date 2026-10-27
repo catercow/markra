@@ -4,20 +4,26 @@ import { getAppRuntime } from "../runtime";
 import {
   collectFieldValues,
   collectionsSchemaRelativePath,
+  pageImageFolder,
   parseCollectionsSchema,
+  rootRelativePath,
   type FieldValues,
   type PageCollection,
 } from "../lib/cowmark-pages";
 import { saveContentImage } from "../lib/cowmark-images";
-import { openNativeLocalImages, saveNativeClipboardImage } from "../lib/tauri";
+import { openNativeLocalImages, saveNativeContentSiteImage } from "../lib/tauri";
 
 export type CowMarkPages = {
   collections: PageCollection[];
   rootPath: string;
   /** Values the collection's files already use (see `collectFieldValues`); rescanned after window focus. */
   loadFieldValues: (collection: PageCollection) => Promise<FieldValues>;
-  /** Asks for an image file and stores it next to the page; resolves the relative reference. */
+  /** The page's image folder as a site path (`/blog/my-post`), or null outside `content/`. */
+  imageFolder: (documentPath: string | null | undefined) => string | null;
+  /** Asks for an image file and stores it in the page's image folder; resolves its site path. */
   pickImage: (documentPath: string) => Promise<string | null>;
+  /** Stores an image in the page's image folder under `public/`; resolves its site path. */
+  saveImage: (documentPath: string, image: File) => Promise<string>;
   /** A displayable URL for an image reference written in the page at `documentPath`. */
   resolveImage: (documentPath: string | null | undefined, src: string) => string;
 };
@@ -33,11 +39,12 @@ function joinPath(root: string, relative: string) {
 }
 
 /**
- * Resolves image references the way the site does: relative to the page, and site paths
- * ("/blog/x.jpg") from the content repository's public/ folder.
+ * Resolves image references the way the site does: site paths ("/blog/x.jpg") from the content
+ * repository's public/ folder. Other references, and documents outside the folder, resolve as
+ * in stock Markra.
  */
 export function resolveContentImageSrc(rootPath: string, documentPath: string | null | undefined, src: string) {
-  if (/^\/(?!\/)/u.test(src)) {
+  if (/^\/(?!\/)/u.test(src) && rootRelativePath(rootPath, documentPath) !== null) {
     return createMarkdownImageSrcResolver(joinPath(rootPath, "public/index.md"))(`.${src}`);
   }
   return createMarkdownImageSrcResolver(documentPath)(src);
@@ -102,18 +109,41 @@ export function useCowMarkPages({ onImageError, refreshTree, rootPath }: Options
     return loading;
   }, [rootPath]);
 
+  const imageFolder = useCallback(
+    (documentPath: string | null | undefined) => {
+      const relative = rootPath ? rootRelativePath(rootPath, documentPath) : null;
+      return relative ? pageImageFolder(collections, relative) : null;
+    },
+    [collections, rootPath]
+  );
+
+  const saveImage = useCallback(
+    async (documentPath: string, image: File) => {
+      const folder = imageFolder(documentPath);
+      if (!rootPath || !folder) throw new Error("Images can only be added to pages under content/.");
+      const saved = await saveContentImage({
+        documentPath,
+        image,
+        imageFolder: folder,
+        rootPath,
+        saveSiteImage: saveNativeContentSiteImage,
+      });
+      await callbacksRef.current.refreshTree(documentPath).catch(() => {});
+      return saved.src;
+    },
+    [imageFolder, rootPath]
+  );
+
   const pickImage = useCallback(async (documentPath: string) => {
     try {
       const [image] = await openNativeLocalImages();
       if (!image) return null;
-      const saved = await saveContentImage({ documentPath, image, saveLocalImage: saveNativeClipboardImage });
-      await callbacksRef.current.refreshTree(documentPath).catch(() => {});
-      return saved.src;
+      return await saveImage(documentPath, image);
     } catch (error) {
       callbacksRef.current.onImageError(error);
       return null;
     }
-  }, []);
+  }, [saveImage]);
 
   const resolveImage = useCallback(
     (documentPath: string | null | undefined, src: string) => (rootPath ? resolveContentImageSrc(rootPath, documentPath, src) : src),
@@ -121,7 +151,7 @@ export function useCowMarkPages({ onImageError, refreshTree, rootPath }: Options
   );
 
   return useMemo(
-    () => (rootPath ? { collections, loadFieldValues, pickImage, resolveImage, rootPath } : null),
-    [collections, loadFieldValues, pickImage, resolveImage, rootPath]
+    () => (rootPath ? { collections, imageFolder, loadFieldValues, pickImage, resolveImage, rootPath, saveImage } : null),
+    [collections, imageFolder, loadFieldValues, pickImage, resolveImage, rootPath, saveImage]
   );
 }

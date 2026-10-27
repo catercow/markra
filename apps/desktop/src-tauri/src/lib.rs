@@ -58,7 +58,7 @@ use markdown_files::{
     open_markdown_folder_in_new_window, open_markdown_path, read_local_image_file,
     read_markdown_file, read_markdown_file_history, read_markdown_image_file,
     read_markdown_template_file, rename_markdown_tree_file, resolve_markdown_path,
-    save_clipboard_attachment, save_clipboard_image, search_markdown_files_for_path,
+    save_clipboard_attachment, save_clipboard_image, save_content_site_image, search_markdown_files_for_path,
     trash_markdown_assets, write_markdown_file, write_markdown_template_file,
     MarkdownTreeLoadState,
 };
@@ -411,6 +411,7 @@ pub fn run() {
             delete_markdown_template_file,
             save_clipboard_attachment,
             save_clipboard_image,
+            save_content_site_image,
             read_clipboard_content,
             read_clipboard_text,
             minimize_current_window,

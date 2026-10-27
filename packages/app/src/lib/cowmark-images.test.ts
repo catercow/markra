@@ -68,21 +68,23 @@ describe("pickEncoding", () => {
 });
 
 describe("saveContentImage", () => {
-  it("saves into the page's folder with a clean name", async () => {
-    const saveLocalImage = vi.fn(async () => ({ alt: "x", src: "my-post/team-lunch.jpg" }));
+  it("saves into the page's image folder under public/ with a clean name", async () => {
+    const saveSiteImage = vi.fn(async () => ({ alt: "x", src: "/blog/my-post/team-lunch.jpg" }));
     const image = new File([new Uint8Array([1])], "Team Lunch.jpeg", { type: "image/jpeg" });
     const saved = await saveContentImage({
       documentPath: "/r/content/blog/my-post.md",
       image,
+      imageFolder: "/blog/my-post",
       prepare: async (file) => file,
-      saveLocalImage,
+      rootPath: "/r",
+      saveSiteImage,
     });
-    expect(saved).toEqual({ alt: "", src: "my-post/team-lunch.jpg" });
-    expect(saveLocalImage).toHaveBeenCalledWith({
-      documentPath: "/r/content/blog/my-post.md",
+    expect(saved).toEqual({ alt: "", src: "/blog/my-post/team-lunch.jpg" });
+    expect(saveSiteImage).toHaveBeenCalledWith({
       fileName: "team-lunch.jpg",
-      folder: "${filename}",
+      folder: "blog/my-post",
       image,
+      root: "/r",
     });
   });
 
@@ -91,8 +93,10 @@ describe("saveContentImage", () => {
       saveContentImage({
         documentPath: "/r/content/blog/a.md",
         image: new File([new Uint8Array([1])], "a.tiff", { type: "image/tiff" }),
+        imageFolder: "/blog/a",
         prepare: async (file) => file,
-        saveLocalImage: vi.fn(),
+        rootPath: "/r",
+        saveSiteImage: vi.fn(),
       })
     ).rejects.toThrow(/can't be used/u);
   });

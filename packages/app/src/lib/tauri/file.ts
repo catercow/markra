@@ -206,6 +206,16 @@ export type SaveNativeClipboardImageInput = {
   image: File;
 };
 
+/** CowMark: an image for a content page, saved into `<root>/public/<folder>`. */
+export type SaveNativeContentSiteImageInput = {
+  fileName: string;
+  /** Below `public/`, e.g. `blog/my-post`. */
+  folder: string;
+  image: File;
+  /** The managed content folder. */
+  root: string;
+};
+
 export type SaveNativeClipboardAttachmentInput = {
   attachment: File;
   copyToStorage?: boolean;
@@ -538,6 +548,12 @@ export function detectNativePandocPath() {
 
 export function saveNativeClipboardImage(input: SaveNativeClipboardImageInput) {
   return getAppRuntime().files.saveClipboardImage(input);
+}
+
+export function saveNativeContentSiteImage(input: SaveNativeContentSiteImageInput) {
+  const save = getAppRuntime().files.saveContentSiteImage;
+  if (!save) return Promise.reject(new Error("Saving images for the site needs the CowMark desktop app."));
+  return save(input);
 }
 
 export function saveNativeClipboardAttachment(input: SaveNativeClipboardAttachmentInput) {

@@ -182,14 +182,15 @@ mod tests {
     fn uses_the_messages_it_is_given_and_checks_files_under_the_root() {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir_all(dir.path().join("content")).unwrap();
-        fs::write(dir.path().join("content/there.jpg"), "").unwrap();
+        fs::create_dir_all(dir.path().join("public/blog")).unwrap();
+        fs::write(dir.path().join("public/blog/there.jpg"), "").unwrap();
         let state = ContentLintState::default();
-        let text = "![a](./there.jpg)\n\n![b](./gone.jpg)\n";
+        let text = "![a](/blog/there.jpg)\n\n![b](/blog/gone.jpg)\n";
 
         let found = state.lint(dir.path(), "content/a.md", text, None);
         assert_eq!(rules(&found), ["missing-image"]);
         assert!(
-            found[0].message.contains("`./gone.jpg`"),
+            found[0].message.contains("`/blog/gone.jpg`"),
             "{}",
             found[0].message
         );
@@ -197,7 +198,7 @@ mod tests {
         let messages: Messages =
             serde_json::from_str(r#"{"missingImage":"Kein Bild: `{src}`"}"#).unwrap();
         let found = state.lint(dir.path(), "content/a.md", text, Some(messages));
-        assert_eq!(found[0].message, "Kein Bild: `./gone.jpg`");
+        assert_eq!(found[0].message, "Kein Bild: `/blog/gone.jpg`");
         // Templates not given keep their defaults.
         assert!(state.lint(dir.path(), "content/a.md", "::x\n", None)[0]
             .message

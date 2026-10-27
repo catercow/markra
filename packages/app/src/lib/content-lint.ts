@@ -47,7 +47,7 @@ const contentLintKeys = [
   "frontmatterUnclosed",
   "frontmatterYaml",
   "imageAlt",
-  "imageOutsideContent",
+  "imageRelative",
   "missingField",
   "missingFieldHere",
   "missingImage",

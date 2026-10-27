@@ -268,6 +268,16 @@ export type SaveNativeClipboardImageInput = {
   image: File;
 };
 
+/** CowMark: an image for a content page, saved into `<root>/public/<folder>`. */
+export type SaveNativeContentSiteImageInput = {
+  fileName: string;
+  /** Below `public/`, e.g. `blog/my-post`. */
+  folder: string;
+  image: File;
+  /** The managed content folder. */
+  root: string;
+};
+
 export type SaveNativeClipboardAttachmentInput = {
   attachment: File;
   copyToStorage?: boolean;
@@ -1546,6 +1556,28 @@ export async function saveNativeClipboardImage({
   return {
     alt: imageAltFromFileName(image.name),
     src: encodeMarkdownRelativePath(savedImage.relativePath)
+  };
+}
+
+/** CowMark: saves into the content folder's `public/`; `src` is the site path (`/blog/my-post/photo.jpg`). */
+export async function saveNativeContentSiteImage({
+  fileName,
+  folder,
+  image,
+  root
+}: SaveNativeContentSiteImageInput): Promise<SavedNativeClipboardImage> {
+  const bytes = Array.from(new Uint8Array(await image.arrayBuffer()));
+  const saved = await invokeNative<ClipboardImageFileResponse>("save_content_site_image", {
+    bytes,
+    fileName,
+    folder,
+    mimeType: image.type,
+    root
+  });
+
+  return {
+    alt: imageAltFromFileName(image.name),
+    src: `/${encodeMarkdownRelativePath(saved.relativePath)}`
   };
 }
 

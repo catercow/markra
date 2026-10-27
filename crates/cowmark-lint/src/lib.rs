@@ -28,7 +28,7 @@ use serde::Serialize;
 
 pub use messages::Messages;
 pub use schema::{
-    CollectionSchema, ComponentSchema, FieldSchema, PropSchema, SchemaError, Schemas,
+    page_image_folder, CollectionSchema, ComponentSchema, FieldSchema, PropSchema, SchemaError, Schemas,
 };
 pub use text::{utf8_to_utf16, utf16_to_utf8};
 

@@ -155,11 +155,11 @@ fn the_binary_checks_without_the_app_and_exits_by_severity() {
     assert_eq!((code, out.trim()), (0, "1 file checked: 0 errors, 0 warnings"));
 
     // A warning passes unless --strict; found from the working directory.
-    fs::create_dir_all(root.join("content/blog/hello")).unwrap();
-    fs::write(root.join("content/blog/hello/a.png"), "png").unwrap();
+    fs::create_dir_all(root.join("public/blog/hello")).unwrap();
+    fs::write(root.join("public/blog/hello/a.png"), "png").unwrap();
     fs::write(
         root.join("content/blog/hello.md"),
-        "---\ntitle: Hello\ndescription: First post\npublished_at: '2026-01-01'\n---\n\n![](hello/a.png)\n",
+        "---\ntitle: Hello\ndescription: First post\npublished_at: '2026-01-01'\n---\n\n![](/blog/hello/a.png)\n",
     )
     .unwrap();
     assert_eq!(check(&["check"], &root.join("content/blog")).0, 0);

@@ -23,7 +23,9 @@ pub(crate) use export::{
 };
 pub(crate) use history::{list_markdown_file_history, read_markdown_file_history};
 pub(crate) use ignore_rules::MarkdownIgnoreRules;
-pub(crate) use image::{read_local_image_file, read_markdown_image_file, save_clipboard_image};
+pub(crate) use image::{
+    read_local_image_file, read_markdown_image_file, save_clipboard_image, save_content_site_image,
+};
 pub(crate) use markdown_export::export_markdown_file;
 pub(crate) use open::{
     open_containing_folder, open_markdown_attachment, open_markdown_file_in_new_window,

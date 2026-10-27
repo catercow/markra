@@ -36,7 +36,7 @@ pub struct Messages {
     pub date_format: String,
     // Images and links.
     pub missing_image: String,
-    pub image_outside_content: String,
+    pub image_relative: String,
     pub image_alt: String,
     pub broken_link: String,
     // Merges.
@@ -94,8 +94,8 @@ impl Default for Messages {
             missing_image: s(
                 "The image `{src}` can't be found. Check the file name, or add the image again.",
             ),
-            image_outside_content: s(
-                "The image `{src}` points outside the content folder. Put the image next to the page and pick it again.",
+            image_relative: s(
+                "The site can't show `{src}`: images go in the `public/` folder and start with `/`. Move the file to `public{path}` and write `{path}`, or add the image again.",
             ),
             image_alt: s(
                 "This image has no description. Add one between the square brackets: it is shown as the caption and read aloud to people who can't see the image.",
