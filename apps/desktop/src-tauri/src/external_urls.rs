@@ -1,13 +1,10 @@
+#[cfg(not(target_os = "windows"))]
 use std::process::Command;
 
+/// A NUL-terminated UTF-16 copy of `text` for Win32 calls.
 #[cfg(any(target_os = "windows", test))]
-fn windows_create_no_window_flag() -> u32 {
-    0x08000000
-}
-
-#[cfg(any(target_os = "windows", test))]
-fn windows_open_command_creation_flags() -> u32 {
-    windows_create_no_window_flag()
+fn wide_null(text: &str) -> Vec<u16> {
+    text.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
 fn validate_external_url(url: &str) -> Result<String, String> {
@@ -28,16 +25,32 @@ pub(crate) fn open_system_url(url: &str) -> Result<(), String> {
         .map_err(|error| format!("Failed to open external URL: {error}"))
 }
 
+// ShellExecuteW hands the URL to the default browser as-is. `cmd /C start` would
+// treat `&` in a query string as a command separator and drop the rest.
 #[cfg(target_os = "windows")]
 pub(crate) fn open_system_url(url: &str) -> Result<(), String> {
-    use std::os::windows::process::CommandExt;
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
-    Command::new("cmd")
-        .args(["/C", "start", "", url])
-        .creation_flags(windows_open_command_creation_flags())
-        .spawn()
-        .map(|_| ())
-        .map_err(|error| format!("Failed to open external URL: {error}"))
+    let operation = wide_null("open");
+    let file = wide_null(url);
+    let result = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            operation.as_ptr(),
+            file.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    // Values above 32 mean success.
+    let code = result as isize;
+    if code > 32 {
+        Ok(())
+    } else {
+        Err(format!("Failed to open external URL (ShellExecute error {code})"))
+    }
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
@@ -57,9 +70,7 @@ pub(crate) fn open_external_url(url: String) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        validate_external_url, windows_create_no_window_flag, windows_open_command_creation_flags,
-    };
+    use super::{validate_external_url, wide_null};
 
     #[test]
     fn accepts_browser_and_mail_urls() {
@@ -80,10 +91,10 @@ mod tests {
     }
 
     #[test]
-    fn windows_open_command_uses_no_window_creation_flag() {
-        assert_eq!(
-            windows_open_command_creation_flags() & windows_create_no_window_flag(),
-            windows_create_no_window_flag()
-        );
+    fn windows_url_keeps_every_query_parameter() {
+        let url = "https://content-preview.catercow.com/__content_access/login?port=51234&challenge=abc";
+        let wide = wide_null(url);
+        assert_eq!(wide.last(), Some(&0));
+        assert_eq!(String::from_utf16(&wide[..wide.len() - 1]).unwrap(), url);
     }
 }
