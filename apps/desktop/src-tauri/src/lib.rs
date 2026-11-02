@@ -9,6 +9,7 @@ mod content_access;
 mod content_lint;
 mod content_merge;
 mod content_preview;
+mod cowmark_claude;
 mod cowmark_companion;
 mod external_urls;
 mod fonts;
@@ -403,6 +404,8 @@ pub fn run() {
             content_lint::cowmark_format,
             content_lint::cowmark_csv_table,
             content_lint::cowmark_schema,
+            cowmark_claude::cowmark_claude_add,
+            cowmark_claude::cowmark_claude_status,
             cowmark_companion::cowmark_companion_start,
             list_markdown_file_history,
             read_markdown_file_history,

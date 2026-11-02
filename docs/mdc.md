@@ -175,7 +175,9 @@ Every command also takes the schema options (see **Where the schema comes from**
 | `get_latest`, `open_in_cowmark` | not destructive | As the commands |
 | `propose_publish` | not destructive | Ticks files and fills in the message; says nothing was published and a person must click Save to studio |
 
-To add it to Claude Desktop, run the bundled binary's `mcp-config` and paste the `cowmark` entry under `mcpServers` in Claude Desktop's config (Settings → Developer → Edit Config), then restart Claude Desktop:
+The easiest way to add it to Claude Desktop is **Add to Claude** in CowMark's preview footer (shown until the entry is in place, as **Update in Claude** when it runs a different `cowmark`). It writes only the `cowmark` entry into `claude_desktop_config.json`, keeps everything else, saves the old file as `claude_desktop_config.json.bak`, and on Windows also updates the copy a Microsoft Store install of Claude reads (`apps/desktop/src-tauri/src/cowmark_claude.rs`). Then quit and reopen Claude Desktop.
+
+To do it by hand instead, run the bundled binary's `mcp-config` and paste the `cowmark` entry under `mcpServers` in Claude Desktop's config (Settings → Developer → Edit Config), then restart Claude Desktop:
 
 ```sh
 /Applications/CowMark.app/Contents/MacOS/cowmark mcp-config

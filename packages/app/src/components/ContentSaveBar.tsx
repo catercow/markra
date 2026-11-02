@@ -4,7 +4,7 @@ import { Button, Textarea } from "@markra/ui";
 import { getAppRuntime } from "../runtime";
 import { contentAccessError, type ContentGitStatus, type ManagedContent } from "../lib/content-access";
 import { pruneSelection, toggleSelection } from "../lib/content-selection";
-import type { ContentSaveProposal } from "../lib/cowmark-companion";
+import type { ContentSaveProposal, CowMarkClaudeStatus } from "../lib/cowmark-companion";
 import type { PageCollection } from "../lib/cowmark-pages";
 import { useCowMarkPagesContext } from "../hooks/useCowMarkPages";
 
@@ -41,13 +41,37 @@ export function ContentSaveBar({
   const access = getAppRuntime().files.contentAccess;
   const [status, setStatus] = useState<ContentGitStatus | null>(null);
   const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState<"save" | "update" | "sign-in" | null>(null);
+  const [busy, setBusy] = useState<"save" | "update" | "sign-in" | "claude" | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
   const [sessionLost, setSessionLost] = useState(false);
   // Nothing is ticked by default: publishing is a deliberate choice per file.
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
   const changedPaths = useMemo(() => status?.changes.map((change) => change.path) ?? [], [status]);
   const pageCollections = useCowMarkPagesContext()?.collections ?? noCollections;
+  const claude = getAppRuntime().files.cowmarkClaude;
+  const [claudeStatus, setClaudeStatus] = useState<CowMarkClaudeStatus>("unavailable");
+
+  useEffect(() => {
+    if (!claude) return;
+    let active = true;
+    claude.status().then((next) => { if (active) setClaudeStatus(next); }, () => {});
+    return () => { active = false; };
+  }, [claude]);
+
+  const addToClaude = async () => {
+    if (!claude) return;
+    setBusy("claude");
+    setNotice(null);
+    try {
+      setClaudeStatus(await claude.add());
+      setNotice({ tone: "info", text: label("app.cowmark.claudeAdded") });
+    } catch (error) {
+      const text = error instanceof Error ? error.message : String(error);
+      setNotice({ tone: "error", text: label("app.cowmark.claudeAddFailed").replace("{message}", text) });
+    } finally {
+      setBusy(null);
+    }
+  };
 
   useEffect(() => {
     setSelected((current) => pruneSelection(current, changedPaths));
@@ -218,14 +242,27 @@ export function ContentSaveBar({
         <p className="m-0 truncate text-(--text-secondary)" title={status?.changes.map((change) => `${change.status}: ${change.path}`).join("\n")}>
           {summary}
         </p>
-        {managed.email ? (
-          <div className="flex min-w-0 shrink items-center gap-1">
-            <span className="truncate text-(--text-secondary)">
-              {label("app.cowmark.signedInAs").replace("{email}", managed.email)}
-            </span>
-            <Button size="sm" variant="ghost" onClick={signOut}>{label("app.cowmark.signOut")}</Button>
-          </div>
-        ) : null}
+        <div className="flex min-w-0 shrink items-center gap-1">
+          {managed.email ? (
+            <>
+              <span className="truncate text-(--text-secondary)">
+                {label("app.cowmark.signedInAs").replace("{email}", managed.email)}
+              </span>
+              <Button size="sm" variant="ghost" onClick={signOut}>{label("app.cowmark.signOut")}</Button>
+            </>
+          ) : null}
+          {claudeStatus === "missing" || claudeStatus === "outdated" ? (
+            <Button
+              disabled={busy !== null}
+              size="sm"
+              title={label("app.cowmark.addToClaudeHint")}
+              variant="ghost"
+              onClick={() => { addToClaude().catch(() => {}); }}
+            >
+              {claudeStatus === "outdated" ? label("app.cowmark.updateInClaude") : label("app.cowmark.addToClaude")}
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {status && changeCount > 0 ? (

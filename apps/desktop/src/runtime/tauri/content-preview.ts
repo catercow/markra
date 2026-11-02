@@ -12,6 +12,7 @@ type ContentFormat = NonNullable<AppRuntime["files"]["contentFormat"]>;
 type ContentCsvTable = NonNullable<AppRuntime["files"]["contentCsvTable"]>;
 type ContentSchema = NonNullable<AppRuntime["files"]["contentSchema"]>;
 type CowMarkCompanionRuntime = NonNullable<AppRuntime["files"]["cowmarkCompanion"]>;
+type CowMarkClaudeRuntime = NonNullable<AppRuntime["files"]["cowmarkClaude"]>;
 
 export const nativeContentPreview: ContentPreviewRuntime = {
   pending: (root, previewCommit) => invokeNative("content_preview_pending", { previewCommit, root }),
@@ -59,4 +60,9 @@ export const nativeCowMarkCompanion: CowMarkCompanionRuntime = {
   listen: async (handler) => safeNativeEventCleanup(
     await getCurrentWindow().listen<Parameters<typeof handler>[0]>("cowmark://control", (event) => handler(event.payload))
   )
+};
+
+export const nativeCowMarkClaude: CowMarkClaudeRuntime = {
+  add: () => invokeNative("cowmark_claude_add"),
+  status: () => invokeNative("cowmark_claude_status")
 };

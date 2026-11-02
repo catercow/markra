@@ -3,7 +3,7 @@ import type { ContentAccessRuntime, MergeText } from "../lib/content-access";
 import type { ContentCsvTable, ContentFormat, ContentLint } from "../lib/content-lint";
 import type { ContentPreviewRuntime } from "../lib/content-preview";
 import type { ContentSchemaLoader } from "../lib/content-schema";
-import type { CowMarkCompanionRuntime } from "../lib/cowmark-companion";
+import type { CowMarkClaudeRuntime, CowMarkCompanionRuntime } from "../lib/cowmark-companion";
 import type { MarkdownShortcutMap } from "@markra/editor";
 import type { DesktopPlatform } from "../lib/platform";
 import type { ContextMenuEntry } from "../components/ContextMenu";
@@ -229,6 +229,8 @@ export type AppFileRuntime = {
   contentSchema?: ContentSchemaLoader;
   /** CowMark's browser preview and `cowmark` command connection; desktop only. */
   cowmarkCompanion?: CowMarkCompanionRuntime;
+  /** Adds the bundled `cowmark` command to Claude Desktop; desktop only. */
+  cowmarkClaude?: CowMarkClaudeRuntime;
   /** Reads any text file by runtime path; resolves null when it is missing or unreadable. */
   readWorkspaceTextFile?: (path: string) => Promise<string | null>;
   renameMarkdownTreeFile: (

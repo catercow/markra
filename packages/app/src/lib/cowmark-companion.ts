@@ -18,6 +18,15 @@ export type CowMarkControlRequest =
   | { action: "proposePublish"; paths: string[]; message: string }
   | { action: "getLatest" };
 
+/** Where CowMark stands in Claude Desktop's MCP config; "unavailable" hides Add to Claude. */
+export type CowMarkClaudeStatus = "unavailable" | "missing" | "outdated" | "added";
+
+export type CowMarkClaudeRuntime = {
+  status: () => Promise<CowMarkClaudeStatus>;
+  /** Adds or updates the `cowmark` server in Claude Desktop's config and returns the new status. */
+  add: () => Promise<CowMarkClaudeStatus>;
+};
+
 export type CowMarkCompanionRuntime = {
   /** Starts the browser preview and the control socket; safe to call again. */
   start: (root: string, site: string) => Promise<CowMarkCompanionStatus>;

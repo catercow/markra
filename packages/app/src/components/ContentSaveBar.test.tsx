@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { configureAppRuntime, getAppRuntime, resetAppRuntimeForTests } from "../runtime";
 import type { ContentAccessRuntime, ManagedContent } from "../lib/content-access";
+import type { CowMarkClaudeStatus } from "../lib/cowmark-companion";
 import { ContentSaveBar } from "./ContentSaveBar";
 
 const changed = { ahead: 0, branch: "studio", changes: [{ path: "content/blog/a.md", status: "modified" }] };
@@ -21,6 +22,13 @@ function mockAccess(overrides: Partial<Record<keyof ContentAccessRuntime, unknow
   const runtime = getAppRuntime();
   configureAppRuntime({ ...runtime, files: { ...runtime.files, contentAccess: access as unknown as ContentAccessRuntime } });
   return access;
+}
+
+function mockClaude(status: CowMarkClaudeStatus, add: () => Promise<CowMarkClaudeStatus> = async () => "added") {
+  const claude = { add: vi.fn(add), status: vi.fn(async () => status) };
+  const runtime = getAppRuntime();
+  configureAppRuntime({ ...runtime, files: { ...runtime.files, cowmarkClaude: claude } });
+  return claude;
 }
 
 function managed(email: string | null, overrides: Partial<ManagedContent> = {}): ManagedContent {
@@ -283,5 +291,50 @@ describe("ContentSaveBar", () => {
     expect(screen.getByRole("checkbox", { name: "public/blog/ready/photo.jpg" })).toBeChecked();
     expect(screen.getByRole("textbox", { name: "What changed" })).toHaveValue("Both");
     expect(access.save).not.toHaveBeenCalled();
+  });
+  it("adds CowMark to Claude in one click and says to reopen Claude", async () => {
+    mockAccess();
+    const claude = mockClaude("missing");
+    render(<ContentSaveBar language="en" managed={managed(null)} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add to Claude" }));
+
+    expect(await screen.findByText("Added to Claude. Quit and reopen Claude Desktop to use CowMark there.")).toBeInTheDocument();
+    expect(claude.add).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Add to Claude" })).toBeNull();
+  });
+
+  it("offers to update an entry that runs a different cowmark", async () => {
+    mockAccess();
+    mockClaude("outdated");
+    render(<ContentSaveBar language="en" managed={managed("editor@catercow.com")} />);
+
+    expect(await screen.findByRole("button", { name: "Update in Claude" })).toBeInTheDocument();
+  });
+
+  it("shows why adding to Claude failed and keeps the button", async () => {
+    mockAccess();
+    mockClaude("missing", async () => { throw new Error("Claude's settings file isn't valid JSON"); });
+    render(<ContentSaveBar language="en" managed={managed(null)} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add to Claude" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't add CowMark to Claude: Claude's settings file isn't valid JSON");
+    expect(screen.getByRole("button", { name: "Add to Claude" })).toBeEnabled();
+  });
+
+  it("hides Add to Claude once added, or when this build can't add it", async () => {
+    mockAccess();
+    const claude = mockClaude("added");
+    const { unmount } = render(<ContentSaveBar language="en" managed={managed(null)} />);
+    await waitFor(() => expect(claude.status).toHaveBeenCalled());
+    expect(await screen.findByText("1 changed file")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Claude/u })).toBeNull();
+    unmount();
+
+    const unavailable = mockClaude("unavailable");
+    render(<ContentSaveBar language="en" managed={managed(null)} />);
+    await waitFor(() => expect(unavailable.status).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: /Claude/u })).toBeNull();
   });
 });

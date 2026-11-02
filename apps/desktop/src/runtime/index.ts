@@ -15,6 +15,7 @@ import {
   nativeContentSchema,
   nativeContentLint,
   nativeContentPreview,
+  nativeCowMarkClaude,
   nativeCowMarkCompanion,
   nativeMergeText
 } from "./tauri/content-preview";
@@ -137,6 +138,7 @@ export const desktopRuntime = {
     contentFormat: nativeContentFormat,
     contentCsvTable: nativeContentCsvTable,
     contentSchema: nativeContentSchema,
+    cowmarkClaude: nativeCowMarkClaude,
     cowmarkCompanion: nativeCowMarkCompanion,
     renameMarkdownTreeFile: files.renameNativeMarkdownTreeFile,
     resolveMarkdownPath: files.resolveNativeMarkdownPath,
