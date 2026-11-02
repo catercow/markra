@@ -8,7 +8,7 @@ import type { CowMarkCompanionRuntime, CowMarkControlRequest } from "../lib/cowm
 const site = "https://preview.example.com";
 const root = "/work/catercow-content";
 
-function mockCowMark() {
+function mockCowMark(platform: "macos" | "windows" = "macos") {
   const access = {
     clone: vi.fn(async () => undefined),
     isCheckout: vi.fn(async () => true),
@@ -50,6 +50,7 @@ function mockCowMark() {
   const readMarkdownFile = vi.fn(async (path: string) => ({ content: `# ${path}`, name: path.split("/").pop()!, path }));
   configureAppRuntime({
     ...runtime,
+    platform: { ...runtime.platform, resolveDesktopPlatform: () => platform },
     files: {
       ...runtime.files,
       contentAccess: access as unknown as ContentAccessRuntime,
@@ -113,6 +114,21 @@ describe("CowMark as a companion", () => {
     expect(document.querySelector(".content-preview-panel-slot")).not.toHaveClass("pt-10");
     expect(document.querySelector(".content-preview-panel-slot")).not.toHaveClass("pointer-events-none");
     expect(window.localStorage.getItem("cowmark.companionMode")).toBe("0");
+  });
+
+  it("keeps the Windows title bar row below the menu row clear of the preview", async () => {
+    mockCowMark("windows");
+    window.localStorage.setItem("cowmark.companionMode", "1");
+    render(<App />);
+
+    expect(await companionButton()).toHaveAttribute("aria-pressed", "true");
+    // The menu row takes the first 40px and the title bar the next 40px; the workspace pads one, the slot the other.
+    expect(document.querySelector(".windows-app-chrome")).toBeInTheDocument();
+    expect(document.querySelector(".content-preview-panel-slot")).toHaveClass("pt-10", "pointer-events-none", "*:pointer-events-auto");
+
+    fireEvent.click(await companionButton());
+    expect(await companionButton()).toHaveAttribute("aria-pressed", "false");
+    expect(document.querySelector(".content-preview-panel-slot")).not.toHaveClass("pt-10");
   });
 
   it("turns a publish proposal into ticked files and a message, and never saves", async () => {
