@@ -227,7 +227,7 @@ CowMark editors write site pages in one managed folder, so a CowMark build (`VIT
 
 The fork ships as its own app, **CowMark** (`com.catercow.cowmark`), CaterCow's edition of Markra,, so it can sit next to a stock Markra install without sharing settings. `apps/desktop/src-tauri/tauri.catercow.conf.json` sets the name and ID. It also leaves out the Quick Look extension, whose bundle ID is tied to upstream's app ID.
 
-- **Release:** push a `catercow-v*` tag (for example `catercow-v2.14.1-mdc.2`). `.github/workflows/catercow-desktop.yml` builds a macOS `.dmg` for Apple Silicon and a Windows `setup.exe`, then attaches them to a GitHub release on this fork.
+- **Release:** every push to `mdc` that changes more than Markdown and `docs/` releases the next `catercow-v<app version>-mdc.<N>` (N one above the highest so far), with the commits since the last release in its notes. The tag is created with the release, only once the builds pass. Pushing a `catercow-v*` tag by hand still releases it, and a commit that already has one isn't released again. A newer push to `mdc` cancels a release still building. `.github/workflows/catercow-desktop.yml` builds a macOS `.dmg` for Apple Silicon and a Windows `setup.exe`, then attaches them to a GitHub release on this fork.
 - **Not notarized or code-signed.** The first launch needs one confirmation:
   - **Mac:** right-click the app and choose Open, or allow it under System Settings → Privacy & Security.
   - **Windows:** SmartScreen shows "Windows protected your PC"; choose More info → Run anyway.

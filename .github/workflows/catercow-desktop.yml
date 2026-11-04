@@ -1,11 +1,18 @@
 name: CaterCow desktop build
 
 # Builds "CowMark" (CaterCow's edition of Markra) for macOS and Windows, with the `cowmark` command inside, plus a
-# Linux `cowmark` for the content repository's CI, and publishes them as a GitHub release on this fork. Push a tag
-# such as `catercow-v2.14.1-mdc.1` to run it. Upstream's release workflow only runs for `v*` tags, so it stays idle.
+# Linux `cowmark` for the content repository's CI, and publishes them as a GitHub release on this fork.
+# Every push to `mdc` releases the next `catercow-v<app version>-mdc.<N>`, creating the tag with the release (a tag
+# pushed by this workflow's token would not start another run). Pushing such a tag by hand still releases it.
+# Upstream's release workflow only runs for `v*` tags, so it stays idle.
 
 on:
   push:
+    branches:
+      - mdc
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
     tags:
       - "catercow-v*"
   workflow_dispatch:
@@ -163,7 +170,7 @@ jobs:
 
   release:
     needs: [build, cli-linux]
-    if: startsWith(github.ref, 'refs/tags/catercow-v')
+    if: startsWith(github.ref, 'refs/tags/catercow-v') || (github.event_name == 'push' && github.ref == 'refs/heads/mdc')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -171,15 +178,58 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Publish release
+      # On a push to mdc: the next mdc.N after every catercow tag so far, on the app version in tauri.conf.json.
+      # A commit that already has a catercow tag (pushed by hand) isn't released twice.
+      - name: Choose the tag
+        id: tag
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            echo "name=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          refs="$(gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/catercow-v" \
+            --jq '.[] | [(.ref | ltrimstr("refs/tags/")), .object.sha] | @tsv')"
+          if printf '%s\n' "$refs" | awk -F'\t' -v sha="$GITHUB_SHA" '$2 == sha { found = 1 } END { exit !found }'; then
+            echo "$GITHUB_SHA already has a catercow tag; not releasing it again."
+            exit 0
+          fi
+          last="$(printf '%s\n' "$refs" | sed -nE 's/^catercow-v[^[:space:]]*-mdc\.([0-9]+)[[:space:]].*/\1/p' | sort -n | tail -1)"
+          version="$(gh api "repos/$GITHUB_REPOSITORY/contents/apps/desktop/src-tauri/tauri.conf.json?ref=$GITHUB_SHA" \
+            --jq .content | base64 -d | jq -r .version)"
+          echo "name=catercow-v${version}-mdc.$(( ${last:-0} + 1 ))" >> "$GITHUB_OUTPUT"
+          previous="$(printf '%s\n' "$refs" | awk -F'\t' -v suffix="-mdc.${last:-0}" \
+            'substr($1, length($1) - length(suffix) + 1) == suffix { print $1; exit }')"
+          echo "previous=$previous" >> "$GITHUB_OUTPUT"
+
+      - name: List the changes
+        if: steps.tag.outputs.name != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIOUS: ${{ steps.tag.outputs.previous }}
+        run: |
+          set -euo pipefail
+          : > changes.md
+          if [ -n "$PREVIOUS" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/compare/$PREVIOUS...$GITHUB_SHA" \
+              --jq '"Changes since \(env.PREVIOUS):", (.commits[] | "- " + (.commit.message | split("\n")[0]))' > changes.md
+          fi
+
+      - name: Publish release
+        if: steps.tag.outputs.name != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.name }}
         run: |
           gh release create "$TAG" dist/* \
             --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
             --title "CowMark ${TAG#catercow-}" \
             --notes "CowMark: CaterCow's edition of Markra, for editing the CaterCow marketing content with a live preview. Built from $GITHUB_SHA.
+
+          $(cat changes.md)
 
           cowmark-linux-x64.tar.gz is the \`cowmark\` command for Linux, for checking content in CI; the apps include their own.
 
