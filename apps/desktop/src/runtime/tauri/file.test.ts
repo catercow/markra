@@ -1298,6 +1298,7 @@ describe("native file access", () => {
       fileName: "team-lunch.png",
       folder: "blog/my-post",
       mimeType: "image/png",
+      replace: false,
       root: "/mock/content"
     });
   });

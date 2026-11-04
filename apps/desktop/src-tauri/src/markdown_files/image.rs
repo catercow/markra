@@ -319,6 +319,7 @@ fn save_site_image_file(
     mime_type: String,
     bytes: Vec<u8>,
     file_name: Option<String>,
+    replace: bool,
     allow_public_assets: impl FnOnce(&Path) -> Result<(), String>,
 ) -> Result<ClipboardImageFile, String> {
     if bytes.is_empty() {
@@ -348,12 +349,23 @@ fn save_site_image_file(
         .strip_prefix(&public)
         .map_err(|_| "Image folder is outside the public folder".to_string())?;
 
-    let target_path = write_unique_image(&target_folder, extension, file_name.as_deref(), &bytes)?;
+    let target_path = if replace {
+        let target_path = target_folder.join(clipboard_image_file_name(extension, 0, file_name.as_deref())?);
+        if fs::read(&target_path).ok().as_deref() != Some(bytes.as_slice()) {
+            fs::write(&target_path, &bytes).map_err(|error| error.to_string())?;
+        }
+        target_path
+    } else {
+        write_unique_image(&target_folder, extension, file_name.as_deref(), &bytes)?
+    };
     Ok(ClipboardImageFile {
         relative_path: markdown_tree_relative_path(&public, &target_path)?,
     })
 }
 
+/// `replace`: write over a file of the same name instead of adding `-2`, `-3`…. The app asks
+/// for it when the name is the image's own; a generated one such as `<page>-image` can be
+/// shared by different images, so those still get a new name.
 #[tauri::command]
 pub(crate) fn save_content_site_image(
     app: tauri::AppHandle,
@@ -362,6 +374,7 @@ pub(crate) fn save_content_site_image(
     mime_type: String,
     bytes: Vec<u8>,
     file_name: Option<String>,
+    replace: Option<bool>,
 ) -> Result<ClipboardImageFile, String> {
     let data_dir = crate::user_data::app_data_dir(&app)?;
     let managed = cowmark_core::access::access_state(&data_dir, None).folder;
@@ -372,6 +385,7 @@ pub(crate) fn save_content_site_image(
         mime_type,
         bytes,
         file_name,
+        replace.unwrap_or(false),
         |public| allow_asset_directory(&app, public),
     )
 }
@@ -420,6 +434,7 @@ mod tests {
                 "image/png".to_string(),
                 vec![1, 2, 3],
                 Some("photo.png".to_string()),
+                false,
                 |_| Ok(()),
             )
         };
@@ -442,6 +457,34 @@ mod tests {
         .is_err());
         assert!(save(Some(root_path.clone()), "../content/blog").is_err());
         assert!(save(Some(root_path.clone()), "/blog/my-post").is_err());
+    }
+
+    #[test]
+    fn replaces_a_site_image_of_the_same_name_when_asked() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = root.path().to_string_lossy().to_string();
+        let save = |bytes: Vec<u8>, replace: bool| {
+            save_site_image_file(
+                root_path.clone(),
+                Some(root_path.clone()),
+                "competitors/picnic".to_string(),
+                "image/jpeg".to_string(),
+                bytes,
+                Some("rivercafe2.jpg".to_string()),
+                replace,
+                |_| Ok(()),
+            )
+            .unwrap()
+            .relative_path
+        };
+
+        assert_eq!(save(vec![1], true), "competitors/picnic/rivercafe2.jpg");
+        assert_eq!(save(vec![2], true), "competitors/picnic/rivercafe2.jpg");
+        assert_eq!(
+            fs::read(root.path().join("public/competitors/picnic/rivercafe2.jpg")).unwrap(),
+            vec![2]
+        );
+        assert_eq!(save(vec![3], false), "competitors/picnic/rivercafe2-2.jpg");
     }
 
     #[test]

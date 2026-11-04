@@ -7,8 +7,14 @@ import type { SavedNativeClipboardImage, SaveNativeContentSiteImageInput } from 
 import { slugify } from "./cowmark-pages";
 
 export const contentImageMaxSide = 2400;
+/** What an image should come to at most; a larger one is compressed harder, then scaled down. */
+export const contentImageTargetBytes = 1_000_000;
+/** Scaling down to meet the target stops here. */
+export const contentImageMinSide = 1200;
+/** GIFs can't be re-encoded here, so a larger one is refused. */
+export const contentGifMaxBytes = 5_000_000;
 const lossyQuality = 0.85;
-const reencodeAboveBytes = 1_500_000;
+const reencodeAboveBytes = contentImageTargetBytes;
 const pngToJpegAboveBytes = 1_000_000;
 const genericNames = /^(image|img|photo|picture|pasted.*|clipboard.*|untitled.*|blob|download.*)$/u;
 
@@ -19,9 +25,14 @@ export function documentStem(documentPath: string) {
 
 /** A lowercase, hyphenated file name without extension: the image's own name, or `<page>-image`. */
 export function contentImageBaseName(fileName: string, documentPath: string) {
+  return contentImageName(fileName, documentPath).base;
+}
+
+/** `own`: the name came from the image itself, so a file with that name is the same image. */
+export function contentImageName(fileName: string, documentPath: string) {
   const base = slugify(fileName.replace(/\.[^.]*$/u, ""));
-  if (base && !genericNames.test(base)) return base;
-  return `${slugify(documentStem(documentPath)) || "page"}-image`;
+  if (base && !genericNames.test(base)) return { base, own: true };
+  return { base: `${slugify(documentStem(documentPath)) || "page"}-image`, own: false };
 }
 
 const extensions: Record<string, string> = {
@@ -81,7 +92,24 @@ export function planImageImport(facts: ImageFacts): ImageImportPlan {
   if ((type === "image/jpeg" || type === "image/webp") && facts.size > reencodeAboveBytes) {
     return { action: "encode", height, onlyIfSmaller: true, outputs, width };
   }
+  // Over the target in any other format (e.g. a large transparent PNG): the target steps apply.
+  if (facts.size > contentImageTargetBytes) return { action: "encode", height, onlyIfSmaller: true, outputs, width };
   return { action: "keep" };
+}
+
+/**
+ * Further encodings to try, in order, while an image is over `contentImageTargetBytes`: lower
+ * quality first (lossy formats only), then 80% steps down to `contentImageMinSide`.
+ */
+export function budgetSteps(width: number, height: number, lossy: boolean) {
+  const steps: Array<{ height: number; quality?: number; width: number }> = [];
+  if (lossy) steps.push({ height, quality: 0.75, width }, { height, quality: 0.65, width });
+  let next = { height, width };
+  while (Math.max(next.width, next.height) * 0.8 >= contentImageMinSide) {
+    next = { height: Math.round(next.height * 0.8), width: Math.round(next.width * 0.8) };
+    steps.push({ ...next, ...(lossy ? { quality: 0.75 } : {}) });
+  }
+  return steps;
 }
 
 /** Picks the encoding to keep: a JPEG only replaces a PNG when it is under half its size. */
@@ -125,8 +153,9 @@ function hasTransparency(bitmap: ImageBitmap) {
 }
 
 /**
- * The image to store: scaled to at most 2400 px on its longest side and re-encoded when that
- * saves space. Returns the original when the browser cannot decode it.
+ * The image to store: scaled to at most 2400 px on its longest side, re-encoded when that saves
+ * space, then compressed harder or scaled down while it is over `contentImageTargetBytes`.
+ * Returns the original when the browser cannot decode it.
  */
 export async function prepareContentImage(image: File): Promise<File> {
   const type = image.type.toLowerCase();
@@ -161,8 +190,24 @@ export async function prepareContentImage(image: File): Promise<File> {
       // A browser that cannot write the type returns PNG instead.
       if (blob && blob.type === output.type) candidates.push({ blob, type: output.type });
     }
-    const chosen = pickEncoding(candidates, plan.onlyIfSmaller ? image : null);
-    if (!chosen) return image;
+    let chosen = pickEncoding(candidates, plan.onlyIfSmaller ? image : null);
+    if (!chosen && !extensions[type]) return image;
+    chosen ??= { blob: image, type };
+
+    if (chosen.blob.size > contentImageTargetBytes) {
+      for (const step of budgetSteps(plan.width, plan.height, chosen.type !== "image/png")) {
+        const smaller = createCanvas(step.width, step.height);
+        const smallerContext = smaller.getContext("2d") as CanvasRenderingContext2D | null;
+        if (!smallerContext) break;
+        smallerContext.imageSmoothingQuality = "high";
+        smallerContext.drawImage(bitmap, 0, 0, step.width, step.height);
+        const blob = await encode(smaller, chosen.type, step.quality);
+        if (!blob || blob.type !== chosen.type || blob.size >= chosen.blob.size) continue;
+        chosen = { blob, type: chosen.type };
+        if (blob.size <= contentImageTargetBytes) break;
+      }
+    }
+    if (chosen.blob === image) return image;
     const name = `${image.name.replace(/\.[^.]*$/u, "") || "image"}.${extensions[chosen.type]}`;
     return new File([chosen.blob], name, { type: chosen.type });
   } finally {
@@ -189,13 +234,19 @@ export async function saveContentImage({
   rootPath,
   saveSiteImage,
 }: SaveContentImageInput): Promise<SavedNativeClipboardImage> {
+  if (image.type.toLowerCase() === "image/gif" && image.size > contentGifMaxBytes) {
+    const megabytes = Math.round(image.size / 100_000) / 10;
+    throw new Error(`This GIF is ${megabytes} MB, over the 5 MB limit. Use a shorter or smaller GIF, or a video.`);
+  }
   const prepared = await prepare(image);
   const extension = extensions[prepared.type.toLowerCase()];
   if (!extension) throw new Error(`Images of type ${prepared.type || "unknown"} can't be used on the site.`);
+  const name = contentImageName(image.name, documentPath);
   const saved = await saveSiteImage({
-    fileName: `${contentImageBaseName(image.name, documentPath)}.${extension}`,
+    fileName: `${name.base}.${extension}`,
     folder: imageFolder.replace(/^\/+/u, ""),
     image: prepared,
+    replace: name.own,
     root: rootPath,
   });
   return { alt: "", src: saved.src };

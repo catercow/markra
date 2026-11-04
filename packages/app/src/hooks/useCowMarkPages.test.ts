@@ -84,6 +84,7 @@ describe("useCowMarkPages images", () => {
       fileName: "curry.svg",
       folder: "cuisines/thai",
       image,
+      replace: true,
       root: "/repo",
     });
     expect(refreshTree).toHaveBeenCalledWith("/repo/content/cuisines/thai.md");

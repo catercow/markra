@@ -274,6 +274,8 @@ export type SaveNativeContentSiteImageInput = {
   /** Below `public/`, e.g. `blog/my-post`. */
   folder: string;
   image: File;
+  /** Write over a file of the same name instead of adding `-2`, `-3`…. */
+  replace?: boolean;
   /** The managed content folder. */
   root: string;
 };
@@ -1578,6 +1580,7 @@ export async function saveNativeContentSiteImage({
   fileName,
   folder,
   image,
+  replace = false,
   root
 }: SaveNativeContentSiteImageInput): Promise<SavedNativeClipboardImage> {
   const bytes = Array.from(new Uint8Array(await image.arrayBuffer()));
@@ -1586,6 +1589,7 @@ export async function saveNativeContentSiteImage({
     fileName,
     folder,
     mimeType: image.type,
+    replace,
     root
   });
 

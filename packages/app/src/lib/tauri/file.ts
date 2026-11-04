@@ -219,6 +219,8 @@ export type SaveNativeContentSiteImageInput = {
   /** Below `public/`, e.g. `blog/my-post`. */
   folder: string;
   image: File;
+  /** Write over a file of the same name instead of adding `-2`, `-3`…. */
+  replace?: boolean;
   /** The managed content folder. */
   root: string;
 };
