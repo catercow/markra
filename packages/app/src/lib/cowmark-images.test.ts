@@ -18,13 +18,13 @@ describe("contentImageBaseName", () => {
 describe("planImageImport", () => {
   const photo = { hasAlpha: false, height: 3024, size: 3_500_000, type: "image/jpeg", width: 4032 };
 
-  it("scales large photos to 2400 px on the longest side", () => {
+  it("scales large photos to 3000 px on the longest side", () => {
     expect(planImageImport(photo)).toEqual({
       action: "encode",
-      height: 1800,
+      height: 2250,
       onlyIfSmaller: false,
       outputs: [{ quality: 0.85, type: "image/jpeg" }],
-      width: 2400,
+      width: 3000,
     });
   });
 
@@ -42,14 +42,15 @@ describe("planImageImport", () => {
   it("tries JPEG for big opaque PNGs only when it pays off", () => {
     const resized = planImageImport({ ...photo, type: "image/png" });
     expect(resized.action === "encode" && resized.outputs.map((output) => output.type)).toEqual(["image/png", "image/jpeg"]);
-    const small = planImageImport({ ...photo, height: 1000, size: 2_000_000, type: "image/png", width: 1000 });
+    const small = planImageImport({ ...photo, height: 1000, size: 2_500_000, type: "image/png", width: 1000 });
     expect(small).toMatchObject({ action: "encode", onlyIfSmaller: true, outputs: [{ type: "image/jpeg" }] });
   });
 
-  it("re-encodes any image over the 1 MB target, such as a large transparent logo", () => {
+  it("re-encodes any image over the 2 MB target, such as a large transparent logo", () => {
     const logo = { hasAlpha: true, height: 1600, size: 5_400_000, type: "image/png", width: 1600 };
     expect(planImageImport(logo)).toMatchObject({ action: "encode", onlyIfSmaller: true, outputs: [{ type: "image/png" }] });
-    expect(planImageImport({ ...photo, height: 1500, size: 1_200_000, width: 2000 })).toMatchObject({ action: "encode" });
+    expect(planImageImport({ ...photo, height: 1500, size: 2_400_000, width: 2000 })).toMatchObject({ action: "encode" });
+    expect(planImageImport({ ...photo, height: 1500, size: 1_900_000, width: 2000 })).toEqual({ action: "keep" });
   });
 
   it("converts HEIC to JPEG", () => {
@@ -61,19 +62,18 @@ describe("planImageImport", () => {
 });
 
 describe("budgetSteps", () => {
-  it("lowers JPEG quality first, then scales down in 80% steps to 1200 px", () => {
-    expect(budgetSteps(2400, 1600, true)).toEqual([
+  it("lowers JPEG quality first, then scales down in 80% steps to 1600 px", () => {
+    expect(budgetSteps(3000, 2000, true)).toEqual([
+      { height: 2000, quality: 0.75, width: 3000 },
+      { height: 2000, quality: 0.65, width: 3000 },
       { height: 1600, quality: 0.75, width: 2400 },
-      { height: 1600, quality: 0.65, width: 2400 },
       { height: 1280, quality: 0.75, width: 1920 },
-      { height: 1024, quality: 0.75, width: 1536 },
-      { height: 819, quality: 0.75, width: 1229 },
     ]);
   });
 
   it("only scales PNGs down, and leaves small images as they are", () => {
-    expect(budgetSteps(1600, 1600, false)).toEqual([{ height: 1280, width: 1280 }]);
-    expect(budgetSteps(1000, 800, false)).toEqual([]);
+    expect(budgetSteps(2000, 2000, false)).toEqual([{ height: 1600, width: 1600 }]);
+    expect(budgetSteps(1500, 800, false)).toEqual([]);
   });
 });
 

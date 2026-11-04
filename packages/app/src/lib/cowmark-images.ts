@@ -6,16 +6,18 @@
 import type { SavedNativeClipboardImage, SaveNativeContentSiteImageInput } from "./tauri";
 import { slugify } from "./cowmark-pages";
 
-export const contentImageMaxSide = 2400;
+// The stored image is the original the site resizes for each slot (@nuxt/image), so these
+// only keep originals to a sensible size for the content repository.
+export const contentImageMaxSide = 3000;
 /** What an image should come to at most; a larger one is compressed harder, then scaled down. */
-export const contentImageTargetBytes = 1_000_000;
+export const contentImageTargetBytes = 2_000_000;
 /** Scaling down to meet the target stops here. */
-export const contentImageMinSide = 1200;
+export const contentImageMinSide = 1600;
 /** GIFs can't be re-encoded here, so a larger one is refused. */
 export const contentGifMaxBytes = 5_000_000;
 const lossyQuality = 0.85;
 const reencodeAboveBytes = contentImageTargetBytes;
-const pngToJpegAboveBytes = 1_000_000;
+const pngToJpegAboveBytes = contentImageTargetBytes;
 const genericNames = /^(image|img|photo|picture|pasted.*|clipboard.*|untitled.*|blob|download.*)$/u;
 
 export function documentStem(documentPath: string) {
@@ -153,7 +155,7 @@ function hasTransparency(bitmap: ImageBitmap) {
 }
 
 /**
- * The image to store: scaled to at most 2400 px on its longest side, re-encoded when that saves
+ * The image to store: scaled to at most 3000 px on its longest side, re-encoded when that saves
  * space, then compressed harder or scaled down while it is over `contentImageTargetBytes`.
  * Returns the original when the browser cannot decode it.
  */
