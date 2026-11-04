@@ -24,8 +24,16 @@ export type CowMarkPages = {
   pickImage: (documentPath: string) => Promise<string | null>;
   /** Stores an image in the page's image folder under `public/`; resolves its site path. */
   saveImage: (documentPath: string, image: File) => Promise<string>;
+  /** `saveImage` for a dropped or pasted image: a failure is reported and resolves null. */
+  importImage: (documentPath: string, image: File) => Promise<string | null>;
   /** A displayable URL for an image reference written in the page at `documentPath`. */
   resolveImage: (documentPath: string | null | undefined, src: string) => string;
+  /** The file names (without .md) directly in the collection's folder. */
+  listPages: (collection: PageCollection) => Promise<string[]>;
+  /** Opens Page details once the editor shows `documentPath` with exactly `text` (a new page). */
+  requestPageDetails: (documentPath: string, text: string) => unknown;
+  /** True once for a pending request matching the document shown; see `requestPageDetails`. */
+  takePageDetailsRequest: (documentPath: string, text: string) => boolean;
 };
 
 export const CowMarkPagesContext = createContext<CowMarkPages | null>(null);
@@ -151,13 +159,63 @@ export function useCowMarkPages({ collectionsText, onImageError, refreshTree, ro
     }
   }, [saveImage]);
 
+  const importImage = useCallback(async (documentPath: string, image: File) => {
+    try {
+      return await saveImage(documentPath, image);
+    } catch (error) {
+      callbacksRef.current.onImageError(error);
+      return null;
+    }
+  }, [saveImage]);
+
   const resolveImage = useCallback(
     (documentPath: string | null | undefined, src: string) => (rootPath ? resolveContentImageSrc(rootPath, documentPath, src) : src),
     [rootPath]
   );
 
+  const listPages = useCallback(async (collection: PageCollection) => {
+    if (!rootPath) return [];
+    const folder = joinPath(rootPath, collection.folder);
+    const listed = await getAppRuntime().files.listMarkdownFilesForPath(folder).catch(() => []);
+    return listed.flatMap((file) => {
+      const relative = rootRelativePath(folder, file.path);
+      return relative && !relative.includes("/") && /\.md$/iu.test(relative) ? [relative.replace(/\.md$/iu, "")] : [];
+    });
+  }, [rootPath]);
+
+  // A new page's text, so the request can't open details on whatever the editor showed before.
+  const detailsRequestRef = useRef<{ path: string; text: string; until: number } | null>(null);
+  const requestPageDetails = useCallback((documentPath: string, text: string) => {
+    detailsRequestRef.current = { path: documentPath, text, until: Date.now() + 10_000 };
+  }, []);
+  const takePageDetailsRequest = useCallback((documentPath: string, text: string) => {
+    const request = detailsRequestRef.current;
+    if (!request || request.until < Date.now()) {
+      detailsRequestRef.current = null;
+      return false;
+    }
+    const slashes = (path: string) => path.replace(/\\/gu, "/");
+    if (slashes(request.path) !== slashes(documentPath) || request.text !== text) return false;
+    detailsRequestRef.current = null;
+    return true;
+  }, []);
+
   return useMemo(
-    () => (rootPath ? { collections, imageFolder, loadFieldValues, pickImage, resolveImage, rootPath, saveImage } : null),
-    [collections, imageFolder, loadFieldValues, pickImage, resolveImage, rootPath, saveImage]
+    () => (rootPath
+      ? {
+          collections,
+          imageFolder,
+          importImage,
+          listPages,
+          loadFieldValues,
+          pickImage,
+          requestPageDetails,
+          resolveImage,
+          rootPath,
+          saveImage,
+          takePageDetailsRequest,
+        }
+      : null),
+    [collections, imageFolder, importImage, listPages, loadFieldValues, pickImage, requestPageDetails, resolveImage, rootPath, saveImage, takePageDetailsRequest]
   );
 }

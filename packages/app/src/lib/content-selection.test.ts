@@ -26,10 +26,10 @@ describe("content selection", () => {
 
   it("follows the collection's URL prefix", () => {
     const collections = [
-      { fields: [], folder: "content/cuisines", name: "cuisines", url: "/cuisines/<file name without .md>-catering" }
+      { creatable: true, fields: [], label: "Page", folder: "content/cuisines", name: "cuisines", url: "/cuisines/<file name without .md>-catering" }
     ];
     expect(companionPaths("content/cuisines/thai.md", changed, collections)).toEqual(["public/cuisines/thai/curry.jpg"]);
-    const renamed = [{ fields: [], folder: "content/cuisines", name: "cuisines", url: "/food/<file name without .md>" }];
+    const renamed = [{ creatable: true, fields: [], label: "Page", folder: "content/cuisines", name: "cuisines", url: "/food/<file name without .md>" }];
     expect(companionPaths("content/cuisines/thai.md", ["public/food/thai/a.jpg"], renamed)).toEqual(["public/food/thai/a.jpg"]);
   });
 

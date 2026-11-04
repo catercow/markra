@@ -58,8 +58,8 @@ type ContentPreviewPanelProps = {
   rootPath: string;
   width: number;
   onClose: () => unknown;
-  /** CowMark: asks for a title and creates a blog post. */
-  onNewPost?: () => unknown;
+  /** CowMark: asks for a page type, title and file name and creates the page. */
+  onNewPage?: () => unknown;
   onResize: (width: number) => unknown;
   onResizeEnd?: () => unknown;
   onResizeStart?: () => unknown;
@@ -84,7 +84,7 @@ export function ContentPreviewPanel({
   rootPath,
   width,
   onClose,
-  onNewPost,
+  onNewPage,
   onResize,
   onResizeEnd,
   onResizeStart
@@ -333,8 +333,8 @@ export function ContentPreviewPanel({
             {summary}
           </p>
         </div>
-        {onNewPost ? (
-          <IconButton label={label("app.cowmark.newPost")} size="icon-md" onClick={onNewPost}>
+        {onNewPage ? (
+          <IconButton label={label("app.cowmark.newPage")} size="icon-md" onClick={onNewPage}>
             <FilePlus aria-hidden="true" size={14} />
           </IconButton>
         ) : null}

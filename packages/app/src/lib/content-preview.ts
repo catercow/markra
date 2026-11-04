@@ -41,11 +41,11 @@ export function contentPreviewConfigPathForRoot(rootPath: string) {
 }
 
 /** Reads `{ "site": "https://…" }`; only http(s) sites are accepted. */
-export function parseContentPreviewConfig(text: string | null): ContentPreviewConfig | null {
+export function parseContentPreviewConfig(text: string | null, devSite: string | null = null): ContentPreviewConfig | null {
   if (!text) return null;
 
   try {
-    const site = (JSON.parse(text) as { site?: unknown })?.site;
+    const site = devSite ?? (JSON.parse(text) as { site?: unknown })?.site;
     if (typeof site !== "string") return null;
 
     const url = new URL(site);

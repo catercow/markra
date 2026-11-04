@@ -7,6 +7,7 @@ import {
   liveMarkdown,
   markraPlugins,
   runMarkraCommand,
+  searchMarkraUi,
 } from "./index.ts";
 
 import "./dom.test-support.ts";
@@ -143,6 +144,34 @@ describe("Markra plugins", () => {
 
     expect(runScopeHandlers(view, event, "editor")).toBe(true);
     expect(view.state.doc.toString()).toBe("Synthetic document!");
+  });
+
+  it("leaves hidden commands out of UI listings but still runs them", () => {
+    const command = (id: string) => ({
+      id,
+      label: id,
+      run(view: EditorView) {
+        view.dispatch({ changes: { from: 0, insert: `${id} ` } });
+        return true;
+      },
+    });
+    const plugin = defineMarkraPlugin({
+      id: "markra.synthetic-hidden",
+      commands: [command("synthetic.kept"), command("synthetic.hidden")],
+      ui: [
+        { command: "synthetic.kept", placement: "slash-menu" },
+        { command: "synthetic.hidden", placement: "slash-menu" },
+      ],
+    });
+    const stock = createView([liveMarkdown({ plugins: [plugin] })]);
+    const hidden = createView([liveMarkdown({ hiddenUi: ["synthetic.hidden"], plugins: [plugin] })]);
+
+    expect(searchMarkraUi(stock, "slash-menu", "synthetic").map((action) => action.command))
+      .toEqual(["synthetic.hidden", "synthetic.kept"]);
+    expect(searchMarkraUi(hidden, "slash-menu", "synthetic").map((action) => action.command))
+      .toEqual(["synthetic.kept"]);
+    expect(runMarkraCommand(hidden, "synthetic.hidden")).toBe(true);
+    expect(hidden.state.doc.toString()).toBe("synthetic.hidden Synthetic document");
   });
 
   it("rejects UI contributions that reference an unknown command", () => {

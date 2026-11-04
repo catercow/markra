@@ -39,6 +39,8 @@ type NativeMenuHandlerOptions = {
   exportLatex?: () => unknown | Promise<unknown>;
   exportMarkdown?: () => unknown | Promise<unknown>;
   exportPdf?: () => unknown | Promise<unknown>;
+  /** Commands left without a handler, so their menu items and shortcuts do nothing. */
+  hiddenCommands?: ReadonlySet<string>;
   importLocalFiles: () => unknown | Promise<unknown>;
   importLocalImages: () => unknown | Promise<unknown>;
   insertMarkdownImage: () => unknown;
@@ -74,18 +76,18 @@ type ApplicationShortcutOptions = {
   exportHtml?: () => unknown | Promise<unknown>;
   exportPdf?: () => unknown | Promise<unknown>;
   markdownShortcuts?: MarkdownShortcutMap;
-  openDocument: () => unknown | Promise<unknown>;
+  openDocument?: () => unknown | Promise<unknown>;
   openDocumentReplace?: () => unknown | Promise<unknown>;
   openDocumentSearch?: () => unknown | Promise<unknown>;
   openBlankEditorWindow?: () => unknown | Promise<unknown>;
   openSettings?: () => unknown | Promise<unknown>;
   openWorkspaceSearch?: () => unknown | Promise<unknown>;
-  openFolder: () => unknown | Promise<unknown>;
+  openFolder?: () => unknown | Promise<unknown>;
   openQuickOpen?: () => unknown | Promise<unknown>;
   pastePlainText?: (target?: EventTarget | null) => boolean;
   platform?: DesktopPlatform;
   saveDocument: () => unknown | Promise<unknown>;
-  saveDocumentAs: () => unknown | Promise<unknown>;
+  saveDocumentAs?: () => unknown | Promise<unknown>;
   syncNow?: () => unknown | Promise<unknown>;
   toggleAiAgent?: () => unknown | Promise<unknown>;
   toggleAiCommand?: () => unknown | Promise<unknown>;
@@ -142,6 +144,7 @@ export function useNativeMenuHandlers({
   exportLatex,
   exportMarkdown,
   exportPdf,
+  hiddenCommands,
   importLocalFiles,
   importLocalImages,
   insertMarkdownImage,
@@ -311,6 +314,9 @@ export function useNativeMenuHandlers({
       if (toggleMarkdownFiles) handlers.toggleMarkdownFiles = () => latestOptionsRef.current.toggleMarkdownFiles?.();
       if (toggleReadOnlyMode) handlers.toggleReadOnlyMode = () => latestOptionsRef.current.toggleReadOnlyMode?.();
       if (toggleSourceMode) handlers.toggleSourceMode = () => latestOptionsRef.current.toggleSourceMode?.();
+      hiddenCommands?.forEach((command) => {
+        delete handlers[command as keyof NativeMenuHandlers];
+      });
 
       return handlers;
     },
@@ -562,7 +568,7 @@ export function useApplicationShortcuts({
         if (!event.repeat) openBlankEditorWindow();
       } else if (key === "s" && event.shiftKey) {
         event.preventDefault();
-        saveDocumentAs();
+        saveDocumentAs?.();
       } else if (key === "w" && !event.shiftKey && closeDocument) {
         event.preventDefault();
         closeDocument();
@@ -571,10 +577,10 @@ export function useApplicationShortcuts({
         saveDocument();
       } else if (key === "o" && event.shiftKey) {
         event.preventDefault();
-        openFolder();
+        openFolder?.();
       } else if (key === "o") {
         event.preventDefault();
-        openDocument();
+        openDocument?.();
       } else if (key === "p" && !event.shiftKey && exportPdf) {
         event.preventDefault();
         exportPdf();

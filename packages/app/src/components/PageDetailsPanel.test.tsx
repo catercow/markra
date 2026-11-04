@@ -31,16 +31,24 @@ const post = [
   "# Body",
 ].join("\n");
 
-function renderSurface(doc: string, documentPath = "/repo/content/blog/lunch.md") {
+function renderSurface(
+  doc: string,
+  documentPath = "/repo/content/blog/lunch.md",
+  options: { collections?: CowMarkPages["collections"]; requested?: boolean } = {},
+) {
   let view: EditorView | null = null;
   const pages: CowMarkPages = {
-    collections,
+    collections: options.collections ?? collections,
     imageFolder: () => "/blog/lunch",
+    importImage: vi.fn(async () => "/blog/lunch/pasted.png"),
+    listPages: vi.fn(async () => []),
     loadFieldValues: vi.fn(async () => ({ category: ["tips", "news"] })),
     pickImage: vi.fn(async () => "/blog/lunch/tacos.jpg"),
+    requestPageDetails: vi.fn(),
     resolveImage: (_path, src) => `asset://${src}`,
     rootPath: "/repo",
     saveImage: vi.fn(async () => "/blog/lunch/tacos.jpg"),
+    takePageDetailsRequest: vi.fn(() => options.requested ?? false),
   };
   render(
     <CowMarkPagesContext.Provider value={pages}>
@@ -106,5 +114,52 @@ describe("PageDetailsPanel", () => {
   it("has no button outside a known collection", () => {
     renderSurface(post, "/repo/content/help/a.md");
     expect(screen.queryByRole("button", { name: "Page details" })).toBeNull();
+  });
+});
+
+describe("PageDetailsPanel with the site's schema", () => {
+  const dietary = parseCollectionsSchema(JSON.stringify({
+    collections: [{
+      name: "dietaryRequirements",
+      label: "Dietary requirement",
+      folder: "content/dietary-requirements",
+      fields: [
+        { name: "title", type: "string", required: true },
+        { name: "intro", type: "string", required: true, description: "Hero text under the heading." },
+        { name: "hero_images", type: "list of string", required: false, format: "image", default: [] },
+        { name: "thumbnail", type: "string", required: false },
+      ],
+    }],
+  }));
+  const page = "---\ntitle: Vegan\nhero_images:\n  - /dietary-requirements/vegan/a.jpg\n---\n\nBody\n";
+  const path = "/repo/content/dietary-requirements/vegan.md";
+
+  it("shows help text, edits image lists and stores pasted images", async () => {
+    const { doc, pages } = renderSurface(page, path, { collections: dietary });
+    const panel = openPanel();
+    expect(within(panel).getByLabelText("Intro")).toHaveAccessibleDescription("Hero text under the heading.");
+    // With `format` in the schema, names no longer make image fields.
+    expect(within(panel).getByLabelText("Thumbnail").closest("[data-image-drop-target]")).toBeNull();
+
+    const images = within(panel).getByRole("group", { name: "Hero images" });
+    expect(within(images).getByLabelText("Hero images 1")).toHaveValue("/dietary-requirements/vegan/a.jpg");
+    fireEvent.click(within(images).getByRole("button", { name: "Add image" }));
+    expect(doc()).toContain("hero_images:\n  - /dietary-requirements/vegan/a.jpg\n  - ''\n");
+
+    const file = new File(["png"], "b.png", { type: "image/png" });
+    await act(async () => {
+      fireEvent.paste(within(images).getByLabelText("Hero images 2"), { clipboardData: { files: [file] } });
+    });
+    expect(pages.importImage).toHaveBeenCalledWith(path, file);
+    expect(doc()).toContain("  - /dietary-requirements/vegan/a.jpg\n  - /blog/lunch/pasted.png\n");
+
+    fireEvent.click(within(images).getByRole("button", { name: "Remove image: Hero images 1" }));
+    expect(doc()).toContain("hero_images:\n  - /blog/lunch/pasted.png\n");
+  });
+
+  it("opens by itself for a page New page just created", () => {
+    const { pages } = renderSurface(page, path, { collections: dietary, requested: true });
+    expect(pages.takePageDetailsRequest).toHaveBeenCalledWith(path, page);
+    expect(screen.getByRole("complementary", { name: "Page details" })).toBeTruthy();
   });
 });

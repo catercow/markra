@@ -257,6 +257,27 @@ describe("editor context menu entries", () => {
     expect(importLocalFiles).toHaveBeenCalledTimes(1);
   });
 
+  it("leaves out inline code, code block and file import when they have no handler", () => {
+    const allIds = (entries: ContextMenuEntry[]): string[] => entries.flatMap((entry) =>
+      entry.kind === "item" ? [entry.id] : entry.kind === "submenu" ? [entry.id, ...allIds(entry.entries)] : []
+    );
+    const handlers = {
+      formatBold: vi.fn(),
+      formatCodeBlock: vi.fn(),
+      formatInlineCode: vi.fn(),
+      importLocalFiles: vi.fn(),
+      importLocalImages: vi.fn()
+    };
+    const optional = ["markra:context:inline-code", "markra:context:code-block", "markra:context:import-local-files"];
+
+    expect(allIds(createEditorContextMenuEntries(handlers, "en"))).toEqual(expect.arrayContaining(optional));
+
+    const { formatCodeBlock: _codeBlock, formatInlineCode: _inlineCode, importLocalFiles: _files, ...cowmark } = handlers;
+    const ids = allIds(createEditorContextMenuEntries(cowmark, "en"));
+    expect(ids).toEqual(expect.arrayContaining(["markra:context:bold", "markra:context:import-local-images"]));
+    for (const id of optional) expect(ids).not.toContain(id);
+  });
+
   it("falls back to clipboard text insertion when the browser paste command is unavailable", async () => {
     const execCommand = vi.fn((command: string) => command !== "paste");
     const readText = vi.fn().mockResolvedValue("pasted text");

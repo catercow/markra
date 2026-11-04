@@ -3,7 +3,8 @@ import { EditorView } from "@codemirror/view";
 import { openMdcPropsEditor } from "@markra/editor/codemirror";
 import { parseMdcSchema } from "@markra/shared";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { CowMarkPagesContext, type CowMarkPages } from "../hooks/useCowMarkPages";
 import { CodeMirrorPaperSurface } from "./CodeMirrorPaperSurface";
 
 // Components from the CaterCow marketing-content schema/components.json.
@@ -281,5 +282,98 @@ describe("MdcPropsPanel", () => {
     const other = within(panel).getByRole("heading", { name: "Other props" }).parentElement!;
     expect(other).toHaveTextContent("legacy");
     expect(other).toHaveTextContent("true");
+  });
+});
+
+describe("MdcPropsPanel image props", () => {
+  const imageSchema = parseMdcSchema(JSON.stringify({
+    components: [
+      { name: "spotlight", props: [{ name: "image", type: "string", format: "image" }, { name: "link", type: "string" }] },
+      {
+        name: "logo-strip",
+        props: [{
+          name: "logos",
+          type: "Logo[]",
+          items: [{ name: "src", type: "string", required: true, format: "image" }, { name: "alt", type: "string" }],
+        }],
+      },
+    ],
+  }));
+
+  function renderPage(doc: string, withPages: boolean) {
+    let view: EditorView | null = null;
+    const pages: CowMarkPages = {
+      collections: [],
+      imageFolder: () => "/blog/lunch",
+      importImage: vi.fn(async () => "/blog/lunch/dropped.png"),
+      listPages: vi.fn(async () => []),
+      loadFieldValues: vi.fn(async () => ({})),
+      pickImage: vi.fn(async () => "/blog/lunch/tacos.jpg"),
+      requestPageDetails: vi.fn(),
+      resolveImage: (_path, src) => `asset://${src}`,
+      rootPath: "/repo",
+      saveImage: vi.fn(async () => "/blog/lunch/tacos.jpg"),
+      takePageDetailsRequest: () => false,
+    };
+    render(
+      <CowMarkPagesContext.Provider value={withPages ? pages : null}>
+        <CodeMirrorPaperSurface
+          documentPath="/repo/content/blog/lunch.md"
+          extendedSyntax={{ githubAlerts: true, highlight: true, mdc: true }}
+          initialContent={doc}
+          mdcSchema={imageSchema}
+          onEditorReady={(next) => {
+            view = next;
+          }}
+          onMarkdownChange={() => {}}
+        />
+      </CowMarkPagesContext.Provider>,
+    );
+    const editor = view! as EditorView;
+    const open = (name: string) => {
+      act(() => {
+        editor.dispatch({ effects: openMdcPropsEditor.of(editor.state.doc.toString().indexOf(`::${name}`)) });
+      });
+      return screen.getByRole("complementary", { name: "Component props" });
+    };
+    return { doc: () => editor.state.doc.toString(), open, pages };
+  }
+
+  it("chooses, shows and drops images in CowMark content pages", async () => {
+    const { doc, open, pages } = renderPage("::spotlight{link=\"/x\"}\nText\n::\n", true);
+    const panel = open("spotlight");
+    await act(async () => {
+      fireEvent.click(within(panel).getByRole("button", { name: /Choose image/u }));
+    });
+    expect(pages.pickImage).toHaveBeenCalledWith("/repo/content/blog/lunch.md");
+    expect(doc()).toContain("/blog/lunch/tacos.jpg");
+    expect(panel.querySelector("img")?.getAttribute("src")).toBe("asset:///blog/lunch/tacos.jpg");
+
+    const file = new File(["png"], "Team Lunch.png", { type: "image/png" });
+    await act(async () => {
+      fireEvent.drop(panel.querySelector("[data-image-drop-target]")!, { dataTransfer: { files: [file], types: ["Files"] } });
+    });
+    expect(pages.importImage).toHaveBeenCalledWith("/repo/content/blog/lunch.md", file);
+    expect(doc()).toContain("/blog/lunch/dropped.png");
+    expect(doc()).not.toContain("tacos.jpg");
+  });
+
+  it("gives list item image fields the same control", async () => {
+    const { doc, open } = renderPage("::logo-strip\n---\nlogos:\n  - src: /a.svg\n    alt: A\n---\n::\n", true);
+    const panel = open("logo-strip");
+    fireEvent.click(within(panel).getByRole("button", { name: "/a.svg" }));
+    await act(async () => {
+      fireEvent.click(within(panel).getByRole("button", { name: /Choose image/u }));
+    });
+    expect(doc()).toContain("src: /blog/lunch/tacos.jpg");
+  });
+
+  it("is a plain text box without CowMark", () => {
+    const { doc, open } = renderPage("::spotlight\nText\n::\n", false);
+    const panel = open("spotlight");
+    expect(within(panel).queryByRole("button", { name: /Choose image/u })).toBeNull();
+    expect(panel.querySelector("[data-image-drop-target]")).toBeNull();
+    fireEvent.change(within(panel).getByLabelText("Image"), { target: { value: "/b.jpg" } });
+    expect(doc()).toContain("/b.jpg");
   });
 });

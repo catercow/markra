@@ -100,8 +100,10 @@ const titlebarActionOptions: Array<{
   }
 ];
 
-function titlebarActionAvailable(id: TitlebarActionId, aiEnabled: boolean) {
-  return aiEnabled || id !== "aiAgent";
+const noHiddenTitlebarActions: ReadonlySet<TitlebarActionId> = new Set();
+
+function titlebarActionAvailable(id: TitlebarActionId, aiEnabled: boolean, hidden: ReadonlySet<TitlebarActionId>) {
+  return (aiEnabled || id !== "aiAgent") && !hidden.has(id);
 }
 
 const contentWidthRatioSpanPx = editorCustomContentWidthMax - editorCustomContentWidthMin;
@@ -304,22 +306,24 @@ function titlebarActionOption(id: TitlebarActionId) {
 
 function SettingsTitlebarActionsControl({
   aiEnabled = true,
+  hidden = noHiddenTitlebarActions,
   onUpdatePreferences,
   preferences,
   translate
 }: {
   aiEnabled?: boolean;
+  hidden?: ReadonlySet<TitlebarActionId>;
   onUpdatePreferences: (preferences: EditorPreferences) => unknown;
   preferences: EditorPreferences;
   translate: SettingsTranslate;
 }) {
   const actions = useMemo(
-    () => preferences.titlebarActions.filter((action) => titlebarActionAvailable(action.id, aiEnabled)),
-    [aiEnabled, preferences.titlebarActions]
+    () => preferences.titlebarActions.filter((action) => titlebarActionAvailable(action.id, aiEnabled, hidden)),
+    [aiEnabled, hidden, preferences.titlebarActions]
   );
   const hiddenActions = useMemo(
-    () => preferences.titlebarActions.filter((action) => !titlebarActionAvailable(action.id, aiEnabled)),
-    [aiEnabled, preferences.titlebarActions]
+    () => preferences.titlebarActions.filter((action) => !titlebarActionAvailable(action.id, aiEnabled, hidden)),
+    [aiEnabled, hidden, preferences.titlebarActions]
   );
   const draggingActionIdRef = useRef<TitlebarActionId | null>(null);
   const suppressActionClickIdsRef = useRef(new Set<TitlebarActionId>());
@@ -437,7 +441,7 @@ function SettingsTitlebarActionsControl({
       <SettingsButton
         label={translate("settings.editor.titlebarActionsReset")}
         onClick={() => updateActions(defaultTitlebarActions
-          .filter((action) => titlebarActionAvailable(action.id, aiEnabled))
+          .filter((action) => titlebarActionAvailable(action.id, aiEnabled, hidden))
           .map((action) => ({ ...action })))}
       >
         <RotateCcw aria-hidden="true" size={13} />
@@ -449,6 +453,8 @@ function SettingsTitlebarActionsControl({
 
 export function EditorSettings({
   aiEnabled = true,
+  hiddenTitlebarActions,
+  mdcToggleVisible = true,
   onUpdatePreferences,
   preferences,
   s3ImageUploadEnabled = true,
@@ -456,6 +462,9 @@ export function EditorSettings({
   translate
 }: {
   aiEnabled?: boolean;
+  hiddenTitlebarActions?: ReadonlySet<TitlebarActionId>;
+  /** CowMark always parses MDC, so it has no switch for it. */
+  mdcToggleVisible?: boolean;
   onUpdatePreferences: (preferences: EditorPreferences) => unknown;
   preferences: EditorPreferences;
   s3ImageUploadEnabled?: boolean;
@@ -604,6 +613,7 @@ export function EditorSettings({
           action={
             <SettingsTitlebarActionsControl
               aiEnabled={aiEnabled}
+              hidden={hiddenTitlebarActions}
               preferences={preferences}
               translate={translate}
               onUpdatePreferences={onUpdatePreferences}
@@ -839,25 +849,27 @@ export function EditorSettings({
             />
           }
         />
-        <SettingsRow
-          title={translate("settings.editor.mdcComponents")}
-          description={translate("settings.editor.mdcComponentsDescription")}
-          action={
-            <SettingsSwitch
-              checked={preferences.extendedSyntax.mdc}
-              label={translate("settings.editor.mdcComponents")}
-              onChange={() =>
-                onUpdatePreferences({
-                  ...preferences,
-                  extendedSyntax: {
-                    ...preferences.extendedSyntax,
-                    mdc: !preferences.extendedSyntax.mdc
-                  }
-                })
-              }
-            />
-          }
-        />
+        {mdcToggleVisible ? (
+          <SettingsRow
+            title={translate("settings.editor.mdcComponents")}
+            description={translate("settings.editor.mdcComponentsDescription")}
+            action={
+              <SettingsSwitch
+                checked={preferences.extendedSyntax.mdc}
+                label={translate("settings.editor.mdcComponents")}
+                onChange={() =>
+                  onUpdatePreferences({
+                    ...preferences,
+                    extendedSyntax: {
+                      ...preferences.extendedSyntax,
+                      mdc: !preferences.extendedSyntax.mdc
+                    }
+                  })
+                }
+              />
+            }
+          />
+        ) : null}
       </SettingsSection>
     </>
   );

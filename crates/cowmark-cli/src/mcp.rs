@@ -509,7 +509,7 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "new_page",
             "Create a page",
-            "Creates `<collection folder>/<slug>.md` with valid front matter: the title, the collection's required fields (dates set to today, others empty unless given in `fields`) and an optional body. Fails if the file exists. Fill any fields it lists as empty, then run check.",
+            "Creates `<collection folder>/<slug>.md` with the title, the given `fields` and an optional body. Required fields not given are set when they can be (dates to today, switches off) and otherwise left out and listed in `fieldsToFill` (images among them: add them with add_image). Fails if the file exists or the collection is `creatable: false`. Add the listed fields with write_file, then run check.",
             object(
                 json!({
                     "collection": { "type": "string", "description": "Collection name or folder, e.g. `blog`." },

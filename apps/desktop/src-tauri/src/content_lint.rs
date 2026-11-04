@@ -80,11 +80,12 @@ impl ContentLintState {
     /// most every ten minutes unless `force`, else its cached copy, else the folder's files.
     /// `site` is used when the folder has no `preview.json`. The linter follows on its next run.
     pub(crate) fn refresh(&self, root: &Path, site: Option<&str>, force: bool) -> Arc<Loaded> {
-        if force {
+        let dev_url = dev_schema_url();
+        if force || dev_url.is_some() {
             self.memo.clear();
         }
         let request = Request {
-            url: schema_source::default_url(root, None, site),
+            url: schema_source::default_url(root, dev_url.as_deref(), site),
             offline: false,
             dir: None,
         };
@@ -203,6 +204,16 @@ pub(crate) async fn cowmark_format(
 /// component list and page forms: `{ components, collections, origin, warnings, hash, url,
 /// stale, description }` (see `Loaded::to_json`). `site` is the app's preview site, used when
 /// the folder has no `preview.json`; `force` skips the ten-minute reuse of the last fetch.
+/// Debug builds only (scripts/cowmark-dev.sh): the schema of a local site instead of the
+/// folder's `preview.json` site, fetched on every refresh so code changes show up at once.
+fn dev_schema_url() -> Option<String> {
+    if !cfg!(debug_assertions) {
+        return None;
+    }
+    let site = std::env::var("VITE_COWMARK_DEV_SITE").ok()?;
+    schema_source::endpoint_for_site(site.trim()).ok()
+}
+
 #[tauri::command]
 pub(crate) async fn cowmark_schema(
     state: tauri::State<'_, ContentLintState>,

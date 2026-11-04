@@ -445,6 +445,39 @@ describe("AiSelectionToolbar", () => {
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps only formatting without AI and leaves out hidden formatting actions", () => {
+    render(
+      <AiSelectionToolbar
+        aiActionsVisible={false}
+        anchor={anchor}
+        hiddenFormattingActions={new Set(["inlineCode", "highlight"])}
+        language="en"
+        open
+        onCopySelection={vi.fn()}
+        onInsertLink={vi.fn()}
+        onOpenCommand={vi.fn()}
+        onRunFormattingAction={vi.fn()}
+        onRunAction={vi.fn()}
+      />
+    );
+
+    const toolbar = screen.getByRole("toolbar", { name: "Format" });
+    const labels = Array.from(toolbar.querySelectorAll("button")).map((button) => button.getAttribute("aria-label"));
+
+    expect(labels).toEqual([
+      "Bold",
+      "Italic",
+      "Strikethrough",
+      "Heading Level",
+      "Clear Formatting",
+      "Quote",
+      "Bullet List",
+      "Ordered List",
+      "Link",
+      "Copy"
+    ]);
+  });
+
   it("does not render when there is no selected text anchor", () => {
     render(
       <AiSelectionToolbar

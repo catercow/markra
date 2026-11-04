@@ -1,5 +1,5 @@
 // CowMark page details: the front matter form for a content file, generated from the content
-// repository's `schema/collections.json`, and the "New post" template. See docs/mdc.md.
+// repository's `schema/collections.json`, and the "New page" template. See docs/mdc.md.
 
 import { readFrontmatterFields, writeFrontmatterField } from "@markra/editor";
 
@@ -11,17 +11,29 @@ export type PageField = {
   type: string;
   required: boolean;
   default?: unknown;
+  /** Help text shown under the field. */
+  description?: string;
+  /** `image`: a string field holds one image, a `list of string` field a list of images. */
+  format?: string;
 };
 
 export type PageCollection = {
   name: string;
+  /** What the site calls a page of this kind, e.g. "Blog post"; the name when the schema has none. */
+  label: string;
+  /** One sentence about the kind of page. */
+  description?: string;
+  /** False for a fixed set of pages: New page doesn't offer it. */
+  creatable: boolean;
+  /** An existing file name (without .md), showing the naming convention. */
+  slugExample?: string;
   /** Relative to the repository root, e.g. "content/blog". */
   folder: string;
   url?: string;
   fields: PageField[];
 };
 
-export type PageFieldKind = "text" | "textarea" | "boolean" | "number" | "date" | "image" | "yaml";
+export type PageFieldKind = "text" | "textarea" | "boolean" | "number" | "date" | "image" | "images" | "yaml";
 
 /** String values each key already has across a collection's files, most used first. */
 export type FieldValues = Record<string, string[]>;
@@ -30,26 +42,55 @@ function normalizePath(path: string) {
   return path.replace(/\\/gu, "/").replace(/\/+$/u, "");
 }
 
+const imageNames = /(image|photo|thumbnail|logo)$/u;
+
+function optionalText(value: unknown) {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+type RawField = Record<string, unknown> & { name: string };
+
+function rawFields(collection: unknown): RawField[] {
+  const fields = (collection as { fields?: unknown } | null)?.fields;
+  return Array.isArray(fields)
+    ? fields.filter((field): field is RawField => Boolean(field) && typeof (field as RawField).name === "string")
+    : [];
+}
+
 export function parseCollectionsSchema(text: string | null): PageCollection[] {
   if (!text) return [];
   try {
     const collections = (JSON.parse(text) as { collections?: unknown }).collections;
     if (!Array.isArray(collections)) return [];
+    // Older schemas don't mark image fields; then the field name decides.
+    const marksFormats = collections.some((collection) =>
+      rawFields(collection).some((field) => typeof field.format === "string"));
     return collections.flatMap((collection) => {
       if (!collection || typeof collection.name !== "string" || typeof collection.folder !== "string") return [];
-      const fields = Array.isArray(collection.fields) ? collection.fields : [];
+      const description = optionalText(collection.description);
+      const slugExample = optionalText(collection.slugExample);
       return [{
-        fields: fields
-          .filter((field: unknown): field is PageField =>
-            Boolean(field) && typeof (field as PageField).name === "string")
-          .map((field: PageField) => ({
-            ...("default" in field ? { default: field.default } : {}),
+        creatable: collection.creatable !== false,
+        ...(description ? { description } : {}),
+        fields: rawFields(collection).map((field): PageField => {
+          const type = typeof field.type === "string" ? field.type : "";
+          const fieldDescription = optionalText(field.description);
+          const format = marksFormats
+            ? optionalText(field.format)
+            : type.trim() === "string" && imageNames.test(field.name) ? "image" : undefined;
+          return {
+            ...("default" in field && field.default !== null ? { default: field.default } : {}),
+            ...(fieldDescription ? { description: fieldDescription } : {}),
+            ...(format ? { format } : {}),
             name: field.name,
             required: field.required === true,
-            type: typeof field.type === "string" ? field.type : "",
-          })),
+            type,
+          };
+        }),
         folder: normalizePath(collection.folder),
+        label: optionalText(collection.label) ?? collection.name,
         name: collection.name,
+        ...(slugExample ? { slugExample } : {}),
         ...(typeof collection.url === "string" ? { url: collection.url } : {}),
       }];
     });
@@ -101,21 +142,34 @@ export function pageImageFolder(collections: readonly PageCollection[], relative
   return prefix ? `/${prefix}/${slug}` : `/${slug}`;
 }
 
-const textareaNames = /(^|_)(description|excerpt|summary)$/u;
-const dateNames = /(_at|_on|^date)$/u;
-const imageNames = /(image|photo|thumbnail|logo)$/u;
+/** The site path of a file under the root's `public/` folder (`/blog/a/b.jpg`), else null. */
+export function publicSitePath(rootPath: string, path: string | null | undefined) {
+  const relative = rootRelativePath(rootPath, path);
+  return relative && relative.startsWith("public/") && relative.length > "public/".length
+    ? `/${relative.slice("public/".length)}`
+    : null;
+}
 
-/** The control for a field. Anything that is not a scalar is edited as YAML. */
+const textareaNames = /(^|_)(description|excerpt|summary|intro)$/u;
+const dateNames = /(_at|_on|^date)$/u;
+
+/**
+ * The control for a field. Anything that is not a scalar or a list of images is edited as
+ * YAML. Image fields are the ones the schema marks `format: "image"` (see parseCollectionsSchema
+ * for older schemas).
+ */
 export function pageFieldKind(field: PageField): PageFieldKind {
   const type = field.type.trim();
+  const image = field.format === "image";
   if (type === "boolean") return "boolean";
   if (type === "number") return "number";
   if (type === "date") return "date";
   if (type === "string") {
+    if (image) return "image";
     if (dateNames.test(field.name)) return "date";
-    if (imageNames.test(field.name)) return "image";
     return textareaNames.test(field.name) ? "textarea" : "text";
   }
+  if (image && type === "list of string") return "images";
   return "yaml";
 }
 
@@ -152,7 +206,7 @@ export function withDatePart(previous: unknown, date: string) {
   return date;
 }
 
-// --- New posts -----------------------------------------------------------------------------
+// --- New pages -----------------------------------------------------------------------------
 
 export function slugify(text: string) {
   return text
@@ -166,19 +220,96 @@ export function slugify(text: string) {
     .replace(/-+$/u, "");
 }
 
-/** A new file's text: the title and the collection's other required fields, then a blank body. */
-export function newPageText(collection: PageCollection, { now = new Date(), title }: { now?: Date; title: string }) {
+/**
+ * A file name while it is typed: the slug convention (a–z, 0–9, single hyphens), keeping one
+ * trailing hyphen so the next word can follow. `slugify` gives the final name.
+ */
+export function slugDraft(text: string) {
+  const slug = slugify(text);
+  const trailing = /[^\p{L}\p{N}'’]$/u.test(text);
+  return slug && trailing && slug.length < 80 ? `${slug}-` : slug;
+}
+
+/** The site path a page will have, from its collection's `url` pattern (cowmark-cli `page_url`). */
+export function pageUrl(collection: PageCollection, slug: string) {
+  const url = collection.url;
+  const open = url ? url.indexOf("<") : -1;
+  const close = url ? url.lastIndexOf(">") : -1;
+  if (url && open >= 0 && close > open) return `${url.slice(0, open)}${slug}${url.slice(close + 1)}`;
+  if (url) return url;
+  const prefix = collection.folder.replace(/^content\/?/u, "");
+  return prefix ? `/${prefix}/${slug}` : `/${slug}`;
+}
+
+/** Collections New page offers: creatable ones, blog first, then in schema order. */
+export function creatableCollections(collections: readonly PageCollection[]) {
+  const offered = collections.filter((collection) => collection.creatable);
+  return [
+    ...offered.filter((collection) => collection.name === "blog"),
+    ...offered.filter((collection) => collection.name !== "blog"),
+  ];
+}
+
+const askedKinds = new Set<PageFieldKind>(["text", "textarea", "number", "boolean", "date"]);
+
+function isEmptyValue(value: unknown) {
+  return value === undefined
+    || value === null
+    || (typeof value === "string" && !value.trim())
+    || (Array.isArray(value) && value.length === 0)
+    || (typeof value === "number" && !Number.isFinite(value));
+}
+
+/** Required fields without a default, other than the title: the ones a new page must fill. */
+function requiredFields(collection: PageCollection) {
+  return collection.fields.filter((field) =>
+    field.name !== "title" && field.required && field.default === undefined);
+}
+
+/**
+ * The required fields the New page dialog asks for, and the ones left to Page details: images
+ * (the page's image folder doesn't exist until the page does) and lists or objects.
+ */
+export function newPageFields(collection: PageCollection) {
+  const fields = requiredFields(collection);
+  return {
+    asked: fields.filter((field) => askedKinds.has(pageFieldKind(field))),
+    later: fields.filter((field) => !askedKinds.has(pageFieldKind(field))),
+  };
+}
+
+/** The dialog's starting values: today for dates, off for switches. */
+export function newPageInitialValues(collection: PageCollection, now = new Date()) {
+  const values: Record<string, unknown> = {};
+  for (const field of newPageFields(collection).asked) {
+    const kind = pageFieldKind(field);
+    if (kind === "date") values[field.name] = localDate(now);
+    else if (kind === "boolean") values[field.name] = false;
+  }
+  return values;
+}
+
+/** Required fields (the title aside) that `values` leaves empty. */
+export function missingRequiredFields(collection: PageCollection, values: Readonly<Record<string, unknown>>) {
+  return requiredFields(collection).filter((field) => isEmptyValue(values[field.name])).map((field) => field.name);
+}
+
+/**
+ * A new file's text: the title and the filled `values`, in schema order, then a blank body.
+ * Empty values are left out, so an unfilled field never becomes an empty key.
+ */
+export function newPageText(
+  collection: PageCollection,
+  { title, values = {} }: { title: string; values?: Readonly<Record<string, unknown>> }
+) {
   let yaml = "";
   const set = (key: string, value: unknown) => {
     yaml = writeFrontmatterField(yaml, key, value).text;
   };
+  if (!collection.fields.some((field) => field.name === "title")) set("title", title);
   for (const field of collection.fields) {
-    const kind = pageFieldKind(field);
     if (field.name === "title") set("title", title);
-    else if (!field.required) continue;
-    else if (kind === "date") set(field.name, localDate(now));
-    else if (kind === "boolean") set(field.name, field.default === true);
-    else if (kind === "text" || kind === "textarea" || kind === "image") set(field.name, "");
+    else if (!isEmptyValue(values[field.name])) set(field.name, values[field.name]);
   }
   return `---\n${yaml}---\n\n`;
 }

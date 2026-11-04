@@ -5,6 +5,7 @@ import { useAppLanguage } from "../hooks/useAppLanguage";
 import { getAppRuntime } from "../runtime";
 import {
   contentAccessError,
+  cowmarkDevFolder,
   joinFolderPath,
   managedFolderName,
   type ManagedContent
@@ -53,6 +54,11 @@ export function CowMarkGate({ renderWorkspace, site }: CowMarkGateProps) {
   useEffect(() => {
     if (!access) return;
     let active = true;
+    const devFolder = cowmarkDevFolder();
+    if (devFolder) {
+      setPhase({ kind: "ready", root: devFolder });
+      return;
+    }
     (async () => {
       const state = await access.state();
       if (!active) return;

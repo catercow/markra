@@ -21,6 +21,7 @@ import {
 import { useLayoutEffect, useRef, type ReactNode } from "react";
 import type { SettingsCategory } from "../hooks/useSettingsWindowState";
 import type { DesktopPlatform } from "../lib/platform";
+import { editionAppName } from "../lib/cowmark-edition";
 import type { I18nKey } from "@markra/shared";
 
 type Translate = (key: I18nKey) => string;
@@ -167,7 +168,7 @@ export function SettingsSidebar({
       </nav>
 
       <div className="border-t border-(--border-default) px-7 py-4 text-[12px] leading-5 font-[560] text-(--text-secondary) max-[700px]:hidden">
-        Markra v{appVersion}
+        {editionAppName()} v{appVersion}
       </div>
     </aside>
   );

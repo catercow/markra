@@ -82,6 +82,8 @@ type ParagraphLevelOption = {
 type HeadingMenuOption = HeadingLevelOption | ParagraphLevelOption;
 
 type AiSelectionToolbarProps = {
+  /** False leaves only formatting, link and copy: no AI input or quick actions. */
+  aiActionsVisible?: boolean;
   anchor: SelectionAnchor | null;
   busy?: boolean;
   copySucceeded?: boolean;
@@ -89,6 +91,7 @@ type AiSelectionToolbarProps = {
   open: boolean;
   activeFormattingActions?: readonly SelectionFormattingAction[];
   activeHeadingLevel?: SelectionHeadingLevel | null;
+  hiddenFormattingActions?: ReadonlySet<SelectionFormattingToolbarAction>;
   quickActionPrompts?: AiQuickActionPrompts;
   onCopySelection: () => unknown;
   onDismiss?: () => unknown;
@@ -99,6 +102,14 @@ type AiSelectionToolbarProps = {
   onRunAction: (intent: AiQuickActionId, prompt: string) => unknown;
 };
 
+const noHiddenFormattingActions: ReadonlySet<SelectionFormattingToolbarAction> = new Set();
+const inlineStyleActions: ReadonlySet<SelectionFormattingToolbarAction> = new Set([
+  "bold",
+  "italic",
+  "strikethrough",
+  "inlineCode",
+  "highlight"
+]);
 const toolbarOffsetPx = 12;
 const toolbarViewportMarginPx = 12;
 const toolbarHeightPx = 42;
@@ -220,6 +231,7 @@ const headingMenuOptions: HeadingMenuOption[] = [
 ];
 
 export function AiSelectionToolbar({
+  aiActionsVisible = true,
   anchor,
   busy = false,
   copySucceeded = false,
@@ -227,6 +239,7 @@ export function AiSelectionToolbar({
   open,
   activeFormattingActions = [],
   activeHeadingLevel = null,
+  hiddenFormattingActions = noHiddenFormattingActions,
   quickActionPrompts = defaultAiQuickActionPrompts,
   onCopySelection,
   onDismiss,
@@ -328,6 +341,11 @@ export function AiSelectionToolbar({
   if (!open || !anchor) return null;
 
   const label = (key: I18nKey) => t(language, key);
+  const visibleSelectionActions = basicSelectionActions.filter((action) => !hiddenFormattingActions.has(action.action));
+  // The heading menu follows the last inline style ("highlight" unless some are hidden).
+  const headingMenuAfterAction = visibleSelectionActions
+    .filter((action) => inlineStyleActions.has(action.action))
+    .at(-1)?.action;
   const activeFormattingActionSet = new Set(activeFormattingActions);
   const activeHeadingLevelOption =
     activeHeadingLevel === null
@@ -400,9 +418,11 @@ export function AiSelectionToolbar({
       ref={toolbarRef}
       style={style}
       role="toolbar"
-      aria-label={label("app.aiQuickActions")}
+      aria-label={label(aiActionsVisible ? "app.aiQuickActions" : "menu.format")}
     >
       <div className="pointer-events-auto inline-flex max-w-[calc(100vw-24px)] items-center gap-1 overflow-x-auto rounded-lg border border-(--border-default) bg-(--bg-primary) p-1 shadow-(--ai-command-popover-shadow)">
+        {aiActionsVisible ? (
+        <>
         <Tooltip content={label("app.aiCommandInput")}>
           <button
             className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-(--accent-soft) text-(--accent) transition-colors duration-150 ease-out hover:bg-(--bg-hover) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--accent) disabled:cursor-default disabled:opacity-55"
@@ -439,7 +459,9 @@ export function AiSelectionToolbar({
           );
         })}
         <span className="mx-0.5 h-5 w-px bg-(--border-default)" aria-hidden="true" />
-        {basicSelectionActions.map((action) => {
+        </>
+        ) : null}
+        {visibleSelectionActions.map((action) => {
           const Icon = action.icon;
           const actionLabel = label(action.labelKey);
           const active = activeFormattingActionSet.has(action.action);
@@ -462,7 +484,7 @@ export function AiSelectionToolbar({
                   <Icon aria-hidden="true" size={14} />
                 </button>
               </Tooltip>
-              {action.action === "highlight" ? (
+              {action.action === headingMenuAfterAction ? (
                 <div className="relative inline-flex shrink-0">
                   <Tooltip content={headingLevelLabel}>
                     <button

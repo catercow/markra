@@ -99,11 +99,13 @@ import { useContentPreviewConfig } from "./hooks/useContentPreviewConfig";
 import { useCompanionMode, useCowMarkCompanion } from "./hooks/useCowMarkCompanion";
 import { CowMarkGate } from "./components/CowMarkGate";
 import { catercowPreviewSite, type ManagedContent } from "./lib/content-access";
+import { cowmarkEdition, editionFeatures, editionHidden, withoutHiddenCommands } from "./lib/cowmark-edition";
 import { parseContentPreviewConfig } from "./lib/content-preview";
 import { CowMarkPagesContext, resolveContentImageSrc, useCowMarkPages } from "./hooks/useCowMarkPages";
-import { newPageText, slugify } from "./lib/cowmark-pages";
+import { collectionForDocument, missingRequiredFields, newPageText, publicSitePath } from "./lib/cowmark-pages";
 import { contentCsvSource, formatContentPage, managedContentPage } from "./lib/content-lint";
-import { promptImageAltText, promptNewPostTitle } from "./components/CowMarkDialogs";
+import { promptImageAltText, promptNewPage } from "./components/CowMarkDialogs";
+import { imageDropTargetAttribute, imageFileDropEvent, type ImageFileDropDetail } from "./components/ImageField";
 import {
   useApplicationShortcuts,
   useNativeMarkdownDrop,
@@ -499,12 +501,17 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
   const desktopOsVersion = resolveDesktopOsVersion();
   const webKitScrollWorkaround = webKitScrollWorkaroundForPlatform(desktopPlatform, desktopOsVersion);
   const nativeRuntimeAvailable = getAppRuntime().events.isAvailable();
-  const appFeatures = getAppRuntime().features;
+  const appFeatures = editionFeatures(getAppRuntime().features);
+  // CowMark builds hide what its editors don't use; both are no-ops in stock Markra.
+  const cowmark = cowmarkEdition();
+  const editionHides = editionHidden();
   const appFiles = getAppRuntime().files;
   const assetCleanupAvailable = Boolean(
     appFiles.listMarkdownReferenceFilesForPath && appFiles.trashMarkdownAssets
   );
   const aiFeatureEnabled = appFeatures.ai;
+  // CowMark keeps the selection toolbar's formatting buttons without AI.
+  const selectionToolbarEnabled = aiFeatureEnabled || cowmark;
   const exportFeatureEnabled = appFeatures.export;
   const markdownBundleFeatureEnabled = exportFeatureEnabled && appFeatures.markdownBundle === true;
   const nativeWindowChromeEnabled = appFeatures.nativeWindowChrome;
@@ -858,10 +865,10 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
   const visibleContentPreviewOpen = Boolean(contentPreviewConfig && defaultMarkdownSaveDirectory) && (contentPreviewOpen || companionMode);
   const contentPreviewInsetPx = visibleContentPreviewOpen && !companionMode ? contentPreviewWidth : 0;
   const savedExtendedSyntax = editorPreferences.preferences.extendedSyntax;
-  // A workspace that ships a components schema is an MDC workspace.
+  // A workspace that ships a components schema is an MDC workspace, and CowMark always is.
   const extendedSyntax = useMemo(
-    () => (mdcSchema && !savedExtendedSyntax.mdc ? { ...savedExtendedSyntax, mdc: true } : savedExtendedSyntax),
-    [mdcSchema, savedExtendedSyntax]
+    () => ((mdcSchema || cowmark) && !savedExtendedSyntax.mdc ? { ...savedExtendedSyntax, mdc: true } : savedExtendedSyntax),
+    [cowmark, mdcSchema, savedExtendedSyntax]
   );
   const confirmDiscardUnsavedChanges = useCallback((currentDocument: { name: string }) => {
     return confirmNativeUnsavedMarkdownDocumentDiscard(currentDocument.name, {
@@ -972,10 +979,12 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
   };
   const viewModeChrome = useMemo(
     () => resolveViewModeChrome(
-      editorPreferences.preferences.viewMode,
+      // CowMark has no view mode switch, so a mode chosen before can't hide anything.
+      cowmark ? "daily" : editorPreferences.preferences.viewMode,
       editorPreferences.preferences.viewModeCustomizations
     ),
     [
+      cowmark,
       editorPreferences.preferences.viewMode,
       editorPreferences.preferences.viewModeCustomizations
     ]
@@ -1896,13 +1905,16 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
       editor.clearAiSelection();
     }
 
-    if (!aiFeatureEnabled) {
+    if (!selectionToolbarEnabled || readOnlyMode) {
       setAiSelectionToolbarAnchor(null);
       return;
     }
 
-    if (readOnlyMode) {
-      setAiSelectionToolbarAnchor(null);
+    if (!aiFeatureEnabled) {
+      syncAiSelectionToolbarFormattingState();
+      setAiSelectionToolbarAnchorIfChanged(
+        getEditorSelectionAnchor() ?? selectionAnchorFromDomSelection(window.getSelection())
+      );
       return;
     }
 
@@ -1962,6 +1974,7 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
     getEditorSelectionAnchor,
     holdAiSelection,
     nativeRuntimeAvailable,
+    selectionToolbarEnabled,
     syncAiSelectionToolbarFormattingState,
     clearAiSelectionToolbarCopySuccess,
     desktopPlatform,
@@ -2085,7 +2098,7 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
     interruptAiCommandPrompt();
   }, [interruptAiCommandPrompt]);
   const aiSelectionToolbarVisible =
-    aiFeatureEnabled &&
+    selectionToolbarEnabled &&
     !sourceSurfaceActive &&
     !readOnlyMode &&
     Boolean(aiSelectionToolbarAnchor) &&
@@ -2127,7 +2140,7 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
     visibleFileTreeOpen
   ]);
   const refreshAiSelectionToolbarAnchor = useCallback(() => {
-    if (!aiFeatureEnabled || sourceSurfaceActive || readOnlyMode) return;
+    if (!selectionToolbarEnabled || sourceSurfaceActive || readOnlyMode) return;
     if (activeAiSelection?.source !== "selection" || !activeAiSelection.text.trim()) return;
     if (aiCommand.submitting || aiContextMenuActionPending || aiResult) return;
 
@@ -2140,10 +2153,10 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
     activeAiSelection,
     aiCommand.submitting,
     aiContextMenuActionPending,
-    aiFeatureEnabled,
     aiResult,
     getEditorSelectionAnchor,
     readOnlyMode,
+    selectionToolbarEnabled,
     setAiSelectionToolbarAnchorIfChanged,
     sourceSurfaceActive,
     syncAiSelectionToolbarFormattingState
@@ -2688,13 +2701,20 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
       });
     }
   }, [captureActiveDocumentViewState, createBlankDocument, createMarkdownTreeFile, fileTree.sourcePath, openTreeMarkdownFile, translate]);
-  const handleNewContentPost = useCallback(async () => {
-    const blog = cowmarkPages?.collections.find((collection) => collection.name === "blog");
-    if (!blog) return;
-    const title = await promptNewPostTitle(appLanguage.language, blog.folder);
-    if (!title) return;
-    await handleCreateMarkdownTreeFile(`${slugify(title)}.md`, blog.folder, newPageText(blog, { title }));
-  }, [appLanguage.language, cowmarkPages, handleCreateMarkdownTreeFile]);
+  const handleNewContentPage = useCallback(async () => {
+    if (!cowmarkPages) return;
+    const page = await promptNewPage(appLanguage.language, {
+      initialCollection: collectionForDocument(cowmarkPages.collections, cowmarkPages.rootPath, document.path)?.name,
+      pages: cowmarkPages
+    });
+    if (!page) return;
+    const text = newPageText(page.collection, page);
+    if (missingRequiredFields(page.collection, page.values).length > 0) {
+      const root = cowmarkPages.rootPath.replace(/[\\/]+$/u, "");
+      cowmarkPages.requestPageDetails(`${root}/${page.collection.folder}/${page.slug}.md`, text);
+    }
+    await handleCreateMarkdownTreeFile(`${page.slug}.md`, page.collection.folder, text);
+  }, [appLanguage.language, cowmarkPages, document.path, handleCreateMarkdownTreeFile]);
   const handleQuickCreateMarkdownTreeFile = useCallback(() => {
     captureActiveDocumentViewState();
     setActiveImageFile(null);
@@ -3619,6 +3639,23 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
     });
   }, [activeImageFile, document.path, insertEditorCsvAtPoint, managedRoot, mdcSchema, readOnlyMode]);
   const handleDroppedLocalImage = useCallback(async (target: Extract<NativeMarkdownDroppedTarget, { kind: "image" }>) => {
+    // CowMark: an image control under the drop point (Page details, component props) takes the
+    // file; native drag-drop hides it from the page's own drop events.
+    const imageControl = cowmarkPages && target.point
+      ? window.document.elementFromPoint(target.point.left, target.point.top)?.closest(`[${imageDropTargetAttribute}]`)
+      : null;
+    if (imageControl) {
+      try {
+        const file = await readNativeLocalImageFile(target.path);
+        imageControl.dispatchEvent(new CustomEvent<ImageFileDropDetail>(imageFileDropEvent, { detail: { file } }));
+      } catch (error) {
+        showAppToast({
+          message: translate("app.cowmark.imageSaveFailed").replace("{message}", String((error as Error)?.message ?? error)),
+          status: "error"
+        });
+      }
+      return;
+    }
     if (readOnlyMode || activeImageFile || !document.path) return;
 
     const payload = markdownImageDragPayloadForFile({
@@ -3626,10 +3663,30 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
       path: target.path,
       relativePath: target.path
     });
-    const imageReference = {
+    let imageReference: { alt: string; src: string } | null = {
       alt: payload.alt,
       src: markdownImageDragSrcForDocument(payload, document.path)
     };
+    // CowMark content pages: the site serves images from public/ only, so a dropped file is
+    // copied into the page's image folder, as a pasted one is; one already in public/ is linked.
+    if (contentImageDocumentPath && cowmarkPages) {
+      const sitePath = publicSitePath(cowmarkPages.rootPath, target.path);
+      if (sitePath) {
+        imageReference = { alt: payload.alt, src: sitePath };
+      } else {
+        try {
+          const file = await readNativeLocalImageFile(target.path);
+          imageReference = await saveContentPageImage(file, contentImageDocumentPath);
+        } catch (error) {
+          showAppToast({
+            message: translate("app.cowmark.imageSaveFailed").replace("{message}", String((error as Error)?.message ?? error)),
+            status: "error"
+          });
+          return;
+        }
+      }
+      if (!imageReference) return;
+    }
 
     const insertedAtDropPoint = target.point
       ? insertEditorMarkdownImagesAtPoint([imageReference], target.point)
@@ -3641,11 +3698,15 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
     syncVisualMarkdownAfterEditorCommand();
   }, [
     activeImageFile,
+    contentImageDocumentPath,
+    cowmarkPages,
     document.path,
     insertEditorMarkdownImages,
     insertEditorMarkdownImagesAtPoint,
     readOnlyMode,
-    syncVisualMarkdownAfterEditorCommand
+    saveContentPageImage,
+    syncVisualMarkdownAfterEditorCommand,
+    translate
   ]);
   const handleInsertFileTreeImageAsset = useCallback((
     file: NativeMarkdownFolderFile,
@@ -3654,16 +3715,20 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
     if (readOnlyMode || activeImageFile || !document.path || file.kind !== "asset") return;
 
     const payload = markdownImageDragPayloadForFile(file);
+    // CowMark content pages link an image under public/ by its site path.
+    const sitePath = contentImageDocumentPath && cowmarkPages ? publicSitePath(cowmarkPages.rootPath, file.path) : null;
     const inserted = insertEditorMarkdownImagesAtPoint(
       [{
         alt: payload.alt,
-        src: markdownImageDragSrcForDocument(payload, document.path)
+        src: sitePath ?? markdownImageDragSrcForDocument(payload, document.path)
       }],
       point
     );
     if (inserted) syncVisualMarkdownAfterEditorCommand();
   }, [
     activeImageFile,
+    contentImageDocumentPath,
+    cowmarkPages,
     document.path,
     insertEditorMarkdownImagesAtPoint,
     readOnlyMode,
@@ -4354,6 +4419,7 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
   });
   const nativeMenuHandlers = useNativeMenuHandlers({
     checkForUpdates: updaterFeatureEnabled ? appUpdater.checkForUpdates : undefined,
+    hiddenCommands: editionHides.menuCommands,
     closeDocument: handleCloseCurrentFile,
     exportDocx: exportFeatureEnabled && pandocFeatureEnabled ? exportDocxDocument : undefined,
     exportEpub: exportFeatureEnabled && pandocFeatureEnabled ? exportEpubDocument : undefined,
@@ -4395,12 +4461,14 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
     markdownShortcuts: editorPreferences.preferences.markdownShortcuts,
     recentFiles: recentMarkdownFiles
   });
-  useApplicationShortcuts({
+  useApplicationShortcuts(withoutHiddenCommands({
     closeDocument: handleCloseCurrentFile,
     exportHtml: exportFeatureEnabled ? exportHtmlDocument : undefined,
     exportPdf: exportFeatureEnabled ? exportPdfDocument : undefined,
     markdownShortcuts: editorPreferences.preferences.markdownShortcuts,
-    openBlankEditorWindow: windowsSelfDrawnChromeEnabled ? handleOpenBlankEditorWindow : undefined,
+    openBlankEditorWindow: windowsSelfDrawnChromeEnabled && !editionHides.menuCommands.has("newDocument")
+      ? handleOpenBlankEditorWindow
+      : undefined,
     openDocument: handleOpenMarkdownFile,
     openDocumentReplace: handleDocumentReplaceOpen,
     openDocumentSearch: handleDocumentSearchOpen,
@@ -4421,7 +4489,7 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
     toggleSourceMode: handleEditorModeToggle,
     toggleTypewriterMode: handleTypewriterModeToggle,
     toggleVimMode: handleVimModeToggle
-  });
+  }, editionHides.menuCommands));
 
   const quickOpenFilePaths = useMemo(
     () => [
@@ -4741,9 +4809,15 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
   ) : null;
   const appTitlebarActions = useMemo(
     () => {
+      const preferredActions = editionHides.titlebarActions.size > 0
+        // Kept but not visible: the title bar fills in actions missing from the list.
+        ? editorPreferences.preferences.titlebarActions.map((action) =>
+          editionHides.titlebarActions.has(action.id) ? { ...action, visible: false } : action
+        )
+        : editorPreferences.preferences.titlebarActions;
       const availableActions = aiFeatureEnabled
-        ? editorPreferences.preferences.titlebarActions
-        : editorPreferences.preferences.titlebarActions.filter((action) => action.id !== "aiAgent");
+        ? preferredActions
+        : preferredActions.filter((action) => action.id !== "aiAgent");
 
       if (!viewModeChrome.titlebarActions) {
         return editorPreferences.preferences.viewMode === "immersive" && viewModeChrome.viewModeToggle
@@ -4757,6 +4831,7 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
     },
     [
       aiFeatureEnabled,
+      editionHides.titlebarActions,
       editorPreferences.preferences.viewMode,
       editorPreferences.preferences.titlebarActions,
       viewModeChrome.titlebarActions,
@@ -4967,7 +5042,7 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
         schemaNotice={contentSchema?.notice ?? null}
         beforeSave={saveDirtyMarkdownFiles}
         onConflictFiles={handleContentConflictFiles}
-        onNewPost={cowmarkPages?.collections.some((collection) => collection.name === "blog") ? handleNewContentPost : undefined}
+        onNewPage={cowmarkPages?.collections.some((collection) => collection.creatable) ? handleNewContentPage : undefined}
       />
     </Suspense>
   ) : null;
@@ -5101,6 +5176,7 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
             autoRevealActiveFile: editorPreferences.preferences.autoRevealActiveFile,
             currentPath: currentFileTreePath,
             customTemplates: markdownTemplates,
+            templatesAvailable: !cowmark,
             documentLinksOpen,
             documentLinksVisible,
             fileListVisible: viewModeChrome.fileList,
@@ -5156,7 +5232,8 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
                   onRecentQuerySelect={handleGlobalSearchRecentQuerySelect}
                 />
               ) : null,
-            onCleanUnusedImages: assetCleanupAvailable ? assetCleanup.openDialog : undefined,
+            // Cleanup resolves images relative to pages, so it would see CowMark's `/…` site paths as unused.
+            onCleanUnusedImages: assetCleanupAvailable && !cowmark ? assetCleanup.openDialog : undefined,
             onCreateFile: handleCreateMarkdownTreeFile,
             onCreateFolder: handleCreateMarkdownTreeFolder,
             onDeleteFile: handleDeleteMarkdownTreeFile,
@@ -5170,7 +5247,7 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
             onOpenFileToSide: editorPreferences.preferences.showDocumentTabs
               ? handleOpenTreeFileToSide
               : undefined,
-            onOpenFolder: handleOpenMarkdownFolder,
+            onOpenFolder: cowmark ? undefined : handleOpenMarkdownFolder,
             onOpenRecentFolder: handleOpenRecentMarkdownFolder,
             onOpenSettings: handleOpenSettings,
             onInstallAvailableUpdate: appUpdater.installAvailableUpdate,
@@ -5180,7 +5257,7 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
             onResize: compactViewport ? undefined : resizeFileTree,
             onResizeEnd: compactViewport ? undefined : endFileTreeResize,
             onResizeStart: compactViewport ? undefined : startFileTreeResize,
-            onSaveFileAsTemplate: handleSaveMarkdownFileAsTemplate,
+            onSaveFileAsTemplate: cowmark ? undefined : handleSaveMarkdownFileAsTemplate,
             onSelectOutlineItem: editor.selectOutlineItem,
             onToggleMarkdownFiles: handleFileTreeToggle,
             onWorkspaceSearchOpen: handleSidebarWorkspaceSearchOpen,
@@ -5457,8 +5534,10 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
               ) : null}
         </WorkspaceLayout>
 
-        {aiFeatureEnabled ? (
+        {selectionToolbarEnabled ? (
           <AiSelectionToolbar
+            aiActionsVisible={aiFeatureEnabled}
+            hiddenFormattingActions={editionHides.selectionActions}
             activeFormattingActions={aiSelectionToolbarActiveActions}
             activeHeadingLevel={aiSelectionToolbarHeadingLevel}
             anchor={aiSelectionToolbarAnchor}

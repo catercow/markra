@@ -141,6 +141,8 @@ type MarkdownFileTreeDrawerProps = {
   autoRevealActiveFile?: boolean;
   currentPath: string | null;
   customTemplates?: readonly MarkdownTemplate[];
+  /** False hides "New from template"; CowMark's pages come from New page and the site schema. */
+  templatesAvailable?: boolean;
   documentLinksOpen?: boolean;
   documentLinksVisible?: boolean;
   fileListVisible?: boolean;
@@ -462,6 +464,7 @@ export function MarkdownFileTreeDrawer({
   autoRevealActiveFile = false,
   currentPath,
   customTemplates = emptyMarkdownTemplates,
+  templatesAvailable = true,
   documentLinksOpen: controlledDocumentLinksOpen,
   documentLinksVisible = false,
   fileListVisible = true,
@@ -740,7 +743,10 @@ export function MarkdownFileTreeDrawer({
   }, [scheduleFileTreeScrollOffset]);
   const folderPaths = useMemo(() => collectMarkdownFolderPaths(assetFilteredTree), [assetFilteredTree]);
   const folderTargetPaths = useMemo(() => collectMarkdownFolderTargetPaths(assetFilteredTree), [assetFilteredTree]);
-  const availableMarkdownTemplates = useMemo(() => mergeMarkdownTemplates(customTemplates), [customTemplates]);
+  const availableMarkdownTemplates = useMemo(
+    () => templatesAvailable ? mergeMarkdownTemplates(customTemplates) : [],
+    [customTemplates, templatesAvailable]
+  );
   const outlineMaxLevel = outlineLevelFilter === "all" ? null : outlineLevelFilter;
   const outlineRenderItems = useMemo(() => buildOutlineRenderItems(outlineItems, outlineMaxLevel), [outlineItems, outlineMaxLevel]);
   const collapsibleOutlineKeys = useMemo(
@@ -2622,7 +2628,7 @@ export function MarkdownFileTreeDrawer({
               <Folder size={13} />,
               () => startCreatingFolder(activeCreateParentPath)
             ) : null}
-            {fileCreationAvailable ? (
+            {fileCreationAvailable && availableMarkdownTemplates.length > 0 ? (
               <>
                 <div className="my-1 h-px bg-(--border-default)" role="separator" />
                 <div className="px-2.5 pt-0.5 pb-1 text-[11px] leading-none font-[560] text-(--text-secondary)">

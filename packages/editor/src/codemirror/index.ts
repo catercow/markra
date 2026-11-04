@@ -9,6 +9,7 @@ import {
   markraHighlight,
 } from "./highlight.ts";
 import {
+  hideMarkraUi,
   markraPlugins,
   type MarkraPlugin,
 } from "./plugin.ts";
@@ -202,6 +203,7 @@ export type { RawHtmlPreviewPluginOptions } from "./raw-html-preview.ts";
 export { rawHtmlPreviewPlugin } from "./raw-html-preview.ts";
 export {
   defineMarkraPlugin,
+  hideMarkraUi,
   listMarkraPlugins,
   listMarkraUi,
   markraPlugins,
@@ -262,6 +264,8 @@ export interface LiveMarkdownConfig extends LivePreviewConfig {
   mdc?: boolean;
   /** Parse git conflict marker lines as their own blocks (see conflict-syntax.ts). */
   conflicts?: boolean;
+  /** Command ids left out of the slash menu and other UI listings (see `hideMarkraUi`). */
+  hiddenUi?: readonly string[];
   plugins?: readonly MarkraPlugin[];
   slashMenu?: boolean;
 }
@@ -295,6 +299,7 @@ export function markraMarkdownLanguage({ conflicts = false, highlight = true, md
 export function liveMarkdown(config: LiveMarkdownConfig = {}): Extension {
   const {
     conflicts = false,
+    hiddenUi = [],
     highlight = true,
     mdc = false,
     plugins = [],
@@ -308,6 +313,7 @@ export function liveMarkdown(config: LiveMarkdownConfig = {}): Extension {
     livePreview(previewConfig),
     markraTheme,
     markraPlugins(plugins),
+    hideMarkraUi(hiddenUi),
     slashMenu ? markraSlashMenu() : [],
   ];
 }

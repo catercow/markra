@@ -19,12 +19,12 @@ vi.mock("../runtime", () => ({
   getAppRuntime: () => ({ files: { readWorkspaceTextFile: async () => schema } }),
 }));
 
-const blog: PageCollection = { fields: [], folder: "content/blog", name: "blog", url: "/blog/<file name without .md>" };
+const blog: PageCollection = { creatable: true, fields: [], label: "Page", folder: "content/blog", name: "blog", url: "/blog/<file name without .md>" };
 
 describe("pageImageFolder", () => {
   it("maps a page to its folder under public/ by the collection's URL prefix", () => {
     expect(pageImageFolder([blog], "content/blog/my-post.md")).toBe("/blog/my-post");
-    const guides = { fields: [], folder: "content/catering-guides", name: "guides", url: "/guides/<file name without .md>" };
+    const guides = { creatable: true, fields: [], label: "Page", folder: "content/catering-guides", name: "guides", url: "/guides/<file name without .md>" };
     expect(pageImageFolder([guides], "content/catering-guides/office.md")).toBe("/guides/office");
     // Without the schema, the folder under content/ stands in.
     expect(pageImageFolder([], "content/dishes/pizza.md")).toBe("/dishes/pizza");

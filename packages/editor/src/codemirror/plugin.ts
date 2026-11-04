@@ -114,6 +114,15 @@ const registryFacet = Facet.define<MarkraPlugin, MarkraRegistry>({
   combine: createRegistry,
 });
 
+const hiddenUiFacet = Facet.define<readonly string[], ReadonlySet<string>>({
+  combine: (values) => new Set(values.flat()),
+});
+
+/** Leaves these commands out of every menu and toolbar listing; they still run by id. */
+export function hideMarkraUi(commands: readonly string[]): Extension {
+  return commands.length > 0 ? hiddenUiFacet.of(commands) : [];
+}
+
 export function defineMarkraPlugin(plugin: MarkraPlugin): MarkraPlugin {
   if (!plugin.id.trim()) {
     throw new Error("Markra plugin id must not be empty");
@@ -168,11 +177,14 @@ export function listMarkraUi(
   placement: MarkraUiPlacement,
 ): MarkraUiAction[] {
   const registry = view.state.facet(registryFacet);
+  const hidden = view.state.facet(hiddenUiFacet);
 
   return registry.ui
     .filter(
       (contribution) =>
-        contribution.placement === placement && contribution.when?.(view) !== false,
+        contribution.placement === placement &&
+        !hidden.has(contribution.command) &&
+        contribution.when?.(view) !== false,
     )
     .map((contribution) => {
       const registered = registry.commands.get(contribution.command);

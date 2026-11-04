@@ -63,7 +63,7 @@ import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { minimalSetup } from "codemirror";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { t, type AppLanguage, type MdcComponentSchema, type MdcSchema } from "@markra/shared";
+import { keyboardShortcutActions, t, type AppLanguage, type MdcComponentSchema, type MdcSchema } from "@markra/shared";
 import type {
   ExtendedSyntaxPreferences,
   TableColumnWidthModePreference,
@@ -77,6 +77,7 @@ import {
 } from "../lib/document-links";
 import { isLocalAttachmentHref } from "../lib/markdown-link-target";
 import { catercowPreviewSite } from "../lib/content-access";
+import { editionHidden } from "../lib/cowmark-edition";
 import { contentCsvSource, contentLintSource } from "../lib/content-lint";
 import { useCowMarkPagesContext } from "../hooks/useCowMarkPages";
 import { getAppRuntime } from "../runtime";
@@ -282,9 +283,12 @@ function markdownExtension({
     tableRows: t(language, "editor.table.rows"),
   };
 
+  const hidden = editionHidden();
+
   return liveMarkdown({
     highlight: extendedSyntax?.highlight ?? true,
     conflicts,
+    hiddenUi: hidden.slashCommands,
     mdc,
     resolveLinkTarget: linkOptions?.resolveTarget,
     hideHeadingMarkersOnFocus,
@@ -377,6 +381,9 @@ function markdownExtension({
       mathPreviewPlugin(),
       markdownEditingPlugin(),
       markdownShortcutsPlugin({
+        actions: hidden.shortcutActions.size > 0
+          ? keyboardShortcutActions.filter((action) => !hidden.shortcutActions.has(action))
+          : undefined,
         openSpellcheckSuggestions,
         pastePlainText,
         shortcuts,
@@ -906,7 +913,7 @@ export function CodeMirrorPaperSurface({
         slashMenuLabel={t(language, "editor.slashCommands")}
       />
       <CodeMirrorPluginUi pluginIds={plugins.map((plugin) => plugin.id)} />
-      {extendedSyntax?.mdc ? <MdcPropsPanel language={language} schema={mdcSchema} /> : null}
+      {extendedSyntax?.mdc ? <MdcPropsPanel documentPath={documentPath} language={language} schema={mdcSchema} /> : null}
       <PageDetailsPanel documentPath={documentPath} language={language} />
       {spellcheckMenu ? (
         <SpellcheckSuggestionMenu

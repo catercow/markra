@@ -123,8 +123,15 @@ const fixedKeyboardShortcuts: Array<{
   { labelKey: "settings.editor.shortcutZoomReset", shortcut: "Mod+0" }
 ];
 
-function keyboardShortcutActionAvailable(action: MarkdownShortcutAction, aiEnabled: boolean) {
-  return aiEnabled || (action !== "toggleAiAgent" && action !== "toggleAiCommand");
+const noHiddenShortcutActions: ReadonlySet<MarkdownShortcutAction> = new Set();
+const noHiddenFixedShortcuts: ReadonlySet<I18nKey> = new Set();
+
+function keyboardShortcutActionAvailable(
+  action: MarkdownShortcutAction,
+  aiEnabled: boolean,
+  hidden: ReadonlySet<MarkdownShortcutAction>
+) {
+  return (aiEnabled || (action !== "toggleAiAgent" && action !== "toggleAiCommand")) && !hidden.has(action);
 }
 
 function assignKeyboardShortcut(
@@ -215,6 +222,8 @@ function ShortcutCaptureButton({
 
 export function KeyboardShortcutsSettings({
   aiEnabled = true,
+  hiddenActions = noHiddenShortcutActions,
+  hiddenFixedShortcuts = noHiddenFixedShortcuts,
   newDocumentShortcutAvailable = true,
   onUpdatePreferences,
   platform = "macos",
@@ -222,6 +231,9 @@ export function KeyboardShortcutsSettings({
   translate
 }: {
   aiEnabled?: boolean;
+  hiddenActions?: ReadonlySet<MarkdownShortcutAction>;
+  /** Fixed shortcut rows to leave out, by label. */
+  hiddenFixedShortcuts?: ReadonlySet<I18nKey>;
   newDocumentShortcutAvailable?: boolean;
   onUpdatePreferences: (preferences: EditorPreferences) => unknown;
   platform?: DesktopPlatform;
@@ -237,18 +249,18 @@ export function KeyboardShortcutsSettings({
     () => keyboardShortcutSections
       .map((section) => ({
         ...section,
-        actions: section.actions.filter((action) => keyboardShortcutActionAvailable(action, aiEnabled))
+        actions: section.actions.filter((action) => keyboardShortcutActionAvailable(action, aiEnabled, hiddenActions))
       }))
       .filter((section) => section.actions.length > 0),
-    [aiEnabled]
+    [aiEnabled, hiddenActions]
   );
   const availableFixedKeyboardShortcuts = fixedKeyboardShortcuts.filter(
-    (shortcut) => newDocumentShortcutAvailable || !shortcut.desktopOnly
+    (shortcut) => (newDocumentShortcutAvailable || !shortcut.desktopOnly) && !hiddenFixedShortcuts.has(shortcut.labelKey)
   );
 
   useEffect(() => {
-    if (activeAction && !keyboardShortcutActionAvailable(activeAction, aiEnabled)) setActiveAction(null);
-  }, [activeAction, aiEnabled]);
+    if (activeAction && !keyboardShortcutActionAvailable(activeAction, aiEnabled, hiddenActions)) setActiveAction(null);
+  }, [activeAction, aiEnabled, hiddenActions]);
 
   useEffect(() => {
     if (!activeAction) return;

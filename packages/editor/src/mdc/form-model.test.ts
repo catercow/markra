@@ -93,6 +93,13 @@ describe("fieldKind", () => {
     expect(fieldKind({ description: "One short paragraph under the title.", name: "intro", type: "string" })).toBe("textarea");
   });
 
+  it("uses an image field only where the schema says so", () => {
+    expect(fieldKind({ format: "image", name: "logo", type: "string" })).toBe("image");
+    expect(fieldKind({ format: "image", name: "src", type: "string" })).toBe("image");
+    expect(fieldKind({ name: "image", type: "string" })).toBe("text");
+    expect(fieldKind({ format: "image", name: "logos", type: "string[]" })).toBe("string-list");
+  });
+
   it("falls back to json for shapes it cannot edit as a form", () => {
     expect(fieldKind({ name: "rows", type: "GalleryImage[][]" })).toBe("json");
     expect(fieldKind({ name: "items", type: "Faq[]" })).toBe("json");

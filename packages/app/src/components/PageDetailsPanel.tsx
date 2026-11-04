@@ -4,10 +4,11 @@ import {
   readFrontmatterFields,
   writeFrontmatterField,
 } from "@markra/editor";
+import { openFrontmatterDetails } from "@markra/editor/codemirror";
 import { useMarkraEditorView, useMarkraFrontmatterDetails } from "@markra/editor-react";
 import { t, type AppLanguage, type I18nKey } from "@markra/shared";
-import { Button, IconButton, Select, Switch, TextInput } from "@markra/ui";
-import { ImagePlus, TriangleAlert, X } from "lucide-react";
+import { Button, IconButton, Switch, TextInput } from "@markra/ui";
+import { Plus, TriangleAlert, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useCowMarkPagesContext, type CowMarkPages } from "../hooks/useCowMarkPages";
 import {
@@ -20,6 +21,7 @@ import {
   type PageCollection,
   type PageField,
 } from "../lib/cowmark-pages";
+import { ImageField } from "./ImageField";
 
 type Label = (key: I18nKey) => string;
 type Change = (value: unknown) => unknown;
@@ -30,7 +32,7 @@ export type PageDetailsPanelProps = {
 };
 
 /** "feature_image" → "Feature image". */
-function humanName(name: string) {
+export function humanName(name: string) {
   const text = name.split(/[_\-\s]+/u).filter(Boolean).join(" ").toLowerCase();
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
@@ -43,12 +45,22 @@ export function usePageDetailsAvailable(documentPath: string | null | undefined)
 
 /**
  * CowMark's form over a page's YAML front matter, generated from `schema/collections.json`.
- * Opened from the front matter card. Each change rewrites only its own key.
+ * Opened from the front matter card, or by New page (`requestPageDetails`). Each change
+ * rewrites only its own key.
  */
 export function PageDetailsPanel({ documentPath, language }: PageDetailsPanelProps) {
   const pages = useCowMarkPagesContext();
+  const view = useMarkraEditorView();
   const details = useMarkraFrontmatterDetails();
   const collection = pages ? collectionForDocument(pages.collections, pages.rootPath, documentPath) : null;
+
+  useEffect(() => {
+    if (!pages || !view || !documentPath || !collection || details.yaml === null || details.open) return;
+    if (pages.takePageDetailsRequest(documentPath, view.state.doc.toString())) {
+      view.dispatch({ effects: openFrontmatterDetails.of(true) });
+    }
+  }, [collection, details.open, details.yaml, documentPath, pages, view]);
+
   if (!pages || !collection || !details.open || details.yaml === null || !documentPath) return null;
 
   return (
@@ -153,7 +165,7 @@ function PageDetailsBody({
 
         <fieldset className="m-0 grid min-w-0 gap-4 border-0 p-0" disabled={disabled}>
           {formFields.map((field) => (
-            <PageField
+            <PageFieldInput
               documentPath={documentPath}
               field={field}
               key={field.name}
@@ -227,23 +239,26 @@ function useDraft(external: string) {
 const textareaClassName =
   "min-h-16 w-full resize-y rounded-md border border-(--border-default) bg-(--bg-primary) px-3 py-2 text-[13px] leading-5 font-[520] text-(--text-heading) outline-none transition-[border-color,box-shadow] duration-150 ease-out placeholder:text-(--text-secondary) focus:border-(--accent) focus:ring-2 focus:ring-(--accent)/20";
 
-type FieldProps = {
-  documentPath: string;
+export type PageFieldInputProps = {
+  /** The page the field belongs to; null before it exists (New page), when images can't be stored. */
+  documentPath: string | null;
   field: PageField;
   label: Label;
   onChange: Change;
-  pages: CowMarkPages;
+  pages: CowMarkPages | null;
   /** Values other pages in the collection use for this field. */
   suggestions: string[];
   value: unknown;
 };
 
-function PageField(props: FieldProps) {
+/** One front matter field: its label, control and help text. Used by Page details and New page. */
+export function PageFieldInput(props: PageFieldInputProps) {
   const { field, label } = props;
   const id = useId();
   const kind = pageFieldKind(field);
   const title = humanName(field.name);
-  const labelled = kind !== "boolean";
+  const labelled = kind !== "boolean" && kind !== "images";
+  const descriptionId = field.description ? `${id}-description` : undefined;
 
   return (
     <div className="grid min-w-0 gap-1.5" data-page-field={field.name}>
@@ -258,12 +273,15 @@ function PageField(props: FieldProps) {
         ) : null}
         <code className="ml-auto truncate font-mono text-[10.5px] text-(--text-secondary)">{field.name}</code>
       </div>
-      {renderControl(kind, { ...props, id, title })}
+      {renderControl(kind, { ...props, descriptionId, id, title })}
+      {field.description ? (
+        <p className="m-0 text-[11px] leading-4 text-(--text-secondary)" id={descriptionId}>{field.description}</p>
+      ) : null}
     </div>
   );
 }
 
-type ControlProps = FieldProps & { id: string; title: string };
+type ControlProps = PageFieldInputProps & { descriptionId: string | undefined; id: string; title: string };
 
 function renderControl(kind: ReturnType<typeof pageFieldKind>, props: ControlProps) {
   switch (kind) {
@@ -275,6 +293,8 @@ function renderControl(kind: ReturnType<typeof pageFieldKind>, props: ControlPro
       return <DateControl {...props} />;
     case "image":
       return <ImageControl {...props} />;
+    case "images":
+      return <ImagesControl {...props} />;
     default:
       return <TextControl {...props} multiline={kind === "textarea"} />;
   }
@@ -285,7 +305,11 @@ function emptied(field: PageField, text: string) {
   return text === "" && !field.required ? undefined : text;
 }
 
-function TextControl({ field, id, label, multiline, onChange, suggestions, value }: ControlProps & { multiline: boolean }) {
+function describedBy(...ids: Array<string | undefined>) {
+  return ids.filter(Boolean).join(" ") || undefined;
+}
+
+function TextControl({ descriptionId, field, id, label, multiline, onChange, suggestions, value }: ControlProps & { multiline: boolean }) {
   const { draft, edit, onBlur } = useDraft(typeof value === "string" || typeof value === "number" ? String(value) : "");
   const limit = pageFieldCharLimit(field);
   const counterId = limit ? `${id}-count` : undefined;
@@ -300,7 +324,7 @@ function TextControl({ field, id, label, multiline, onChange, suggestions, value
     <>
       {multiline ? (
         <textarea
-          aria-describedby={counterId}
+          aria-describedby={describedBy(counterId, descriptionId)}
           className={textareaClassName}
           id={id}
           rows={3}
@@ -310,7 +334,7 @@ function TextControl({ field, id, label, multiline, onChange, suggestions, value
         />
       ) : (
         <TextInput
-          aria-describedby={counterId}
+          aria-describedby={describedBy(counterId, descriptionId)}
           id={id}
           list={listId}
           value={draft}
@@ -338,15 +362,18 @@ function TextControl({ field, id, label, multiline, onChange, suggestions, value
   );
 }
 
-function BooleanControl({ field, onChange, title, value }: ControlProps) {
+function BooleanControl({ descriptionId, field, onChange, title, value }: ControlProps) {
   const checked = typeof value === "boolean" ? value : field.default === true;
-  return <Switch checked={checked} label={title} onCheckedChange={(next) => onChange(next)} />;
+  return (
+    <Switch aria-describedby={descriptionId} checked={checked} label={title} onCheckedChange={(next) => onChange(next)} />
+  );
 }
 
-function NumberControl({ id, onChange, value }: ControlProps) {
+function NumberControl({ descriptionId, id, onChange, value }: ControlProps) {
   const { draft, edit, onBlur } = useDraft(value === undefined || value === null ? "" : String(value));
   return (
     <TextInput
+      aria-describedby={descriptionId}
       id={id}
       inputMode="decimal"
       type="number"
@@ -362,9 +389,10 @@ function NumberControl({ id, onChange, value }: ControlProps) {
   );
 }
 
-function DateControl({ field, id, onChange, value }: ControlProps) {
+function DateControl({ descriptionId, field, id, onChange, value }: ControlProps) {
   return (
     <TextInput
+      aria-describedby={descriptionId}
       id={id}
       type="date"
       value={datePart(value)}
@@ -380,54 +408,81 @@ function DateControl({ field, id, onChange, value }: ControlProps) {
   );
 }
 
-function ImageControl({ documentPath, field, id, label, onChange, pages, value }: ControlProps) {
-  const src = typeof value === "string" ? value : "";
-  const { draft, edit, onBlur } = useDraft(src);
-  const [broken, setBroken] = useState(false);
-  useEffect(() => setBroken(false), [src]);
+/** The picker, drop and paste store images in the page's folder; without a page, only text. */
+function imageFieldTools({ documentPath, label, pages }: ControlProps) {
+  const tools = {
+    chooseLabel: label("app.cowmark.pageDetailsChooseImage"),
+    placeholder: label("app.cowmark.imagePlaceholder"),
+    removeLabel: label("app.cowmark.pageDetailsRemoveImage"),
+  };
+  if (!pages || !documentPath) return tools;
+  return {
+    ...tools,
+    pick: () => pages.pickImage(documentPath),
+    resolveSrc: (src: string) => pages.resolveImage(documentPath, src),
+    save: (file: File) => pages.importImage(documentPath, file),
+  };
+}
+
+function ImageControl(props: ControlProps) {
+  const { descriptionId, field, id, onChange, value } = props;
+  return (
+    <ImageField
+      {...imageFieldTools(props)}
+      aria-describedby={descriptionId}
+      id={id}
+      value={typeof value === "string" ? value : ""}
+      onChange={(src) => onChange(emptied(field, src))}
+      onClear={() => onChange(field.required ? "" : undefined)}
+    />
+  );
+}
+
+/** A `list of string` of images: one image control per entry, with add and remove. */
+function ImagesControl(props: ControlProps) {
+  const { descriptionId, id, label, onChange, title, value } = props;
+  const items = Array.isArray(value) ? value.map((item) => (typeof item === "string" ? item : "")) : [];
+  const tools = imageFieldTools(props);
+  const write = (next: string[]) => onChange(next.length > 0 ? next : undefined);
+  const [added, setAdded] = useState<number | null>(null);
+  useEffect(() => {
+    if (added === null) return;
+    document.getElementById(`${id}-${added}`)?.focus();
+    setAdded(null);
+  }, [added, id]);
 
   return (
-    <div className="grid gap-1.5">
-      {src && !broken ? (
-        <img
-          alt=""
-          className="max-h-40 w-full rounded-md border border-(--border-default) bg-(--bg-secondary) object-contain"
-          src={pages.resolveImage(documentPath, src)}
-          onError={() => setBroken(true)}
-        />
-      ) : null}
-      <div className="flex items-center gap-1">
-        <TextInput
-          className="min-w-0 flex-1"
-          id={id}
-          spellCheck={false}
-          value={draft}
-          onBlur={onBlur}
-          onChange={(event) => {
-            edit(event.currentTarget.value);
-            onChange(emptied(field, event.currentTarget.value));
-          }}
-        />
-        {src ? (
+    <div aria-describedby={descriptionId} aria-labelledby={`${id}-label`} className="grid gap-2" role="group">
+      {items.map((item, index) => (
+        <div className="flex items-start gap-1" key={index}>
+          <div className="min-w-0 flex-1">
+            <ImageField
+              {...tools}
+              aria-label={`${title} ${index + 1}`}
+              id={`${id}-${index}`}
+              value={item}
+              onChange={(src) => write(items.map((current, at) => (at === index ? src : current)))}
+            />
+          </div>
           <IconButton
-            label={label("app.cowmark.pageDetailsRemoveImage")}
+            label={`${label("app.cowmark.pageDetailsRemoveImage")}: ${title} ${index + 1}`}
             size="icon-sm"
-            onClick={() => onChange(field.required ? "" : undefined)}
+            onClick={() => write(items.filter((_, at) => at !== index))}
           >
             <X aria-hidden="true" size={13} />
           </IconButton>
-        ) : null}
-      </div>
+        </div>
+      ))}
       <Button
         className="justify-self-start"
         size="sm"
-        onClick={async () => {
-          const picked = await pages.pickImage(documentPath);
-          if (picked) onChange(picked);
+        onClick={() => {
+          write([...items, ""]);
+          setAdded(items.length);
         }}
       >
-        <ImagePlus aria-hidden="true" size={13} />
-        {label("app.cowmark.pageDetailsChooseImage")}
+        <Plus aria-hidden="true" size={13} />
+        {label("app.cowmark.imageAdd")}
       </Button>
     </div>
   );

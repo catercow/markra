@@ -15,6 +15,7 @@ import {
 } from "./SettingsControls";
 import type { SettingsTranslate } from "./translate";
 import { FileScanningSettings } from "./FileScanningSettings";
+import { editionAppName } from "../../lib/cowmark-edition";
 
 function LanguageSelect({
   language,
@@ -327,7 +328,7 @@ export function GeneralSettings({
         <SettingsSection label={translate("settings.sections.updates")}>
           <SettingsRow
             title={translate("settings.update.currentVersion")}
-            description={`Markra ${appVersion}`}
+            description={`${editionAppName()} ${appVersion}`}
           />
           <SettingsRow
             title={translate("settings.update.autoCheck")}

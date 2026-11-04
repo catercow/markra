@@ -14,6 +14,8 @@ import { t, type AppLanguage, type MdcComponentSchema, type MdcSchema } from "@m
 import { Badge, Button, IconButton, Select, Switch, TextInput } from "@markra/ui";
 import { ArrowDown, ArrowUp, ChevronRight, Plus, Trash2, TriangleAlert, X } from "lucide-react";
 import {
+  createContext,
+  useContext,
   useEffect,
   useId,
   useLayoutEffect,
@@ -23,11 +25,20 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import { useCowMarkPagesContext } from "../hooks/useCowMarkPages";
+import { ImageField, type ImageFieldProps } from "./ImageField";
 
 export interface MdcPropsPanelProps {
+  /** The page being edited; CowMark stores images for its content pages in their image folder. */
+  documentPath?: string | null;
   language: AppLanguage;
   schema: MdcSchema | null | undefined;
 }
+
+type ImageTools = Pick<ImageFieldProps, "pick" | "resolveSrc" | "save">;
+
+/** Set in CowMark for a content page; elsewhere image props are plain text boxes. */
+const ImageToolsContext = createContext<ImageTools | null>(null);
 
 type Label = (key: string) => string;
 type ChangeValue = (value: unknown) => unknown;
@@ -47,11 +58,24 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * the window rather than anchored to the card: the form can be taller than the viewport (FAQ and
  * pricing lists), and it must not move while the card it edits reflows under every keystroke.
  */
-export function MdcPropsPanel({ language, schema }: MdcPropsPanelProps) {
+export function MdcPropsPanel({ documentPath, language, schema }: MdcPropsPanelProps) {
   const editor = useMarkraMdcPropsEditor();
+  const pages = useCowMarkPagesContext();
+  const imageTools = useMemo<ImageTools | null>(() => {
+    if (!pages || !documentPath || !pages.imageFolder(documentPath)) return null;
+    return {
+      pick: () => pages.pickImage(documentPath),
+      resolveSrc: (src) => pages.resolveImage(documentPath, src),
+      save: (file) => pages.importImage(documentPath, file),
+    };
+  }, [documentPath, pages]);
   if (!editor.block || !editor.text) return null;
 
-  return <MdcPropsPanelBody key={editor.block.open.from} language={language} schema={schema} />;
+  return (
+    <ImageToolsContext.Provider value={imageTools}>
+      <MdcPropsPanelBody key={editor.block.open.from} language={language} schema={schema} />
+    </ImageToolsContext.Provider>
+  );
 }
 
 function MdcPropsPanelBody({ language, schema }: MdcPropsPanelProps) {
@@ -267,7 +291,7 @@ function effectiveKind(prop: EditorMdcPropSchema, value: unknown) {
   if (value === undefined) return kind;
   if (kind === "string-list" && !(Array.isArray(value) && value.every((item) => typeof item === "string"))) return "json";
   if (kind === "object-list" && !(Array.isArray(value) && value.every(isRecord))) return "json";
-  if ((kind === "text" || kind === "textarea") && typeof value !== "string" && typeof value !== "number") return "json";
+  if ((kind === "text" || kind === "textarea" || kind === "image") && typeof value !== "string" && typeof value !== "number") return "json";
   return kind;
 }
 
@@ -282,6 +306,8 @@ function renderControl(kind: ReturnType<typeof fieldKind>, props: ControlProps) 
     case "text":
     case "textarea":
       return <TextControl {...props} multiline={kind === "textarea"} />;
+    case "image":
+      return <ImageControl {...props} />;
     case "number":
       return <NumberControl {...props} />;
     case "boolean":
@@ -346,6 +372,29 @@ function TextControl({ descriptionId, id, label, multiline, onChange, prop, topL
     />
   ) : (
     <TextInput {...shared} onChange={(event) => commit(event.currentTarget.value)} />
+  );
+}
+
+/** An image prop: the picker, drop and paste in CowMark; a text box anywhere else. */
+function ImageControl(props: ControlProps) {
+  const tools = useContext(ImageToolsContext);
+  const { descriptionId, id, label, onChange, prop, topLevel, value } = props;
+  if (!tools) return <TextControl {...props} multiline={false} />;
+  // As TextControl: an emptied optional prop reverts to its default; a required item field keeps "".
+  const write = (next: string) => onChange(next === "" && (topLevel || !prop.required) ? undefined : next);
+
+  return (
+    <ImageField
+      {...tools}
+      aria-describedby={descriptionId}
+      chooseLabel={label("app.cowmark.pageDetailsChooseImage")}
+      id={id}
+      placeholder={label("app.cowmark.imagePlaceholder")}
+      removeLabel={label("app.cowmark.pageDetailsRemoveImage")}
+      value={value === undefined ? "" : String(value)}
+      onChange={write}
+      onClear={() => write("")}
+    />
   );
 }
 

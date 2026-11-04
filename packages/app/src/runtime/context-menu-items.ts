@@ -361,12 +361,15 @@ export function createEditorContextMenuEntries(
       shortcutAccelerator(options.markdownShortcuts, "strikethrough"),
       handlers.formatStrikethrough
     ),
-    contextMenuItem(
-      editorId("inline-code"),
-      label("menu.inlineCode"),
-      shortcutAccelerator(options.markdownShortcuts, "inlineCode"),
-      handlers.formatInlineCode
-    ),
+    // Commands an edition hides have no handler and are left out rather than disabled.
+    ...(handlers.formatInlineCode
+      ? [contextMenuItem(
+        editorId("inline-code"),
+        label("menu.inlineCode"),
+        shortcutAccelerator(options.markdownShortcuts, "inlineCode"),
+        handlers.formatInlineCode
+      )]
+      : []),
     contextMenuSeparator(),
     contextMenuItem(editorId("paragraph"), label("menu.paragraph"), shortcutAccelerator(options.markdownShortcuts, "paragraph"), handlers.formatParagraph),
     contextMenuItem(editorId("heading-1"), label("menu.heading1"), shortcutAccelerator(options.markdownShortcuts, "heading1"), handlers.formatHeading1),
@@ -376,7 +379,9 @@ export function createEditorContextMenuEntries(
     contextMenuItem(editorId("bullet-list"), label("menu.bulletList"), shortcutAccelerator(options.markdownShortcuts, "bulletList"), handlers.formatBulletList),
     contextMenuItem(editorId("ordered-list"), label("menu.orderedList"), shortcutAccelerator(options.markdownShortcuts, "orderedList"), handlers.formatOrderedList),
     contextMenuItem(editorId("quote"), label("menu.quote"), shortcutAccelerator(options.markdownShortcuts, "quote"), handlers.formatQuote),
-    contextMenuItem(editorId("code-block"), label("menu.codeBlock"), shortcutAccelerator(options.markdownShortcuts, "codeBlock"), handlers.formatCodeBlock)
+    ...(handlers.formatCodeBlock
+      ? [contextMenuItem(editorId("code-block"), label("menu.codeBlock"), shortcutAccelerator(options.markdownShortcuts, "codeBlock"), handlers.formatCodeBlock)]
+      : [])
   ];
   const exportMenu = contextMenuSubmenu(editorId("export"), label("menu.export"), [
     contextMenuItem(editorId("export-pdf"), label("menu.exportPdf"), "CmdOrCtrl+Alt+P", handlers.exportPdf),
@@ -403,7 +408,9 @@ export function createEditorContextMenuEntries(
     contextMenuItem(editorId("link"), label("menu.link"), shortcutAccelerator(options.markdownShortcuts, "link"), handlers.insertLink),
     contextMenuItem(editorId("image"), label("menu.image"), shortcutAccelerator(options.markdownShortcuts, "image"), handlers.insertImage),
     contextMenuItem(editorId("import-local-images"), label("menu.importLocalImages"), undefined, handlers.importLocalImages),
-    contextMenuItem(editorId("import-local-files"), label("menu.importLocalFiles"), undefined, handlers.importLocalFiles),
+    ...(handlers.importLocalFiles
+      ? [contextMenuItem(editorId("import-local-files"), label("menu.importLocalFiles"), undefined, handlers.importLocalFiles)]
+      : []),
     contextMenuItem(editorId("table"), label("menu.table"), shortcutAccelerator(options.markdownShortcuts, "table"), handlers.insertTable)
   ];
 

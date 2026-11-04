@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use tauri::{
     menu::{
-        AboutMetadata, Menu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, Submenu,
-        SubmenuBuilder,
+        AboutMetadata, IsMenuItem, Menu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem,
+        Submenu, SubmenuBuilder,
     },
     AppHandle, Emitter, Manager,
 };
@@ -23,6 +23,30 @@ const CHECK_FOR_UPDATES_COMMAND: &str = "checkForUpdates";
 const EDIT_UNDO_COMMAND: &str = "editUndo";
 const EDIT_REDO_COMMAND: &str = "editRedo";
 const MARKRA_GITHUB_URL: &str = "https://github.com/markrahq/markra";
+const COWMARK_GITHUB_URL: &str = "https://github.com/catercow/markra";
+const COWMARK_IDENTIFIER: &str = "com.catercow.cowmark";
+const EXPORT_SUBMENU_COMMAND: &str = "export";
+/// Menu items CowMark leaves out: other files and folders, export, sync, AI, the updater (its
+/// releases have no update endpoint) and editing modes its editors don't use. Keep in step with
+/// `cowmarkHidden.menuCommands` in packages/app/src/lib/cowmark-edition.ts.
+const COWMARK_HIDDEN_MENU_COMMANDS: &[&str] = &[
+    NEW_DOCUMENT_COMMAND,
+    "openDocument",
+    OPEN_RECENT_FILE_COMMAND,
+    "openFolder",
+    "saveDocumentAs",
+    "syncNow",
+    EXPORT_SUBMENU_COMMAND,
+    CHECK_FOR_UPDATES_COMMAND,
+    "formatInlineCode",
+    "formatCodeBlock",
+    "importLocalFiles",
+    "toggleAiAgent",
+    "toggleAiCommand",
+    "toggleAllFolds",
+    "toggleReadOnlyMode",
+    "toggleSourceMode",
+];
 const OPEN_RECENT_FILE_SUBMENU_ID: &str = "markra:file:open-recent";
 const EMPTY_OPEN_RECENT_FILE_COMMAND: &str = "markra:file:open-recent:empty";
 
@@ -313,13 +337,59 @@ fn app_menu_item_without_accelerator<R: tauri::Runtime, M: Manager<R>>(
     MenuItemBuilder::with_id(id, text).build(manager)
 }
 
-fn application_about_metadata() -> AboutMetadata<'static> {
+/// CowMark builds (`com.catercow.cowmark`, and `.dev` for local runs) hide what its editors don't use.
+fn is_cowmark_identifier(identifier: &str) -> bool {
+    identifier
+        .strip_prefix(COWMARK_IDENTIFIER)
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
+}
+
+fn menu_command_visible(cowmark: bool, command: &str) -> bool {
+    !cowmark || !COWMARK_HIDDEN_MENU_COMMANDS.contains(&command)
+}
+
+fn visible_menu_items<'a, R: tauri::Runtime>(
+    cowmark: bool,
+    items: &[(&str, &'a dyn IsMenuItem<R>)],
+) -> Vec<&'a dyn IsMenuItem<R>> {
+    items
+        .iter()
+        .filter(|(command, _)| menu_command_visible(cowmark, command))
+        .map(|(_, item)| *item)
+        .collect()
+}
+
+/// Menu labels name the app ("Quit Markra"); CowMark builds say CowMark in every language.
+fn edition_label(cowmark: bool, label: &str) -> String {
+    if cowmark {
+        label.replace("Markra", "CowMark")
+    } else {
+        label.to_string()
+    }
+}
+
+fn application_name(cowmark: bool) -> &'static str {
+    if cowmark {
+        "CowMark"
+    } else {
+        "Markra"
+    }
+}
+
+fn application_about_metadata(identifier: &str) -> AboutMetadata<'static> {
+    let cowmark = is_cowmark_identifier(identifier);
+    let github_url = if cowmark {
+        COWMARK_GITHUB_URL
+    } else {
+        MARKRA_GITHUB_URL
+    };
+
     AboutMetadata {
-        name: Some("Markra".into()),
+        name: Some(application_name(cowmark).into()),
         version: Some(env!("CARGO_PKG_VERSION").into()),
-        website: Some(MARKRA_GITHUB_URL.into()),
+        website: Some(github_url.into()),
         website_label: Some("GitHub".into()),
-        credits: Some(format!("GitHub: {MARKRA_GITHUB_URL}")),
+        credits: Some(format!("GitHub: {github_url}")),
         ..Default::default()
     }
 }
@@ -404,7 +474,10 @@ fn show_native_app_about_for_window<R: tauri::Runtime>(
     window: &tauri::Window<R>,
 ) -> Result<(), String> {
     let hwnd = window.hwnd().map_err(|error| error.to_string())?.0 as isize;
-    show_windows_native_about_dialog(hwnd, application_about_metadata());
+    show_windows_native_about_dialog(
+        hwnd,
+        application_about_metadata(&window.app_handle().config().identifier),
+    );
     Ok(())
 }
 
@@ -419,7 +492,7 @@ fn show_native_app_about_for_window<R: tauri::Runtime>(
     // the platform-native toolkit (GTK on Linux).
     use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
-    let metadata = application_about_metadata();
+    let metadata = application_about_metadata(&window.app_handle().config().identifier);
     let title = native_about_dialog_title(&metadata);
     let message = native_about_dialog_message(&metadata);
     let app_handle = window.app_handle().clone();
@@ -465,17 +538,25 @@ fn create_markra_app_submenu<R: tauri::Runtime>(
     )?;
     let check_updates =
         app_menu_item_without_accelerator(app, CHECK_FOR_UPDATES_COMMAND, labels.check_updates)?;
+    let identifier = &app.config().identifier;
+    let cowmark = is_cowmark_identifier(identifier);
 
-    SubmenuBuilder::with_id(app, "markra:app", "Markra")
-        .about(Some(application_about_metadata()))
+    SubmenuBuilder::with_id(app, "markra:app", application_name(cowmark))
+        .about(Some(application_about_metadata(identifier)))
         .separator()
-        .items(&[&settings, &check_updates])
+        .items(&visible_menu_items(
+            cowmark,
+            &[
+                (SETTINGS_WINDOW_COMMAND, &settings),
+                (CHECK_FOR_UPDATES_COMMAND, &check_updates),
+            ],
+        ))
         .separator()
-        .hide_with_text(labels.hide)
+        .hide_with_text(edition_label(cowmark, labels.hide))
         .hide_others_with_text(labels.hide_others)
         .show_all_with_text(labels.show_all)
         .separator()
-        .quit_with_text(labels.quit)
+        .quit_with_text(edition_label(cowmark, labels.quit))
         .build()
 }
 
@@ -950,21 +1031,35 @@ fn create_application_menu_for_language<R: tauri::Runtime>(
         app_menu_item_without_accelerator(app, "toggleFullscreen", labels.fullscreen)?;
 
     let app_menu = create_markra_app_submenu(app, labels)?;
+    let cowmark = is_cowmark_identifier(&app.config().identifier);
 
     let file_menu = SubmenuBuilder::with_id(app, "markra:file", labels.file)
-        .items(&[
-            &new,
-            &open,
-            &open_recent_files,
-            &open_folder,
-            &quick_open,
-            &close,
-        ])
+        .items(&visible_menu_items(
+            cowmark,
+            &[
+                (NEW_DOCUMENT_COMMAND, &new),
+                ("openDocument", &open),
+                (OPEN_RECENT_FILE_COMMAND, &open_recent_files),
+                ("openFolder", &open_folder),
+                ("openQuickOpen", &quick_open),
+                ("closeDocument", &close),
+            ],
+        ))
         .separator()
-        .items(&[&save, &save_as, &sync_now])
-        .separator()
-        .items(&[&export_menu])
-        .build()?;
+        .items(&visible_menu_items(
+            cowmark,
+            &[
+                ("saveDocument", &save),
+                ("saveDocumentAs", &save_as),
+                ("syncNow", &sync_now),
+            ],
+        ));
+    let file_menu = if menu_command_visible(cowmark, EXPORT_SUBMENU_COMMAND) {
+        file_menu.separator().items(&[&export_menu])
+    } else {
+        file_menu
+    }
+    .build()?;
 
     let edit_menu = create_edit_submenu(
         app,
@@ -976,19 +1071,38 @@ fn create_application_menu_for_language<R: tauri::Runtime>(
     )?;
 
     let format_menu = SubmenuBuilder::with_id(app, "markra:format", labels.format)
-        .items(&[&bold, &italic, &strikethrough, &inline_code])
+        .items(&visible_menu_items(
+            cowmark,
+            &[
+                ("formatBold", &bold),
+                ("formatItalic", &italic),
+                ("formatStrikethrough", &strikethrough),
+                ("formatInlineCode", &inline_code),
+            ],
+        ))
         .separator()
         .items(&[&paragraph, &heading_1, &heading_2, &heading_3])
         .separator()
-        .items(&[&bullet_list, &ordered_list, &quote, &code_block])
+        .items(&visible_menu_items(
+            cowmark,
+            &[
+                ("formatBulletList", &bullet_list),
+                ("formatOrderedList", &ordered_list),
+                ("formatQuote", &quote),
+                ("formatCodeBlock", &code_block),
+            ],
+        ))
         .separator()
-        .items(&[
-            &link,
-            &image,
-            &import_local_images,
-            &import_local_files,
-            &table,
-        ])
+        .items(&visible_menu_items(
+            cowmark,
+            &[
+                ("insertLink", &link),
+                ("insertImage", &image),
+                ("importLocalImages", &import_local_images),
+                ("importLocalFiles", &import_local_files),
+                ("insertTable", &table),
+            ],
+        ))
         .build()?;
 
     let view_menu_builder = SubmenuBuilder::with_id(app, "markra:view", labels.view);
@@ -1001,14 +1115,17 @@ fn create_application_menu_for_language<R: tauri::Runtime>(
     };
     let view_menu = view_menu_builder
         .separator()
-        .items(&[
-            &toggle_file_list,
-            &toggle_markra_ai,
-            &ai_writing_command,
-            &toggle_all_folds,
-            &toggle_read_only_mode,
-            &toggle_source_mode,
-        ])
+        .items(&visible_menu_items(
+            cowmark,
+            &[
+                ("toggleMarkdownFiles", &toggle_file_list),
+                ("toggleAiAgent", &toggle_markra_ai),
+                ("toggleAiCommand", &ai_writing_command),
+                ("toggleAllFolds", &toggle_all_folds),
+                ("toggleReadOnlyMode", &toggle_read_only_mode),
+                ("toggleSourceMode", &toggle_source_mode),
+            ],
+        ))
         .build()?;
 
     MenuBuilder::new(app)
@@ -1244,7 +1361,7 @@ mod tests {
 
     #[test]
     fn about_metadata_includes_version_and_github_link() {
-        let metadata = application_about_metadata();
+        let metadata = application_about_metadata("dev.markra.app");
 
         assert_eq!(metadata.name.as_deref(), Some("Markra"));
         assert_eq!(metadata.version.as_deref(), Some(env!("CARGO_PKG_VERSION")));
@@ -1260,8 +1377,80 @@ mod tests {
     }
 
     #[test]
+    fn cowmark_builds_are_recognized_by_identifier() {
+        assert!(is_cowmark_identifier("com.catercow.cowmark"));
+        assert!(is_cowmark_identifier("com.catercow.cowmark.dev"));
+        assert!(!is_cowmark_identifier("dev.markra.app"));
+        assert!(!is_cowmark_identifier("com.catercow.cowmarkish"));
+    }
+
+    #[test]
+    fn cowmark_about_metadata_names_cowmark_and_its_repository() {
+        let metadata = application_about_metadata("com.catercow.cowmark");
+
+        assert_eq!(metadata.name.as_deref(), Some("CowMark"));
+        assert_eq!(metadata.website.as_deref(), Some(COWMARK_GITHUB_URL));
+        assert_eq!(native_about_dialog_title(&metadata), "About CowMark");
+    }
+
+    #[test]
+    fn cowmark_app_menu_labels_name_cowmark() {
+        let labels = crate::menu_labels::for_language(AppLanguage::En);
+
+        assert_eq!(edition_label(true, labels.quit), "Quit CowMark");
+        assert_eq!(edition_label(false, labels.quit), "Quit Markra");
+    }
+
+    #[test]
+    fn stock_menus_keep_every_command() {
+        for command in COWMARK_HIDDEN_MENU_COMMANDS {
+            assert!(menu_command_visible(false, command), "{command}");
+        }
+    }
+
+    #[test]
+    fn cowmark_menus_leave_out_unused_commands() {
+        for command in [
+            "newDocument",
+            "openDocument",
+            "openRecentFile",
+            "openFolder",
+            "saveDocumentAs",
+            "syncNow",
+            "export",
+            "checkForUpdates",
+            "formatInlineCode",
+            "formatCodeBlock",
+            "importLocalFiles",
+            "toggleAiAgent",
+            "toggleAiCommand",
+            "toggleAllFolds",
+            "toggleReadOnlyMode",
+            "toggleSourceMode",
+        ] {
+            assert!(!menu_command_visible(true, command), "{command}");
+        }
+        for command in [
+            "openSettings",
+            "openQuickOpen",
+            "closeDocument",
+            "saveDocument",
+            "formatBold",
+            "formatHeading3",
+            "formatQuote",
+            "insertLink",
+            "insertImage",
+            "importLocalImages",
+            "insertTable",
+            "toggleMarkdownFiles",
+        ] {
+            assert!(menu_command_visible(true, command), "{command}");
+        }
+    }
+
+    #[test]
     fn native_about_dialog_uses_application_metadata() {
-        let metadata = application_about_metadata();
+        let metadata = application_about_metadata("dev.markra.app");
 
         assert_eq!(native_about_dialog_title(&metadata), "About Markra");
 

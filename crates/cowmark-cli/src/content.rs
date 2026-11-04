@@ -231,7 +231,15 @@ fn find_collection(schema: &SchemaTexts, name: &str) -> Result<Value, String> {
 const FRONT_MATTER_NOTES: &str = "Front matter is YAML between `---` lines at the top of the file. \
 Required fields must be present and non-empty. Dates are strings in YYYY-MM-DD form. \
 Keep titles under 60 characters and descriptions under 160 for search results. \
-Image fields hold a site path starting with `/`, e.g. `/blog/my-post/photo.jpg` for `public/blog/my-post/photo.jpg` (see add_image).";
+Image fields (`format: \"image\"`; a `list of string` with it is a list of images) hold a site path starting with `/`, \
+e.g. `/blog/my-post/photo.jpg` for `public/blog/my-post/photo.jpg` (see add_image). \
+A field's `description` says what it is for. A collection with `creatable: false` is a fixed set of pages: edit them, don't add any. \
+`slugExample` is an existing file name showing how pages are named.";
+
+/// Whether new pages may be added to the collection (`creatable`, true when absent).
+fn creatable(collection: &Value) -> bool {
+    collection.get("creatable").and_then(Value::as_bool) != Some(false)
+}
 
 /// A collection's front matter fields, or every collection without `name`.
 pub fn get_collection_schema(schema: &SchemaTexts, name: Option<&str>) -> Result<Value, String> {
@@ -247,11 +255,14 @@ pub fn get_collection_schema(schema: &SchemaTexts, name: Option<&str>) -> Result
             let list: Vec<Value> = collections(schema)?
                 .iter()
                 .map(|collection| {
-                    json!({
-                        "name": collection.get("name"),
-                        "folder": collection.get("folder"),
-                        "url": collection.get("url"),
-                    })
+                    let mut summary = Map::new();
+                    for key in ["name", "label", "description", "folder", "url", "slugExample"] {
+                        if let Some(value) = collection.get(key).filter(|value| !value.is_null()) {
+                            summary.insert(key.into(), value.clone());
+                        }
+                    }
+                    summary.insert("creatable".into(), creatable(collection).into());
+                    Value::Object(summary)
                 })
                 .collect();
             Ok(json!({ "collections": list, "notes": FRONT_MATTER_NOTES }))
@@ -363,9 +374,20 @@ fn field_is_date(name: &str) -> bool {
     name.ends_with("_at") || name.ends_with("_on") || name == "date"
 }
 
-/// Creates `<collection folder>/<slug>.md` with the title, the collection's
-/// other required fields (dates set to today, the rest empty unless `fields`
-/// gives them), any extra `fields`, and `body`.
+fn is_empty_value(value: &Value) -> bool {
+    match value {
+        Value::Null => true,
+        Value::String(text) => text.trim().is_empty(),
+        Value::Array(items) => items.is_empty(),
+        _ => false,
+    }
+}
+
+/// Creates `<collection folder>/<slug>.md` with the title, the given `fields`
+/// (empty ones left out), and `body`, as the app's New page does: required
+/// fields without a default that aren't given are dates (set to today) and
+/// switches (off); the rest are left out and listed in `fieldsToFill`.
+/// Collections marked `creatable: false` are refused.
 pub fn new_page(
     root: &Path,
     schema: &SchemaTexts,
@@ -380,6 +402,10 @@ pub fn new_page(
         return Err("`title` is empty".into());
     }
     let collection = find_collection(schema, collection)?;
+    if !creatable(&collection) {
+        let name = collection.get("name").and_then(Value::as_str).unwrap_or_default();
+        return Err(format!("`{name}` is a fixed set of pages; edit the existing ones instead of adding one"));
+    }
     let folder = collection
         .get("folder")
         .and_then(Value::as_str)
@@ -391,8 +417,10 @@ pub fn new_page(
     }
     let path = format!("{folder}/{slug}.md");
 
-    let given = fields.cloned().unwrap_or_default();
+    let mut given = fields.cloned().unwrap_or_default();
+    given.retain(|_, value| !is_empty_value(value));
     let mut lines: Vec<(String, Value)> = vec![("title".into(), Value::String(title.into()))];
+    let mut to_fill: Vec<String> = Vec::new();
     let schema_fields = collection
         .get("fields")
         .and_then(Value::as_array)
@@ -406,20 +434,22 @@ pub fn new_page(
             continue;
         }
         let required = field.get("required").and_then(Value::as_bool).unwrap_or(false);
+        let has_default = field.get("default").is_some_and(|default| !default.is_null());
         let value = if let Some(value) = given.get(name) {
             value.clone()
-        } else if !required {
+        } else if !required || has_default {
             continue;
         } else {
             let kind = field.get("type").and_then(Value::as_str).unwrap_or_default();
+            let image = field.get("format").and_then(Value::as_str) == Some("image");
             match kind {
-                "boolean" => Value::Bool(field.get("default").and_then(Value::as_bool).unwrap_or(false)),
-                "string" if field_is_date(name) => Value::String(today()),
-                "string" => Value::String(String::new()),
-                _ => match field.get("default") {
-                    Some(default) => default.clone(),
-                    None => continue,
-                },
+                "boolean" => Value::Bool(false),
+                "date" => Value::String(today()),
+                "string" if !image && field_is_date(name) => Value::String(today()),
+                _ => {
+                    to_fill.push(name.into());
+                    continue;
+                }
             }
         };
         lines.push((name.into(), value));
@@ -444,12 +474,7 @@ pub fn new_page(
         .get("url")
         .and_then(Value::as_str)
         .map(|url| page_url(url, &slug));
-    let empty: Vec<&str> = lines
-        .iter()
-        .filter(|(_, value)| value.as_str() == Some(""))
-        .map(|(name, _)| name.as_str())
-        .collect();
-    Ok(json!({ "path": path, "url": url, "fieldsToFill": empty, "text": text }))
+    Ok(json!({ "path": path, "url": url, "fieldsToFill": to_fill, "text": text }))
 }
 
 /// The site path of a page from the collection's `url` pattern.
@@ -618,7 +643,14 @@ mod tests {
                 {"name":"description","type":"string","required":true},
                 {"name":"published_at","type":"string","required":true},
                 {"name":"draft","type":"boolean","required":true,"default":true},
-                {"name":"category","type":"\"a\" | \"b\"","required":false}]}]}"#,
+                {"name":"category","type":"\"a\" | \"b\"","required":false}]},
+              {"name":"competitors","label":"Competitor comparison","slugExample":"cater2me","folder":"content/competitors",
+               "url":"/competitors/<file name without .md>","fields":[
+                {"name":"title","type":"string","required":true},
+                {"name":"logo","type":"string","required":true,"format":"image","description":"Logo"},
+                {"name":"contact_cta","type":"boolean","required":true}]},
+              {"name":"fixed","creatable":false,"folder":"content/fixed","url":"/fixed/<file name without .md>",
+               "fields":[{"name":"title","type":"string","required":true}]}]}"#,
         )
         .unwrap();
         std::fs::write(
@@ -664,17 +696,29 @@ mod tests {
         assert_eq!(
             text,
             format!(
-                "---\ntitle: 'Lunch Ideas: 2026'\ndescription: About lunch\npublished_at: '{}'\ndraft: true\ncategory: a\n---\n\nHello\n",
+                "---\ntitle: 'Lunch Ideas: 2026'\ndescription: About lunch\npublished_at: '{}'\ncategory: a\n---\n\nHello\n",
                 today()
             )
         );
         let report = check(&root, &[made["path"].as_str().unwrap().into()]).unwrap();
         assert_eq!(report.errors(), 0, "{}", report.to_text());
 
-        // Without a description the field is left empty for the writer to fill.
-        let made = new_page(&root, &schema(&root), "content/blog", "Second", Some("custom-slug"), None, None).unwrap();
+        // Without a description the key is left out and listed for the writer to fill.
+        let empty: Map<String, Value> = serde_json::from_value(json!({ "description": " ", "category": "" })).unwrap();
+        let made = new_page(&root, &schema(&root), "content/blog", "Second", Some("custom-slug"), Some(&empty), None).unwrap();
         assert_eq!(made["path"], "content/blog/custom-slug.md");
         assert_eq!(made["fieldsToFill"], json!(["description"]));
+        assert_eq!(made["text"], format!("---\ntitle: Second\npublished_at: '{}'\n---\n\n", today()));
+
+        // Image fields are never written empty; switches start off.
+        let made = new_page(&root, &schema(&root), "competitors", "Ezcater", None, None, None).unwrap();
+        assert_eq!(made["fieldsToFill"], json!(["logo"]));
+        assert_eq!(made["text"], "---\ntitle: Ezcater\ncontact_cta: false\n---\n\n");
+        assert!(
+            new_page(&root, &schema(&root), "fixed", "X", None, None, None)
+                .unwrap_err()
+                .contains("fixed set")
+        );
         assert!(
             new_page(&root, &schema(&root), "blog", "Second", Some("custom-slug"), None, None)
                 .unwrap_err()
@@ -748,6 +792,19 @@ mod tests {
             get_collection_schema(&schema(&root), None).unwrap()["collections"][0]["url"],
             "/blog/<file name without .md>"
         );
+        let listed = get_collection_schema(&schema(&root), None).unwrap();
+        assert_eq!(
+            listed["collections"][1],
+            json!({
+                "name": "competitors",
+                "label": "Competitor comparison",
+                "folder": "content/competitors",
+                "url": "/competitors/<file name without .md>",
+                "slugExample": "cater2me",
+                "creatable": true
+            })
+        );
+        assert_eq!(listed["collections"][2]["creatable"], false);
         let _ = std::fs::remove_dir_all(root);
     }
 

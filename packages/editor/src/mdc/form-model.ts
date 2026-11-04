@@ -27,7 +27,8 @@ export interface MdcComponentSchema {
   props: MdcPropSchema[];
 }
 
-export type MdcFieldKind = "text" | "textarea" | "number" | "boolean" | "select" | "string-list" | "object-list" | "json";
+/** `image`: a string the schema marks `format: "image"`; hosts without an image picker edit it as text. */
+export type MdcFieldKind = "text" | "textarea" | "image" | "number" | "boolean" | "select" | "string-list" | "object-list" | "json";
 export type MdcPropSource = "attribute" | "yaml" | "default";
 export type MdcPropPath = Array<string | number>;
 /** A top-level prop name, a path like `items[1].answer`, or a path array like `["items", 1, "answer"]`. */
@@ -97,6 +98,7 @@ export function fieldKind(prop: MdcPropSchema): MdcFieldKind {
   if (type === "boolean") return "boolean";
   if (type === "number") return "number";
   if (type === "string") {
+    if (prop.format === "image") return "image";
     return proseNames.test(prop.name) || proseDescription.test(prop.description ?? "") ? "textarea" : "text";
   }
   if (type === "string[]") return "string-list";

@@ -108,8 +108,26 @@ let previewSiteOverride: string | null | undefined;
 export function catercowPreviewSite(): string | null {
   if (previewSiteOverride !== undefined) return previewSiteOverride;
 
-  const value = String(import.meta.env.VITE_CATERCOW_PREVIEW_SITE ?? "").trim();
+  const value = cowmarkDevSite() ?? String(import.meta.env.VITE_CATERCOW_PREVIEW_SITE ?? "").trim();
   return value || null;
+}
+
+function devEnv(value: unknown) {
+  if (!import.meta.env.DEV) return null;
+  return String(value ?? "").trim() || null;
+}
+
+/**
+ * Local development only (scripts/cowmark-dev.sh): a local site, e.g. http://localhost:4012,
+ * used for the schema and the preview instead of the folder's `preview.json`.
+ */
+export function cowmarkDevSite() {
+  return devEnv(import.meta.env.VITE_COWMARK_DEV_SITE);
+}
+
+/** Local development only: a content checkout opened directly, without signing in. */
+export function cowmarkDevFolder() {
+  return devEnv(import.meta.env.VITE_COWMARK_DEV_FOLDER);
 }
 
 export function setCatercowPreviewSiteForTests(site: string | null | undefined) {

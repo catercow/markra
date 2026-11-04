@@ -11,11 +11,13 @@ import type {
 } from "react";
 import type { NativeMenuHandlers } from "../lib/tauri/menu";
 import {
+  collapseContextMenuEntries,
   contextMenuItem,
   contextMenuSeparator,
   contextMenuSubmenu,
   type ContextMenuEntry
 } from "./ContextMenu";
+import { editionAppName, editionHidden, editionLabel } from "../lib/cowmark-edition";
 import { WindowsWindowControls } from "./WindowsWindowControls";
 import { IconButton, Tooltip } from "@markra/ui";
 import { AppMenuBar, type AppMenuConfig } from "./AppMenuBar";
@@ -92,6 +94,18 @@ const windowsMenuItem = (
   accelerator: string | undefined,
   handler: (() => unknown | Promise<unknown>) | undefined
 ) => contextMenuItem(id, itemLabel, accelerator, handler);
+
+function withoutHiddenWindowsMenuEntries(entries: ContextMenuEntry[], hidden: ReadonlySet<string>): ContextMenuEntry[] {
+  if (hidden.size === 0) return entries;
+
+  return collapseContextMenuEntries(entries.flatMap<ContextMenuEntry>((entry) => {
+    if (entry.kind === "separator") return [entry];
+    if (hidden.has(entry.id)) return [];
+    if (entry.kind === "submenu") return [{ ...entry, entries: withoutHiddenWindowsMenuEntries(entry.entries, hidden) }];
+
+    return [entry];
+  }));
+}
 
 export function WindowsNativeTitleBar({
   aiAgentOpen,
@@ -181,7 +195,7 @@ export function WindowsNativeTitleBar({
   const windowsAppMenus: AppMenuConfig[] = [
     {
       id: "app",
-      label: "Markra",
+      label: editionAppName(),
       triggerClassName: "font-[620] text-(--text-heading)"
     },
     { id: "file", label: label("menu.file"), triggerClassName: "text-(--text-primary)" },
@@ -192,10 +206,12 @@ export function WindowsNativeTitleBar({
   const runToggleWindowMaximized = () => {
     runOptionalWindowsAction(onToggleWindowMaximized);
   };
-  const windowsAppMenuEntries = (menuId: string): ContextMenuEntry[] => {
+  const windowsAppMenuEntries = (menuId: string): ContextMenuEntry[] =>
+    withoutHiddenWindowsMenuEntries(allWindowsAppMenuEntries(menuId), editionHidden().menuCommands);
+  const allWindowsAppMenuEntries = (menuId: string): ContextMenuEntry[] => {
     if (menuId === "app") {
       return [
-        windowsMenuItem("showAbout", label("menu.aboutMarkra"), undefined, onShowAbout),
+        windowsMenuItem("showAbout", editionLabel(label("menu.aboutMarkra")), undefined, onShowAbout),
         contextMenuSeparator(),
         windowsMenuItem("openSettings", label("menu.settings"), "Ctrl+,", onOpenSettings),
         windowsMenuItem("checkForUpdates", label("settings.update.check"), undefined, menuHandlers?.checkForUpdates),
@@ -204,7 +220,7 @@ export function WindowsNativeTitleBar({
         disabledWindowsMenuItem("hideOthers", label("menu.hideOthers")),
         disabledWindowsMenuItem("showAll", label("menu.showAll")),
         contextMenuSeparator(),
-        windowsMenuItem("quit", label("menu.quit"), undefined, onExitApp)
+        windowsMenuItem("quit", editionLabel(label("menu.quit")), undefined, onExitApp)
       ];
     }
 

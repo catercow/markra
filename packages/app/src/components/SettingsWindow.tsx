@@ -34,6 +34,7 @@ import { MacWindowControls } from "./MacWindowControls";
 import { WindowsWindowControls } from "./WindowsWindowControls";
 import { getAppRuntime } from "../runtime";
 import type { SettingsCategory } from "../hooks/useSettingsWindowState";
+import { cowmarkEdition, editionAppName, editionFeatures, editionHidden } from "../lib/cowmark-edition";
 
 export function SettingsWindow() {
   const settingsState = useSettingsWindowState();
@@ -99,10 +100,12 @@ export function SettingsWindow() {
     welcomeReset
   } = settingsState;
   const appRuntime = getAppRuntime();
-  const appFeatures = appRuntime.features;
+  const appFeatures = editionFeatures(appRuntime.features);
+  const editionHides = editionHidden();
   const appLogs = appRuntime.logs;
   useRuntimeLogCapture();
   const hiddenCategories: SettingsCategory[] = [
+    ...editionHides.settingsCategories,
     ...(appFeatures.ai ? [] : (["ai", "providers", "web"] as SettingsCategory[])),
     ...(appFeatures.networkProxy ? [] : (["network"] as SettingsCategory[])),
     ...(appFeatures.export ? [] : (["export"] as SettingsCategory[])),
@@ -200,7 +203,7 @@ export function SettingsWindow() {
             className="relative z-20 flex h-10 items-center px-3 text-[12px] leading-none font-[620] text-(--text-heading)"
             data-tauri-drag-region
           >
-            Markra
+            {editionAppName()}
           </div>
           <div
             className="pointer-events-none absolute top-0 left-1/2 z-10 flex h-10 -translate-x-1/2 items-center justify-center px-6 text-[12px] leading-none font-[620] text-(--text-heading)"
@@ -364,6 +367,8 @@ export function SettingsWindow() {
           {activeSettingsCategory === "editor" ? (
             <EditorSettings
               aiEnabled={appFeatures.ai}
+              hiddenTitlebarActions={editionHides.titlebarActions}
+              mdcToggleVisible={!cowmarkEdition()}
               preferences={editorPreferences}
               s3ImageUploadEnabled={appFeatures.s3ImageUpload}
               systemFontFamilies={systemFontFamilies}
@@ -391,6 +396,8 @@ export function SettingsWindow() {
           {activeSettingsCategory === "keyboardShortcuts" ? (
             <KeyboardShortcutsSettings
               aiEnabled={appFeatures.ai}
+              hiddenActions={editionHides.shortcutActions}
+              hiddenFixedShortcuts={editionHides.fixedShortcuts}
               newDocumentShortcutAvailable={appFeatures.nativeWindowChrome}
               platform={platform}
               preferences={editorPreferences}

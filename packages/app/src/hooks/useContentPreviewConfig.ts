@@ -4,6 +4,7 @@ import {
   parseContentPreviewConfig,
   type ContentPreviewConfig
 } from "../lib/content-preview";
+import { cowmarkDevSite } from "../lib/content-access";
 import { getAppRuntime } from "../runtime";
 
 /**
@@ -26,7 +27,7 @@ export function useContentPreviewConfig(rootPath: string | null): ContentPreview
         .then((text) => {
           if (!active || text === lastText) return;
           lastText = text;
-          setConfig(parseContentPreviewConfig(text));
+          setConfig(parseContentPreviewConfig(text, cowmarkDevSite()));
         });
     };
 
