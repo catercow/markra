@@ -102,7 +102,7 @@ import { catercowPreviewSite, type ManagedContent } from "./lib/content-access";
 import { cowmarkEdition, editionFeatures, editionHidden, withoutHiddenCommands } from "./lib/cowmark-edition";
 import { parseContentPreviewConfig } from "./lib/content-preview";
 import { CowMarkPagesContext, resolveContentImageSrc, useCowMarkPages } from "./hooks/useCowMarkPages";
-import { collectionForDocument, missingRequiredFields, newPageText, publicSitePath } from "./lib/cowmark-pages";
+import { collectionForDocument, folderChain, missingRequiredFields, newPageText, publicSitePath } from "./lib/cowmark-pages";
 import { contentCsvSource, formatContentPage, managedContentPage } from "./lib/content-lint";
 import { promptImageAltText, promptNewPage } from "./components/CowMarkDialogs";
 import { imageDropTargetAttribute, imageFileDropEvent, type ImageFileDropDetail } from "./components/ImageField";
@@ -2713,8 +2713,12 @@ function WorkspaceApp({ managedContent }: { managedContent?: ManagedContent } = 
       const root = cowmarkPages.rootPath.replace(/[\\/]+$/u, "");
       cowmarkPages.requestPageDetails(`${root}/${page.collection.folder}/${page.slug}.md`, text);
     }
+    // The type's folder may not exist yet: a new page type, or a checkout older than the schema.
+    for (const { name, parent } of folderChain(page.collection.folder)) {
+      await createMarkdownTreeFolder(name, parent).catch(() => undefined);
+    }
     await handleCreateMarkdownTreeFile(`${page.slug}.md`, page.collection.folder, text);
-  }, [appLanguage.language, cowmarkPages, document.path, handleCreateMarkdownTreeFile]);
+  }, [appLanguage.language, cowmarkPages, createMarkdownTreeFolder, document.path, handleCreateMarkdownTreeFile]);
   const handleQuickCreateMarkdownTreeFile = useCallback(() => {
     captureActiveDocumentViewState();
     setActiveImageFile(null);

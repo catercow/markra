@@ -208,6 +208,12 @@ export function withDatePart(previous: unknown, date: string) {
 
 // --- New pages -----------------------------------------------------------------------------
 
+/** Each folder of `content/competitors` with its parent, outermost first, to create in turn. */
+export function folderChain(folder: string) {
+  const names = folder.split("/").filter(Boolean);
+  return names.map((name, index) => ({ name, parent: index ? names.slice(0, index).join("/") : null }));
+}
+
 export function slugify(text: string) {
   return text
     .normalize("NFKD")

@@ -4,6 +4,7 @@ import {
   collectionForDocument,
   creatableCollections,
   datePart,
+  folderChain,
   localDate,
   missingRequiredFields,
   newPageFields,
@@ -135,6 +136,13 @@ describe("dates", () => {
 });
 
 describe("new pages", () => {
+  it("lists a page type's folders outermost first, so missing ones can be created", () => {
+    expect(folderChain("content/competitors/")).toEqual([
+      { name: "content", parent: null },
+      { name: "competitors", parent: "content" }
+    ]);
+  });
+
   it("slugifies titles", () => {
     expect(slugify("Papa John's Catering: Get a $100 Gift Card!")).toBe("papa-johns-catering-get-a-100-gift-card");
     expect(slugify("  Café  Déjà vu ")).toBe("cafe-deja-vu");
