@@ -48,7 +48,7 @@ fn temp_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("cm-{name}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
-    dir.canonicalize().unwrap()
+    dunce::canonicalize(&dir).unwrap()
 }
 
 fn git(root: &Path, args: &[&str]) {
@@ -177,11 +177,11 @@ fn every_method_end_to_end() {
 
     // open
     assert_eq!(client.ok("open", json!({ "path": "content/blog/a.md" })), json!({ "path": "content/blog/a.md" }));
-    let absolute = folder.join("content/blog/same.md");
+    let absolute = folder.join("content").join("blog").join("same.md");
     assert_eq!(client.ok("open", json!({ "path": absolute })), json!({ "path": "content/blog/same.md" }));
     assert_eq!(
         ui.take(),
-        vec![json!({ "open": folder.join("content/blog/a.md") }), json!({ "open": absolute })]
+        vec![json!({ "open": folder.join("content").join("blog").join("a.md") }), json!({ "open": absolute })]
     );
     assert_eq!(client.error_code("open", json!({ "path": "../outside.md" })), control::OUTSIDE_FOLDER);
     assert_eq!(client.error_code("open", json!({ "path": "/etc/hosts" })), control::OUTSIDE_FOLDER);

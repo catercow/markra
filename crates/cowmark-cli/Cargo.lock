@@ -255,6 +255,7 @@ dependencies = [
  "base64 0.22.1",
  "cowmark-lint",
  "csv",
+ "dunce",
  "getrandom 0.3.4",
  "interprocess",
  "reqwest",

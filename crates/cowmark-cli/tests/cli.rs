@@ -65,7 +65,7 @@ fn commands_drive_the_running_app() {
     );
     assert_eq!(
         app.ui.take(),
-        vec![json!({ "open": folder.join("content/blog/hello.md") })]
+        vec![json!({ "open": folder.join("content").join("blog").join("hello.md") })]
     );
 
     let (code, out, _) = cowmark(

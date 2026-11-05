@@ -422,10 +422,10 @@ pub fn resolve_in_folder(folder: &Path, path: &str) -> Result<(PathBuf, String),
     if path.trim().is_empty() || path.contains('\0') {
         return Err(rpc_error(INVALID_PARAMS, "empty path"));
     }
-    let folder = folder.canonicalize().map_err(|_| rpc_error(NO_FOLDER, "the content folder is missing"))?;
+    let folder = dunce::canonicalize(folder).map_err(|_| rpc_error(NO_FOLDER, "the content folder is missing"))?;
     let given = Path::new(path);
     let relative = if given.is_absolute() {
-        let absolute = given.canonicalize().unwrap_or_else(|_| given.to_path_buf());
+        let absolute = dunce::canonicalize(given).unwrap_or_else(|_| given.to_path_buf());
         absolute.strip_prefix(&folder).map_err(|_| outside())?.to_path_buf()
     } else {
         given.to_path_buf()
@@ -447,7 +447,7 @@ pub fn resolve_in_folder(folder: &Path, path: &str) -> Result<(PathBuf, String),
     while !existing.exists() {
         existing = existing.parent().ok_or_else(outside)?;
     }
-    let resolved = existing.canonicalize().map_err(|_| outside())?;
+    let resolved = dunce::canonicalize(existing).map_err(|_| outside())?;
     if !resolved.starts_with(&folder) {
         return Err(outside());
     }
@@ -464,7 +464,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("content/blog")).unwrap();
         std::fs::write(root.join("content/blog/a.md"), "a").unwrap();
-        let folder = root.canonicalize().unwrap();
+        let folder = dunce::canonicalize(&root).unwrap();
 
         let (absolute, relative) = resolve_in_folder(&folder, "content/blog/a.md").unwrap();
         assert_eq!(absolute, folder.join("content/blog/a.md"));
