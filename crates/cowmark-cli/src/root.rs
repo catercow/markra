@@ -38,7 +38,8 @@ pub fn is_content_repo(dir: &Path) -> bool {
 /// folder the app remembers.
 pub fn find(flag: Option<&Path>, cwd: Option<&Path>, app: Option<&App>) -> Result<ContentRoot, String> {
     let canonical = |path: &Path, source| {
-        path.canonicalize()
+        // dunce gives plain `C:\...` paths on Windows rather than `\\?\C:\...`, which leaked into output.
+        dunce::canonicalize(path)
             .ok()
             .filter(|path| path.is_dir())
             .map(|path| ContentRoot { path, source })
@@ -136,7 +137,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("cm-cli-root-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        dir.canonicalize().unwrap()
+        dunce::canonicalize(&dir).unwrap()
     }
 
     fn content_repo(name: &str) -> PathBuf {

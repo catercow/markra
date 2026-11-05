@@ -169,7 +169,8 @@ impl Context {
 fn app_folder(ping: &Value) -> Option<PathBuf> {
     ping.get("folder")
         .and_then(Value::as_str)
-        .and_then(|folder| Path::new(folder).canonicalize().ok())
+        // The same canonical form as `root::find`, so the two compare equal on Windows.
+        .and_then(|folder| dunce::canonicalize(folder).ok())
 }
 
 /// `http://localhost:4100/?token=t` → `http://localhost:4100<page>?token=t`.

@@ -658,7 +658,7 @@ mod tests {
             r#"{"components":[{"name":"callout","component":"Callout","group":"Text","purpose":"A box","props":[{"name":"type","type":"string"}]}]}"#,
         )
         .unwrap();
-        root.canonicalize().unwrap()
+        dunce::canonicalize(&root).unwrap()
     }
 
     #[test]

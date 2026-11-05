@@ -19,6 +19,7 @@ base64 = "0.22"
 clap = { version = "4.6", features = ["derive"] }
 cowmark-core = { path = "../cowmark-core" }
 cowmark-lint = { path = "../cowmark-lint" }
+dunce = "1.0.5"
 rmcp = { version = "3.8", default-features = false, features = ["server", "transport-io"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 tokio = { version = "1", features = ["rt", "macros", "io-std"] }
