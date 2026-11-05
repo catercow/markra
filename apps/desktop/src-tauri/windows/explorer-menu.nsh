@@ -1,3 +1,5 @@
+!include "${__FILEDIR__}\cowmark-path.nsh"
+
 !macro MarkraRegisterExplorerMenu OBJECT ARGUMENT
   WriteRegStr SHCTX "Software\Classes\${OBJECT}\shell\Markra.open" "" "Open with Markra"
   WriteRegStr SHCTX "Software\Classes\${OBJECT}\shell\Markra.open" "Icon" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\",0"
@@ -19,9 +21,11 @@
   !insertmacro MarkraRegisterExplorerMenu "Directory\Background" "%V"
   ; Tell Explorer to refresh its cached file-association data.
   System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
+  !insertmacro CowMarkPath add
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
+  !insertmacro CowMarkPath remove
   !insertmacro MarkraUnregisterExplorerMenu "SystemFileAssociations\.txt" "%1"
   !insertmacro MarkraUnregisterExplorerMenu "Directory" "%1"
   !insertmacro MarkraUnregisterExplorerMenu "Directory\Background" "%V"
