@@ -34,7 +34,8 @@ CSV into such a table. `link` props of packages/caterers take a CaterCow search 
 package page URL. write_file stores values in their canonical form (e.g. `$7.25`), so the saved file can differ from \
 what you sent; format_file does the same for a file already on disk.
 3. Run check on the files you changed and fix every error. Warnings (such as missing alt text) should be fixed too.
-4. Optionally open_in_cowmark or preview_link so the person can see the page in the live preview.
+4. Optionally open_in_cowmark or preview_link so the person can see the page in the live preview. preview_link's \
+page renders the unpublished changes, so you can also open it in a browser to check your own work.
 5. Call propose_publish with the changed files and a short message. This does NOT publish: it ticks the files in \
 CowMark's save checklist. Tell the person to review the changes in CowMark and click \"Save to studio\" themselves.
 

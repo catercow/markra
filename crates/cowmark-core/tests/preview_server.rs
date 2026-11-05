@@ -147,6 +147,43 @@ fn serves_pending_changes_and_media() {
 }
 
 #[test]
+fn names_the_draft_of_the_page_a_tab_shows() {
+    let root = temp_root("page");
+    if find_git().is_none() {
+        return;
+    }
+    fs::create_dir_all(root.join("schema")).unwrap();
+    fs::write(
+        root.join("schema/collections.json"),
+        r#"{"collections":[{"name":"blog","folder":"content/blog","url":"/blog/<file name without .md>","fields":[]}]}"#,
+    )
+    .unwrap();
+    git(&root, &["init", "--quiet", "-b", "studio"]);
+    git(&root, &["config", "user.email", "test@example.com"]);
+    git(&root, &["config", "user.name", "Test"]);
+    fs::write(root.join("content/blog/a.md"), "a").unwrap();
+    fs::write(root.join("content/blog/b.md"), "b").unwrap();
+    git(&root, &["add", "."]);
+    git(&root, &["commit", "--quiet", "-m", "base"]);
+    fs::write(root.join("content/blog/a.md"), "a2").unwrap();
+
+    let server = start(&root);
+    let (port, token) = (server.port(), server.token().to_string());
+    let host = format!("localhost:{port}");
+    let pending = |query: &str| -> serde_json::Value {
+        let response = get(port, &format!("/__cowmark/pending?commit=&{query}token={token}"), &host);
+        assert_eq!(response.status, 200);
+        serde_json::from_slice(&response.body).unwrap()
+    };
+    assert_eq!(pending("page=%2Fblog%2Fa&")["page"], "blog/a.md");
+    assert_eq!(pending("page=%2Fblog%2Fa%2F&")["page"], "blog/a.md");
+    // A page without a draft names nothing, so the tab doesn't jump to another changed page.
+    assert!(pending("page=%2Fblog%2Fb&")["page"].is_null());
+    assert!(pending("").get("page").is_none());
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
 fn relays_saved_files_over_server_sent_events() {
     let root = temp_root("sse");
     fs::write(root.join("content/blog/a.md"), "one").unwrap();
