@@ -219,7 +219,7 @@ mod tests {
             r#"{"collections":[{"name":"blog","folder":"content/blog","url":"/blog/<file name without .md>","fields":[{"name":"title","type":"string","required":true}]}]}"#,
         )
         .unwrap();
-        root.canonicalize().unwrap()
+        dunce::canonicalize(&root).unwrap()
     }
 
     #[test]

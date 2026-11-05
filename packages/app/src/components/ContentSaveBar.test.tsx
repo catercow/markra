@@ -292,16 +292,70 @@ describe("ContentSaveBar", () => {
     expect(screen.getByRole("textbox", { name: "What changed" })).toHaveValue("Both");
     expect(access.save).not.toHaveBeenCalled();
   });
-  it("adds CowMark to Claude in one click and says to reopen Claude", async () => {
+  it("adds CowMark to Claude in one click and says to open Claude", async () => {
     mockAccess();
     const claude = mockClaude("missing");
     render(<ContentSaveBar language="en" managed={managed(null)} />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Add to Claude" }));
 
-    expect(await screen.findByText("Added to Claude. Quit and reopen Claude Desktop to use CowMark there.")).toBeInTheDocument();
+    expect(await screen.findByText("Added to Claude. Open Claude Desktop to use CowMark there.")).toBeInTheDocument();
     expect(claude.add).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: "Add to Claude" })).toBeNull();
+  });
+
+  it("says to quit Claude from the tray when Claude is still running", async () => {
+    mockAccess();
+    mockClaude("missing", async () => { throw new Error("claude_running: windows: Claude is still running."); });
+    render(<ContentSaveBar language="en" managed={managed(null)} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add to Claude" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Quit Claude from the system tray (right-click the Claude icon, then choose Quit)");
+    expect(alert).not.toHaveTextContent("claude_running");
+    expect(screen.getByRole("button", { name: "Add to Claude" })).toBeEnabled();
+  });
+
+  it("says to quit Claude with Cmd+Q on macOS", async () => {
+    mockAccess();
+    mockClaude("missing", async () => { throw "claude_running: macos: Claude is still running."; });
+    render(<ContentSaveBar language="en" managed={managed(null)} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add to Claude" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Quit Claude with Cmd+Q, then click Add to Claude again.");
+  });
+
+  it("checks Claude again when the window regains focus, so an erased entry shows the button again", async () => {
+    mockAccess();
+    const claude = mockClaude("added");
+    render(<ContentSaveBar language="en" managed={managed(null)} />);
+    await waitFor(() => expect(claude.status).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("button", { name: /Claude/u })).toBeNull();
+
+    claude.status.mockResolvedValue("missing");
+    fireEvent.focus(window);
+
+    expect(await screen.findByRole("button", { name: "Add to Claude" })).toBeInTheDocument();
+    expect(claude.status).toHaveBeenCalledTimes(2);
+  });
+
+  it("offers the button when Claude's settings can't be read, and keeps a known status", async () => {
+    mockAccess();
+    const claude = mockClaude("added");
+    claude.status.mockRejectedValue(new Error("Claude's settings file couldn't be read"));
+    const { unmount } = render(<ContentSaveBar language="en" managed={managed(null)} />);
+    expect(await screen.findByRole("button", { name: "Add to Claude" })).toBeInTheDocument();
+    unmount();
+
+    const known = mockClaude("added");
+    render(<ContentSaveBar language="en" managed={managed(null)} />);
+    await waitFor(() => expect(known.status).toHaveBeenCalledTimes(1));
+    known.status.mockRejectedValue(new Error("Claude's settings file couldn't be read"));
+    fireEvent.focus(window);
+    await waitFor(() => expect(known.status).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("button", { name: /Claude/u })).toBeNull();
   });
 
   it("offers to update an entry that runs a different cowmark", async () => {

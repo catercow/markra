@@ -257,7 +257,7 @@ fn execute(command: Command, context: &Context, out: &mut dyn Write, err: &mut d
             Ok(0)
         }
         Command::McpConfig => {
-            let exe = std::env::current_exe().and_then(|exe| exe.canonicalize()).map_err(io)?;
+            let exe = std::env::current_exe().and_then(dunce::canonicalize).map_err(io)?;
             writeln!(
                 out,
                 "{}",

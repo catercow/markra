@@ -51,11 +51,24 @@ export function ContentSaveBar({
   const claude = getAppRuntime().files.cowmarkClaude;
   const [claudeStatus, setClaudeStatus] = useState<CowMarkClaudeStatus>("unavailable");
 
+  // Checked again on every window focus: Claude Desktop can drop the entry when it rewrites
+  // its settings, and then the button should come back.
   useEffect(() => {
     if (!claude) return;
     let active = true;
-    claude.status().then((next) => { if (active) setClaudeStatus(next); }, () => {});
-    return () => { active = false; };
+    const load = () => {
+      claude.status().then(
+        (next) => { if (active) setClaudeStatus(next); },
+        // Claude's file couldn't be read. Offer the button anyway; clicking it says why.
+        () => { if (active) setClaudeStatus((current) => (current === "unavailable" ? "missing" : current)); }
+      );
+    };
+    load();
+    window.addEventListener("focus", load);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", load);
+    };
   }, [claude]);
 
   const addToClaude = async () => {
@@ -67,7 +80,14 @@ export function ContentSaveBar({
       setNotice({ tone: "info", text: label("app.cowmark.claudeAdded") });
     } catch (error) {
       const text = error instanceof Error ? error.message : String(error);
-      setNotice({ tone: "error", text: label("app.cowmark.claudeAddFailed").replace("{message}", text) });
+      // Claude Desktop is open and would undo the change, so nothing was written.
+      const running = /^claude_running:\s*(\w+)/u.exec(text);
+      setNotice({
+        tone: "error",
+        text: running
+          ? label(running[1] === "macos" ? "app.cowmark.claudeRunningMac" : "app.cowmark.claudeRunningWindows")
+          : label("app.cowmark.claudeAddFailed").replace("{message}", text)
+      });
     } finally {
       setBusy(null);
     }

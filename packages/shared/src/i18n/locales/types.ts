@@ -747,6 +747,8 @@ export type I18nKey =
   | "app.cowmark.addToClaudeHint"
   | "app.cowmark.claudeAdded"
   | "app.cowmark.claudeAddFailed"
+  | "app.cowmark.claudeRunningWindows"
+  | "app.cowmark.claudeRunningMac"
   | "app.cowmark.browserPreviewPortBusy"
   | "app.cowmark.browserPreviewFailed"
   | "app.cowmark.proposalReady"

@@ -21,6 +21,7 @@ use std::time::Duration;
 use reqwest::Url;
 
 use crate::preview::{self, Poller, PreviewEvent};
+use crate::schema_source::{self, Memo};
 use crate::token;
 
 pub const DEFAULT_PORT: u16 = 4100;
@@ -49,6 +50,8 @@ struct Shared {
     stop: AtomicBool,
     subscribers: Mutex<Vec<Sender<String>>>,
     poller: Poller,
+    /// For finding the file behind the page a browser tab shows.
+    schema_memo: Memo,
 }
 
 pub struct PreviewServer {
@@ -87,6 +90,7 @@ impl PreviewServer {
             stop: AtomicBool::new(false),
             subscribers: Mutex::new(Vec::new()),
             poller: Poller::default(),
+            schema_memo: Memo::default(),
         });
 
         let poll_shared = shared.clone();
@@ -292,7 +296,18 @@ fn handle(shared: &Shared, stream: TcpStream) {
         Some("pending") => {
             let commit = request.param("commit").unwrap_or_default().to_string();
             let pending = preview::pending_changes(&shared.root, &commit);
-            match serde_json::to_vec(&pending) {
+            let mut body = serde_json::to_value(&pending).unwrap_or_default();
+            // `page`: the site path the tab shows. Its draft, if it has one, comes back as `page`
+            // so the tab can re-render it; the frame otherwise keeps the built version.
+            if let (Some(page), Some(object)) = (request.param("page"), body.as_object_mut()) {
+                let has_draft = |file: &str| {
+                    pending.events.iter().any(|event| matches!(event, PreviewEvent::Draft { fs_path, .. } if fs_path == file))
+                };
+                let any_draft = pending.events.iter().any(|event| matches!(event, PreviewEvent::Draft { .. }));
+                let shown = if any_draft { file_for_page(shared, page).filter(|file| has_draft(file)) } else { None };
+                object.insert("page".into(), serde_json::json!(shown));
+            }
+            match serde_json::to_vec(&body) {
                 Ok(body) => respond(&stream, "200 OK", "application/json", "", &body),
                 Err(error) => text(&stream, "500 Internal Server Error", &error.to_string()),
             }
@@ -309,6 +324,25 @@ fn handle(shared: &Shared, stream: TcpStream) {
         Some(_) => text(&stream, "404 Not Found", "Not found."),
         None => page(shared, &stream, &request),
     }
+}
+
+/// The content file, relative to `content/` (`blog/my-post.md`), that the site serves at
+/// `page` (`/blog/my-post`), from the collections' URL patterns. The schema already on disk
+/// (CowMark's cached copy, or the folder's `schema/`) is tried before asking the site.
+fn file_for_page(shared: &Shared, page: &str) -> Option<String> {
+    let page = page.split(['?', '#']).next().unwrap_or(page);
+    let page = if page.len() > 1 { page.trim_end_matches('/') } else { page };
+    let lookup = |offline: bool| {
+        let request = schema_source::Request {
+            url: schema_source::default_url(&shared.root, None, Some(&shared.origin)),
+            offline,
+            dir: None,
+        };
+        let schemas = schema_source::load_with(&shared.root, &request, Some(&shared.schema_memo)).parse().ok()?;
+        schemas.collections.iter().find_map(|collection| collection.file_for_url(page))
+    };
+    let file = lookup(true).or_else(|| lookup(false))?;
+    file.strip_prefix("content/").map(str::to_string)
 }
 
 fn page(shared: &Shared, stream: &TcpStream, request: &Request) {
