@@ -163,6 +163,9 @@ describe("new pages", () => {
     expect(pageUrl(cuisines!, "thai")).toBe("/cuisines/thai-catering");
     expect(pageUrl({ ...blog!, url: undefined }, "a")).toBe("/blog/a");
     expect(pageUrl({ ...blog!, url: "/c/<file name without .md>" }, "about")).toBe("/c/about");
+    expect(
+      pageUrl({ ...blog!, url: "/minority-owned/<place=new-york-city>/<file name without .md>-owned" }, "asian")
+    ).toBe("/minority-owned/new-york-city/asian-owned");
   });
 
   it("offers creatable collections, blog first", () => {

@@ -479,10 +479,7 @@ pub fn new_page(
 
 /// The site path of a page from the collection's `url` pattern.
 pub fn page_url(pattern: &str, slug: &str) -> String {
-    match (pattern.find('<'), pattern.rfind('>')) {
-        (Some(open), Some(close)) if open < close => format!("{}{slug}{}", &pattern[..open], &pattern[close + 1..]),
-        _ => pattern.to_string(),
-    }
+    cowmark_lint::url_for_slug(pattern, slug)
 }
 
 // --- images ----------------------------------------------------------------------

@@ -146,6 +146,58 @@ fn serves_pending_changes_and_media() {
     let _ = fs::remove_dir_all(&root);
 }
 
+/// A stand-in preview site: 404 for the paths in `missing`, 200 for everything else.
+fn fake_site(missing: &'static [&'static str]) -> String {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let mut line = String::new();
+            let _ = BufReader::new(&stream).read_line(&mut line);
+            let path = line.split_whitespace().nth(1).unwrap_or("/");
+            let status = if missing.contains(&path) { "404 Not Found" } else { "200 OK" };
+            let _ = write!(stream, "HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        }
+    });
+    format!("http://127.0.0.1:{port}")
+}
+
+#[test]
+fn says_which_pages_are_new_files_the_site_lacks() {
+    let root = temp_root("new-page");
+    fs::create_dir_all(root.join("schema")).unwrap();
+    fs::write(
+        root.join("schema/collections.json"),
+        r#"{"collections":[{"name":"blog","folder":"content/blog","url":"/blog/<file name without .md>","fields":[]}]}"#,
+    )
+    .unwrap();
+    fs::write(root.join("content/blog/new.md"), "new").unwrap();
+    fs::write(root.join("content/blog/built.md"), "built").unwrap();
+    let server = PreviewServer::start(PreviewServerOptions {
+        root: root.clone(),
+        site: fake_site(&["/blog/new", "/blog/gone", "/elsewhere"]),
+        port: 0,
+    })
+    .unwrap();
+    let (port, token) = (server.port(), server.token().to_string());
+    let host = format!("localhost:{port}");
+    let is_new = |path: &str| -> bool {
+        let response = get(port, &format!("/__cowmark/page?path={path}&token={token}"), &host);
+        assert_eq!(response.status, 200);
+        serde_json::from_slice::<serde_json::Value>(&response.body).unwrap()["new"].as_bool().unwrap()
+    };
+    assert!(is_new("%2Fblog%2Fnew"));
+    // On the site already.
+    assert!(!is_new("%2Fblog%2Fbuilt"));
+    // Missing from the site, but with no file here there is no draft to show.
+    assert!(!is_new("%2Fblog%2Fgone"));
+    // Not a page of any collection.
+    assert!(!is_new("%2Felsewhere"));
+    assert!(!is_new("%2F"));
+    let _ = fs::remove_dir_all(&root);
+}
+
 #[test]
 fn names_the_draft_of_the_page_a_tab_shows() {
     let root = temp_root("page");

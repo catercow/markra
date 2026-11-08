@@ -30,6 +30,7 @@ const POLL_INTERVAL: Duration = Duration::from_secs(1);
 const KEEPALIVE: Duration = Duration::from_secs(15);
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_HEAD_BYTES: usize = 16 * 1024;
+const SITE_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 const PAGE: &str = include_str!("preview_page.html");
 
 pub struct PreviewServerOptions {
@@ -312,6 +313,10 @@ fn handle(shared: &Shared, stream: TcpStream) {
                 Err(error) => text(&stream, "500 Internal Server Error", &error.to_string()),
             }
         }
+        Some("page") => {
+            let new = is_new_page(shared, request.param("path").unwrap_or("/"));
+            respond(&stream, "200 OK", "application/json", "", serde_json::json!({ "new": new }).to_string().as_bytes());
+        }
         Some("media") => {
             let path = request.param("path").unwrap_or_default();
             let extension = Path::new(path).extension().and_then(|value| value.to_str()).unwrap_or_default();
@@ -343,6 +348,33 @@ fn file_for_page(shared: &Shared, page: &str) -> Option<String> {
     };
     let file = lookup(true).or_else(|| lookup(false))?;
     file.strip_prefix("content/").map(str::to_string)
+}
+
+/// Whether the site path `page` is a content file in this folder that the preview site
+/// doesn't serve yet: a new page. The site's 404 refuses to be framed, so the tab frames
+/// the home page instead and opens the page from its draft.
+fn is_new_page(shared: &Shared, page: &str) -> bool {
+    let page = page.split(['?', '#']).next().unwrap_or(page);
+    if !page.starts_with('/') || page.starts_with("//") || page == "/" {
+        return false;
+    }
+    let Some(file) = file_for_page(shared, page) else { return false };
+    if !shared.root.join("content").join(&file).is_file() {
+        return false;
+    }
+    let Ok(client) = reqwest::blocking::Client::builder()
+        .timeout(SITE_CHECK_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent(concat!("cowmark/", env!("CARGO_PKG_VERSION")))
+        .build()
+    else {
+        return false;
+    };
+    // Anything but a 404 (a redirect, a slow or offline site) leaves the tab on the page itself.
+    client
+        .head(format!("{}{page}", shared.origin))
+        .send()
+        .is_ok_and(|response| response.status() == reqwest::StatusCode::NOT_FOUND)
 }
 
 fn page(shared: &Shared, stream: &TcpStream, request: &Request) {

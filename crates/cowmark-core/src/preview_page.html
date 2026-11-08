@@ -26,10 +26,16 @@
 "use strict";
 const config = JSON.parse(document.getElementById("config").textContent);
 const token = new URLSearchParams(location.search).get("token") || "";
-const frame = document.getElementById("frame");
+let frame = document.getElementById("frame");
 const api = (name, params) => "/__cowmark/" + name + "?" + new URLSearchParams({ ...(params || {}), token });
 let ready = false;
+let connected = false;
+let fellBack = false;
+const requested = location.pathname;
 const waiting = [];
+// Drafts sent with navigate: true. Only their `rendered` replies are the page the
+// frame shows; the others render in the background and must not change the address.
+const navigating = new Set();
 
 function setStatus(text, tone) {
   document.getElementById("status").textContent = text;
@@ -40,6 +46,16 @@ function post(message, transfer) {
   frame.contentWindow && frame.contentWindow.postMessage(message, config.origin, transfer || []);
 }
 
+function postDraft(event, navigate) {
+  if (navigate) navigating.add(event.fsPath);
+  // `path` is the address the tab asks for. A page shown at several addresses (a
+  // minority's page in every city) stays at this one; the frame may still be on
+  // the home page.
+  const message = { type: "catercow:draft", fsPath: event.fsPath, content: event.content, navigate };
+  if (navigate) message.path = location.pathname;
+  post(message);
+}
+
 // Media first, so pages that use a new image find it; only the last page navigates.
 async function send(events, navigate) {
   const ordered = [...events].sort((a, b) => Number(b.kind === "media") - Number(a.kind === "media"));
@@ -47,7 +63,7 @@ async function send(events, navigate) {
   ordered.forEach((event, index) => { if (event.kind === "draft") last = index; });
   for (const [index, event] of ordered.entries()) {
     if (event.kind === "draft") {
-      post({ type: "catercow:draft", fsPath: event.fsPath, content: event.content, navigate: navigate && index === last });
+      postDraft(event, navigate && index === last);
     } else if (event.kind === "remove") {
       post({ type: "catercow:draft:remove", fsPath: event.fsPath });
     } else if (event.kind === "media" && !event.mime) {
@@ -75,11 +91,15 @@ async function sync(commit) {
   // The frame still shows the built page. Re-render it from its draft, if it has one;
   // other changed pages stay where they are.
   const shown = pending.page && pending.events.find((event) => event.kind === "draft" && event.fsPath === pending.page);
-  if (shown) post({ type: "catercow:draft", fsPath: shown.fsPath, content: shown.content, navigate: true });
+  if (shown) postDraft(shown, true);
   ready = true;
   const queued = waiting.splice(0);
   if (queued.length) await send(queued, true);
   const count = pending.events.filter((event) => event.kind !== "skipped").length;
+  if (fellBack && !shown) {
+    setStatus(requested + " isn't on the preview site and has no saved changes, so this is the home page", "warn");
+    return;
+  }
   setStatus(
     pending.warning || (count ? "Showing " + count + " change" + (count === 1 ? "" : "s") : "No changes yet"),
     pending.warning ? "warn" : "ok"
@@ -90,10 +110,13 @@ addEventListener("message", (event) => {
   if (event.origin !== config.origin || event.source !== frame.contentWindow) return;
   const data = event.data || {};
   if (data.type === "catercow:draft:ready") {
+    connected = true;
     sync(data.contentCommit).catch((error) => setStatus("Couldn't load your changes: " + error.message, "bad"));
-  } else if (data.type === "catercow:draft:rendered" && typeof data.path === "string" && data.path.startsWith("/")) {
+  } else if (data.type === "catercow:draft:rendered" && navigating.delete(data.fsPath) &&
+             typeof data.path === "string" && data.path.startsWith("/")) {
     history.replaceState(null, "", data.path + "?" + new URLSearchParams({ token }));
   } else if (data.type === "catercow:draft:error") {
+    navigating.delete(data.fsPath);
     setStatus((data.fsPath || "") + ": " + (data.message || ""), "bad");
   }
 });
@@ -109,8 +132,39 @@ stream.onmessage = (message) => {
 };
 stream.onerror = () => setStatus("Lost the connection to CowMark. Is it still open?", "bad");
 
+// A page that isn't on the built site yet (a new post) is a 404, and the site's error
+// pages refuse to be framed, so the frame never connects. Then the home page is framed
+// instead, and sync() asks for the file behind location.pathname and opens it from its
+// draft. CowMark says when the page is a new file; otherwise the frame gets a few
+// seconds after loading to connect.
+const home = new URL("/", config.frame).href;
+let answerTimer;
+function waitForAnswer() {
+  clearTimeout(answerTimer);
+  answerTimer = setTimeout(() => {
+    if (!connected) setStatus("The site hasn't answered. Is it allowing " + location.origin + "?", "bad");
+  }, 20000);
+}
+function fallBack() {
+  if (connected || fellBack || config.frame === home) return;
+  fellBack = true;
+  setStatus("This page isn't on the preview site yet. Opening it from your changes…");
+  // A new frame: some browsers refuse to navigate a frame again after it refused a page.
+  const fresh = frame.cloneNode(false);
+  fresh.src = home;
+  frame.replaceWith(fresh);
+  frame = fresh;
+  waitForAnswer();
+}
+frame.addEventListener("load", () => setTimeout(fallBack, 5000));
+setTimeout(fallBack, 12000); // in case a refused frame fires no load event
+
 frame.src = config.frame;
-setTimeout(() => { if (!ready) setStatus("The site hasn't answered. Is it allowing " + location.origin + "?", "bad"); }, 20000);
+waitForAnswer();
+fetch(api("page", { path: requested }))
+  .then((response) => (response.ok ? response.json() : {}))
+  .then((page) => { if (page.new) fallBack(); })
+  .catch(() => {});
 </script>
 </body>
 </html>
