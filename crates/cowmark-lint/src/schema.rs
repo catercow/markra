@@ -325,12 +325,87 @@ pub fn page_image_folder(url_pattern: &str, folder: &str, slug: &str) -> String 
     }
 }
 
+/// A piece of a collection's `url` pattern.
+#[derive(Debug, Clone, PartialEq)]
+enum UrlPart {
+    Text(String),
+    /// `<file name without .md>`: the page's file name.
+    Slug,
+    /// `<place=new-york-city>`: one path segment, any value; links use the value given.
+    Param(String),
+}
+
+/// `/minority-owned/<place=new-york-city>/<file name without .md>-owned` →
+/// text, param, text, slug, text. The first placeholder without `=` is the file name.
+/// Empty when the pattern has no placeholder.
+fn url_parts(pattern: &str) -> Vec<UrlPart> {
+    let mut parts = Vec::new();
+    let mut rest = pattern;
+    let mut has_slug = false;
+    while let Some(open) = rest.find('<') {
+        let Some(close) = rest[open..].find('>').map(|index| open + index) else { break };
+        if open > 0 {
+            parts.push(UrlPart::Text(rest[..open].to_string()));
+        }
+        let inner = &rest[open + 1..close];
+        parts.push(match inner.split_once('=') {
+            Some((_, value)) => UrlPart::Param(value.trim().to_string()),
+            None if !has_slug => {
+                has_slug = true;
+                UrlPart::Slug
+            }
+            None => UrlPart::Param(String::new()),
+        });
+        rest = &rest[close + 1..];
+    }
+    if !has_slug {
+        return Vec::new();
+    }
+    if !rest.is_empty() {
+        parts.push(UrlPart::Text(rest.to_string()));
+    }
+    parts
+}
+
+/// The site path of the page `slug` from a collection's `url` pattern. A pattern without a
+/// file name placeholder is returned as it is.
+pub fn url_for_slug(pattern: &str, slug: &str) -> String {
+    let parts = url_parts(pattern);
+    if parts.is_empty() {
+        return pattern.to_string();
+    }
+    parts
+        .iter()
+        .map(|part| match part {
+            UrlPart::Text(text) => text.as_str(),
+            UrlPart::Slug => slug,
+            UrlPart::Param(value) => value.as_str(),
+        })
+        .collect()
+}
+
+/// The file name a site path stands for under `parts`; placeholders match within one segment.
+fn match_url(parts: &[UrlPart], path: &str) -> Option<String> {
+    let Some((first, rest)) = parts.split_first() else {
+        return path.is_empty().then(String::new);
+    };
+    match first {
+        UrlPart::Text(text) => match_url(rest, path.strip_prefix(text.as_str())?),
+        UrlPart::Slug | UrlPart::Param(_) => {
+            let segment = path.find('/').unwrap_or(path.len());
+            (1..=segment).find_map(|end| {
+                let found = match_url(rest, &path[end..])?;
+                Some(if *first == UrlPart::Slug { path[..end].to_string() } else { found })
+            })
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Collection {
     pub schema: CollectionSchema,
     pub fields: Vec<(FieldSchema, FieldType)>,
-    url_prefix: String,
-    url_suffix: String,
+    url_parts: Vec<UrlPart>,
 }
 
 impl Collection {
@@ -340,18 +415,11 @@ impl Collection {
             .iter()
             .map(|field| (field.clone(), FieldType::parse(&field.type_)))
             .collect();
-        let (url_prefix, url_suffix) = match (schema.url.find('<'), schema.url.rfind('>')) {
-            (Some(open), Some(close)) if open < close => (
-                schema.url[..open].to_string(),
-                schema.url[close + 1..].to_string(),
-            ),
-            _ => (schema.url.clone(), String::new()),
-        };
+        let url_parts = url_parts(&schema.url);
         Collection {
             schema,
             fields,
-            url_prefix,
-            url_suffix,
+            url_parts,
         }
     }
 
@@ -366,7 +434,10 @@ impl Collection {
     }
 
     pub fn url_of(&self, slug: &str) -> String {
-        format!("{}{}{}", self.url_prefix, slug, self.url_suffix)
+        if self.url_parts.is_empty() {
+            return format!("{}{slug}", self.schema.url);
+        }
+        url_for_slug(&self.schema.url, slug)
     }
 
     /// Where a page's images go, as a site path (`/blog/my-post`); see [`page_image_folder`].
@@ -376,12 +447,7 @@ impl Collection {
 
     /// The file a site path is served from, when the path is one of this collection's pages.
     pub fn file_for_url(&self, path: &str) -> Option<String> {
-        if !self.schema.url.contains('<') {
-            return None;
-        }
-        let slug = path
-            .strip_prefix(&self.url_prefix)?
-            .strip_suffix(&self.url_suffix)?;
+        let slug = match_url(&self.url_parts, path)?;
         if slug.is_empty() || slug.contains('/') {
             return None;
         }
@@ -575,5 +641,28 @@ mod tests {
         );
         assert_eq!(cuisines.file_for_url("/cuisines/thai"), None);
         assert_eq!(cuisines.url_of("thai"), "/cuisines/thai-catering");
+    }
+
+    #[test]
+    fn url_placeholders_with_a_value_match_any_segment() {
+        let schemas = Schemas::from_json(
+            None,
+            Some(r#"{"collections":[{"name":"minorityOwned","folder":"content/minority-owned","url":"/minority-owned/<place=new-york-city>/<file name without .md>-owned","fields":[]}]}"#),
+        )
+        .unwrap();
+        let minority = &schemas.collections[0];
+        assert_eq!(minority.url_of("asian"), "/minority-owned/new-york-city/asian-owned");
+        for path in ["/minority-owned/new-york-city/asian-owned", "/minority-owned/chicago/asian-owned"] {
+            assert_eq!(minority.file_for_url(path).as_deref(), Some("content/minority-owned/asian.md"), "{path}");
+        }
+        assert_eq!(minority.file_for_url("/minority-owned/asian-owned"), None);
+        assert_eq!(minority.file_for_url("/minority-owned//asian-owned"), None);
+        assert_eq!(minority.file_for_url("/minority-owned/a/b/asian-owned"), None);
+        assert_eq!(minority.image_folder("asian"), "/minority-owned/asian");
+
+        assert_eq!(url_for_slug("/blog/<file name without .md>", "a"), "/blog/a");
+        assert_eq!(url_for_slug("/guides/<x>", "a"), "/guides/a");
+        assert_eq!(url_for_slug("/about", "a"), "/about");
+        assert_eq!(url_for_slug("/<city=nyc>/<file name without .md>/<tab=menu>", "a"), "/nyc/a/menu");
     }
 }

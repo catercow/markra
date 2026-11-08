@@ -236,13 +236,23 @@ export function slugDraft(text: string) {
   return slug && trailing && slug.length < 80 ? `${slug}-` : slug;
 }
 
-/** The site path a page will have, from its collection's `url` pattern (cowmark-cli `page_url`). */
+/**
+ * The site path a page will have, from its collection's `url` pattern (cowmark-lint
+ * `url_for_slug`). The first placeholder is the file name; `<name=value>` ones become `value`.
+ */
 export function pageUrl(collection: PageCollection, slug: string) {
   const url = collection.url;
-  const open = url ? url.indexOf("<") : -1;
-  const close = url ? url.lastIndexOf(">") : -1;
-  if (url && open >= 0 && close > open) return `${url.slice(0, open)}${slug}${url.slice(close + 1)}`;
-  if (url) return url;
+  if (url) {
+    let sawSlug = false;
+    const filled = url.replace(/<([^>]*)>/gu, (_, inner: string) => {
+      const equals = inner.indexOf("=");
+      if (equals >= 0) return inner.slice(equals + 1).trim();
+      if (sawSlug) return "";
+      sawSlug = true;
+      return slug;
+    });
+    return sawSlug ? filled : url;
+  }
   const prefix = collection.folder.replace(/^content\/?/u, "");
   return prefix ? `/${prefix}/${slug}` : `/${slug}`;
 }

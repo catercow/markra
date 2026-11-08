@@ -36,7 +36,7 @@ pub use input::render_table;
 pub use messages::Messages;
 pub use schema::{
     CollectionSchema, ComponentInput, ComponentSchema, FieldSchema, InputColumn, PropSchema,
-    SchemaError, Schemas, page_image_folder,
+    SchemaError, Schemas, page_image_folder, url_for_slug,
 };
 pub use text::{utf8_to_utf16, utf16_to_utf8};
 
