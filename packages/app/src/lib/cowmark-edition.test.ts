@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { setCatercowPreviewSiteForTests } from "./content-access";
-import { editionAppName, editionFeatures, editionHidden, editionLabel, withoutHiddenCommands } from "./cowmark-edition";
+import {
+  editionAppName,
+  editionFeatures,
+  editionHidden,
+  editionLabel,
+  setCowmarkUpdatesForTests,
+  withoutHiddenCommands
+} from "./cowmark-edition";
 import type { AppFeatureRuntime } from "../runtime";
 
 const allFeatures = {
@@ -16,6 +23,7 @@ const allFeatures = {
 describe("cowmark edition", () => {
   afterEach(() => {
     setCatercowPreviewSiteForTests(undefined);
+    setCowmarkUpdatesForTests(undefined);
   });
 
   it("changes nothing in stock Markra", () => {
@@ -33,6 +41,7 @@ describe("cowmark edition", () => {
 
   it("turns off what CowMark doesn't offer", () => {
     setCatercowPreviewSiteForTests("https://preview.example.test");
+    setCowmarkUpdatesForTests(false);
     const hidden = editionHidden();
 
     expect(editionAppName()).toBe("CowMark");
@@ -40,5 +49,17 @@ describe("cowmark edition", () => {
     expect(editionFeatures(allFeatures)).toMatchObject({ ai: false, export: false, updater: false, pandoc: false });
     expect(hidden.menuCommands.has("openFolder")).toBe(true);
     expect(withoutHiddenCommands({ openFolder: 1, saveDocument: 2 }, hidden.menuCommands)).toEqual({ saveDocument: 2 });
+  });
+
+  it("offers updates only in builds that publish them", () => {
+    setCatercowPreviewSiteForTests("https://preview.example.test");
+    expect(editionHidden().menuCommands.has("checkForUpdates")).toBe(true);
+
+    setCowmarkUpdatesForTests(true);
+    const hidden = editionHidden();
+
+    expect(editionFeatures(allFeatures)).toMatchObject({ ai: false, updater: true });
+    expect(hidden.menuCommands.has("checkForUpdates")).toBe(false);
+    expect(hidden.menuCommands.has("openFolder")).toBe(true);
   });
 });

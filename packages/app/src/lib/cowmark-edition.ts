@@ -104,8 +104,29 @@ export function editionLabel(label: string) {
   return cowmarkEdition() ? label.replaceAll("Markra", "CowMark") : label;
 }
 
+let updatesOverride: boolean | undefined;
+
+/**
+ * True in CowMark release builds that publish updates (`VITE_COWMARK_UPDATES=true`, set by
+ * .github/workflows/catercow-desktop.yml with the updater endpoint and signing key).
+ */
+export function cowmarkUpdates() {
+  if (updatesOverride !== undefined) return updatesOverride;
+  return String(import.meta.env.VITE_COWMARK_UPDATES ?? "").trim() === "true";
+}
+
+export function setCowmarkUpdatesForTests(value: boolean | undefined) {
+  updatesOverride = value;
+}
+
+const cowmarkHiddenWithUpdates: EditionHidden = {
+  ...cowmarkHidden,
+  menuCommands: new Set([...cowmarkHidden.menuCommands].filter((command) => command !== "checkForUpdates"))
+};
+
 export function editionHidden(): EditionHidden {
-  return cowmarkEdition() ? cowmarkHidden : stockHidden;
+  if (!cowmarkEdition()) return stockHidden;
+  return cowmarkUpdates() ? cowmarkHiddenWithUpdates : cowmarkHidden;
 }
 
 /** The runtime's features, with the ones CowMark doesn't offer turned off. */
@@ -120,8 +141,8 @@ export function editionFeatures(features: AppFeatureRuntime): AppFeatureRuntime 
     networkProxy: false,
     pandoc: false,
     s3ImageUpload: false,
-    // CowMark releases ship without an updater endpoint; a new release is installed by hand.
-    updater: false
+    // Only release builds have an updater endpoint; local and CI builds are installed by hand.
+    updater: cowmarkUpdates()
   };
 }
 
