@@ -26,8 +26,9 @@ const MARKRA_GITHUB_URL: &str = "https://github.com/markrahq/markra";
 const COWMARK_GITHUB_URL: &str = "https://github.com/catercow/markra";
 const COWMARK_IDENTIFIER: &str = "com.catercow.cowmark";
 const EXPORT_SUBMENU_COMMAND: &str = "export";
-/// Menu items CowMark leaves out: other files and folders, export, sync, AI, the updater (its
-/// releases have no update endpoint) and editing modes its editors don't use. Keep in step with
+/// Menu items CowMark leaves out: other files and folders, export, sync, AI, the updater (except
+/// in release builds with an update endpoint, see `updater_configured`) and editing modes its
+/// editors don't use. Keep in step with
 /// `cowmarkHidden.menuCommands` in packages/app/src/lib/cowmark-edition.ts.
 const COWMARK_HIDDEN_MENU_COMMANDS: &[&str] = &[
     NEW_DOCUMENT_COMMAND,
@@ -348,6 +349,30 @@ fn menu_command_visible(cowmark: bool, command: &str) -> bool {
     !cowmark || !COWMARK_HIDDEN_MENU_COMMANDS.contains(&command)
 }
 
+/// CowMark release builds carry an update endpoint (.github/workflows/catercow-desktop.yml); local
+/// and CI builds have none, so checking for updates would only fail.
+fn updater_configured(plugins: &tauri::utils::config::PluginConfig) -> bool {
+    plugins
+        .0
+        .get("updater")
+        .and_then(|updater| updater.get("endpoints"))
+        .and_then(|endpoints| endpoints.as_array())
+        .is_some_and(|endpoints| !endpoints.is_empty())
+}
+
+fn app_submenu_items<'a, R: tauri::Runtime>(
+    cowmark: bool,
+    updates: bool,
+    settings: &'a dyn IsMenuItem<R>,
+    check_updates: &'a dyn IsMenuItem<R>,
+) -> Vec<&'a dyn IsMenuItem<R>> {
+    let mut items = visible_menu_items(cowmark, &[(SETTINGS_WINDOW_COMMAND, settings)]);
+    if menu_command_visible(cowmark, CHECK_FOR_UPDATES_COMMAND) || updates {
+        items.push(check_updates);
+    }
+    items
+}
+
 fn visible_menu_items<'a, R: tauri::Runtime>(
     cowmark: bool,
     items: &[(&str, &'a dyn IsMenuItem<R>)],
@@ -544,12 +569,11 @@ fn create_markra_app_submenu<R: tauri::Runtime>(
     SubmenuBuilder::with_id(app, "markra:app", application_name(cowmark))
         .about(Some(application_about_metadata(identifier)))
         .separator()
-        .items(&visible_menu_items(
+        .items(&app_submenu_items(
             cowmark,
-            &[
-                (SETTINGS_WINDOW_COMMAND, &settings),
-                (CHECK_FOR_UPDATES_COMMAND, &check_updates),
-            ],
+            updater_configured(&app.config().plugins),
+            &settings,
+            &check_updates,
         ))
         .separator()
         .hide_with_text(edition_label(cowmark, labels.hide))
@@ -1374,6 +1398,20 @@ mod tests {
             .credits
             .as_deref()
             .is_some_and(|credits| credits.contains("https://github.com/markrahq/markra")));
+    }
+
+    #[test]
+    fn the_updater_counts_as_configured_only_with_an_endpoint() {
+        let plugins = |value: serde_json::Value| {
+            serde_json::from_value::<tauri::utils::config::PluginConfig>(value).unwrap()
+        };
+        assert!(!updater_configured(&plugins(serde_json::json!({}))));
+        assert!(!updater_configured(&plugins(
+            serde_json::json!({ "updater": { "endpoints": [], "pubkey": "" } })
+        )));
+        assert!(updater_configured(&plugins(serde_json::json!({
+            "updater": { "endpoints": ["https://example.test/latest.json"], "pubkey": "key" }
+        }))));
     }
 
     #[test]

@@ -5,6 +5,14 @@ name: CaterCow desktop build
 # Every push to `mdc` releases the next `catercow-v<app version>-mdc.<N>`, creating the tag with the release (a tag
 # pushed by this workflow's token would not start another run). Pushing such a tag by hand still releases it.
 # Upstream's release workflow only runs for `v*` tags, so it stays idle.
+#
+# Releases carry their own version (2.14.1-mdc.N) and, once the update signing key is set up, signed update files
+# and a latest.json that installed apps read from the latest release to update themselves:
+#   pnpm --dir apps/desktop tauri signer generate -w ~/.tauri/cowmark.key
+#   gh secret set TAURI_SIGNING_PRIVATE_KEY --repo catercow/markra < ~/.tauri/cowmark.key
+#   gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD --repo catercow/markra   # if the key has a password
+#   gh variable set TAURI_UPDATER_PUBLIC_KEY --repo catercow/markra < ~/.tauri/cowmark.key.pub
+# Without them, releases still publish, without updates.
 
 on:
   push:
@@ -32,7 +40,61 @@ env:
   VITE_CATERCOW_PREVIEW_SITE: https://content-preview.catercow.com
 
 jobs:
+  # On a push to mdc: the next mdc.N after every catercow tag so far, on the app version in tauri.conf.json.
+  # A commit that already has a catercow tag (pushed by hand) isn't released twice. Chosen before the build so the
+  # apps carry the release's version.
+  version:
+    name: version
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.name }}
+      previous: ${{ steps.tag.outputs.previous }}
+      version: ${{ steps.tag.outputs.version }}
+      updates: ${{ steps.updates.outputs.enabled }}
+    steps:
+      - name: Choose the tag
+        id: tag
+        if: startsWith(github.ref, 'refs/tags/catercow-v') || (github.event_name == 'push' && github.ref == 'refs/heads/mdc')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            echo "name=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+            echo "version=${GITHUB_REF_NAME#catercow-v}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          refs="$(gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/catercow-v" \
+            --jq '.[] | [(.ref | ltrimstr("refs/tags/")), .object.sha] | @tsv')"
+          if printf '%s\n' "$refs" | awk -F'\t' -v sha="$GITHUB_SHA" '$2 == sha { found = 1 } END { exit !found }'; then
+            echo "$GITHUB_SHA already has a catercow tag; not releasing it again."
+            exit 0
+          fi
+          last="$(printf '%s\n' "$refs" | sed -nE 's/^catercow-v[^[:space:]]*-mdc\.([0-9]+)[[:space:]].*/\1/p' | sort -n | tail -1)"
+          version="$(gh api "repos/$GITHUB_REPOSITORY/contents/apps/desktop/src-tauri/tauri.conf.json?ref=$GITHUB_SHA" \
+            --jq .content | base64 -d | jq -r .version)"
+          echo "name=catercow-v${version}-mdc.$(( ${last:-0} + 1 ))" >> "$GITHUB_OUTPUT"
+          echo "version=${version}-mdc.$(( ${last:-0} + 1 ))" >> "$GITHUB_OUTPUT"
+          previous="$(printf '%s\n' "$refs" | awk -F'\t' -v suffix="-mdc.${last:-0}" \
+            'substr($1, length($1) - length(suffix) + 1) == suffix { print $1; exit }')"
+          echo "previous=$previous" >> "$GITHUB_OUTPUT"
+
+      - name: Check for the update signing key
+        id: updates
+        env:
+          TAG: ${{ steps.tag.outputs.name }}
+          SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+        run: |
+          if [ -n "$TAG" ] && [ -n "$SIGNING_KEY" ] && [ -n "$PUBLIC_KEY" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            [ -n "$TAG" ] && echo "::warning::TAURI_SIGNING_PRIVATE_KEY or TAURI_UPDATER_PUBLIC_KEY isn't set, so this release has no updates. See the top of this workflow."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: version
     strategy:
       fail-fast: false
       matrix:
@@ -41,12 +103,15 @@ jobs:
             target: aarch64-apple-darwin
             platform: macos
             arch: arm64
-            bundle: dmg
+            # The .app bundle too: Tauri makes the update file (CowMark.app.tar.gz) only when it's asked for.
+            bundle: app,dmg
+            installer: dmg
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             platform: windows
             arch: x64
             bundle: nsis
+            installer: nsis
     name: ${{ matrix.platform }} (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
     steps:
@@ -80,13 +145,42 @@ jobs:
       - name: Test the editor packages
         run: pnpm --filter @markra/editor --filter @markra/editor-react --filter @markra/shared test
 
+      # A release's apps carry its version, so an installed app can tell an update from what it runs, and, with the
+      # signing key, the update endpoint (the latest release's latest.json) and signed update files.
+      - name: Prepare the release config
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          UPDATES: ${{ needs.version.outputs.updates }}
+          PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+          ENDPOINT: https://github.com/${{ github.repository }}/releases/latest/download/latest.json
+        run: |
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const { VERSION, UPDATES, PUBLIC_KEY, ENDPOINT, DESKTOP_DIR } = process.env;
+            const config = {};
+            if (VERSION) config.version = VERSION;
+            if (UPDATES === "true") {
+              config.bundle = { createUpdaterArtifacts: true };
+              config.plugins = { updater: { endpoints: [ENDPOINT], pubkey: PUBLIC_KEY.trim() } };
+            }
+            fs.writeFileSync(`${DESKTOP_DIR}/src-tauri/tauri.release.conf.json`, `${JSON.stringify(config, null, 2)}\n`);
+            console.log(JSON.stringify({ version: config.version ?? "(tauri.conf.json)", updates: UPDATES === "true" }));
+          '
+
       # beforeBuildCommand also builds the `cowmark` sidecar for this target (scripts/cowmark-cli.mjs).
       - name: Build app
         working-directory: ${{ env.DESKTOP_DIR }}
+        env:
+          # Turns on CowMark's update check and "Check for Updates" (packages/app/src/lib/cowmark-edition.ts).
+          VITE_COWMARK_UPDATES: ${{ needs.version.outputs.updates }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ needs.version.outputs.updates == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ needs.version.outputs.updates == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
         run: >-
           pnpm tauri build
           --config src-tauri/tauri.catercow.conf.json
           --config src-tauri/tauri.catercow-ci.conf.json
+          --config src-tauri/tauri.release.conf.json
           --target ${{ matrix.target }}
           --bundles ${{ matrix.bundle }}
 
@@ -103,13 +197,18 @@ jobs:
         working-directory: ${{ env.DESKTOP_DIR }}/src-tauri
         run: cargo test --release --target ${{ matrix.target }} content_
 
+      # The update file is the .app archive on macOS and the installer itself on Windows; each gets a .sig beside it,
+      # which the release job writes into latest.json.
       - name: Collect the installer
         id: installer
         shell: bash
+        env:
+          UPDATES: ${{ needs.version.outputs.updates }}
         run: |
           set -euo pipefail
           shopt -s nullglob
-          bundle_dir="${DESKTOP_DIR}/src-tauri/target/${{ matrix.target }}/release/bundle/${{ matrix.bundle }}"
+          bundle_root="${DESKTOP_DIR}/src-tauri/target/${{ matrix.target }}/release/bundle"
+          bundle_dir="$bundle_root/${{ matrix.installer }}"
           found=("$bundle_dir"/*.dmg "$bundle_dir"/*.exe)
           if [ "${#found[@]}" -ne 1 ]; then
             echo "Expected one installer in $bundle_dir, found ${#found[@]}:"; ls -la "$bundle_dir" || true
@@ -120,6 +219,21 @@ jobs:
           name="CowMark-${{ matrix.platform }}-${{ matrix.arch }}.${extension}"
           cp "$source" "$name"
           echo "path=$name" >> "$GITHUB_OUTPUT"
+          if [ "$UPDATES" = true ]; then
+            if [ "${{ matrix.platform }}" = macos ]; then
+              update="$bundle_root/macos/CowMark.app.tar.gz"
+              asset="CowMark-${{ matrix.platform }}-${{ matrix.arch }}.app.tar.gz"
+              cp "$update" "$asset"
+            else
+              update="$source"
+              asset="$name"
+            fi
+            if [ ! -f "$update.sig" ]; then
+              echo "No update signature at $update.sig:"; ls -la "$(dirname "$update")"
+              exit 1
+            fi
+            cp "$update.sig" "$asset.sig"
+          fi
 
       # Tauri removes the .app after packing the .dmg, so check the copy inside it.
       - name: Check the app's signature
@@ -135,7 +249,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: CowMark-${{ matrix.platform }}-${{ matrix.arch }}
-          path: ${{ steps.installer.outputs.path }}
+          path: CowMark-${{ matrix.platform }}-${{ matrix.arch }}.*
           if-no-files-found: error
 
   # A Linux `cowmark` for the content repository's CI (`cowmark check`); the desktop builds carry their own.
@@ -169,46 +283,22 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: [build, cli-linux]
-    if: startsWith(github.ref, 'refs/tags/catercow-v') || (github.event_name == 'push' && github.ref == 'refs/heads/mdc')
+    needs: [version, build, cli-linux]
+    if: needs.version.outputs.tag != ''
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.version.outputs.tag }}
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
 
-      # On a push to mdc: the next mdc.N after every catercow tag so far, on the app version in tauri.conf.json.
-      # A commit that already has a catercow tag (pushed by hand) isn't released twice.
-      - name: Choose the tag
-        id: tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          if [ "$GITHUB_REF_TYPE" = tag ]; then
-            echo "name=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          refs="$(gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/catercow-v" \
-            --jq '.[] | [(.ref | ltrimstr("refs/tags/")), .object.sha] | @tsv')"
-          if printf '%s\n' "$refs" | awk -F'\t' -v sha="$GITHUB_SHA" '$2 == sha { found = 1 } END { exit !found }'; then
-            echo "$GITHUB_SHA already has a catercow tag; not releasing it again."
-            exit 0
-          fi
-          last="$(printf '%s\n' "$refs" | sed -nE 's/^catercow-v[^[:space:]]*-mdc\.([0-9]+)[[:space:]].*/\1/p' | sort -n | tail -1)"
-          version="$(gh api "repos/$GITHUB_REPOSITORY/contents/apps/desktop/src-tauri/tauri.conf.json?ref=$GITHUB_SHA" \
-            --jq .content | base64 -d | jq -r .version)"
-          echo "name=catercow-v${version}-mdc.$(( ${last:-0} + 1 ))" >> "$GITHUB_OUTPUT"
-          previous="$(printf '%s\n' "$refs" | awk -F'\t' -v suffix="-mdc.${last:-0}" \
-            'substr($1, length($1) - length(suffix) + 1) == suffix { print $1; exit }')"
-          echo "previous=$previous" >> "$GITHUB_OUTPUT"
-
       - name: List the changes
-        if: steps.tag.outputs.name != ''
         env:
           GH_TOKEN: ${{ github.token }}
-          PREVIOUS: ${{ steps.tag.outputs.previous }}
+          PREVIOUS: ${{ needs.version.outputs.previous }}
         run: |
           set -euo pipefail
           : > changes.md
@@ -217,12 +307,38 @@ jobs:
               --jq '"Changes since \(env.PREVIOUS):", (.commits[] | "- " + (.commit.message | split("\n")[0]))' > changes.md
           fi
 
+      # What installed apps read (from the latest release) to update: the version, and each platform's file and
+      # signature. The .sig files go into it rather than into the release.
+      - name: Write the update manifest
+        if: needs.version.outputs.updates == 'true'
+        run: |
+          set -euo pipefail
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
+          platforms='{}'
+          for pair in darwin-aarch64=CowMark-macos-arm64.app.tar.gz windows-x86_64=CowMark-windows-x64.exe; do
+            platform="${pair%%=*}"
+            asset="${pair#*=}"
+            if [ ! -f "dist/$asset" ] || [ ! -f "dist/$asset.sig" ]; then
+              echo "Missing dist/$asset or its .sig:"; ls -la dist
+              exit 1
+            fi
+            platforms="$(jq --arg platform "$platform" --arg url "$base/$asset" --rawfile signature "dist/$asset.sig" \
+              '. + {($platform): {signature: ($signature | gsub("\\s+$"; "")), url: $url}}' <<< "$platforms")"
+            rm "dist/$asset.sig"
+          done
+          jq -n --arg version "$VERSION" --rawfile notes changes.md --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --argjson platforms "$platforms" '{version: $version, notes: $notes, pub_date: $date, platforms: $platforms}' \
+            > dist/latest.json
+          cat dist/latest.json
+
       - name: Publish release
-        if: steps.tag.outputs.name != ''
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.tag.outputs.name }}
         run: |
+          updates=""
+          if [ -f dist/latest.json ]; then
+            updates="CowMark checks for updates by itself and installs them when you restart. CowMark-macos-arm64.app.tar.gz and latest.json are its update files."
+          fi
           gh release create "$TAG" dist/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
@@ -232,6 +348,8 @@ jobs:
           $(cat changes.md)
 
           cowmark-linux-x64.tar.gz is the \`cowmark\` command for Linux, for checking content in CI; the apps include their own.
+
+          ${updates}
 
           These builds are not signed by Apple or Microsoft, so the first launch asks for confirmation:
           - Mac: open the .dmg, drag the app to Applications, then right-click it and choose Open (or allow it under System Settings → Privacy & Security).
